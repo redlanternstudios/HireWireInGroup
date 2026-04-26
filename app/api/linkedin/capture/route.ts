@@ -7,21 +7,47 @@
  *
  *   1. Auth check
  *   2. Validate rawText (min 200 chars)
- *   3. Clean text (strip LinkedIn UI noise)
- *   4. AI extraction (LinkedIn-specific schema with status labels)
- *   5. Write to evidence_library (experience, education, certifications, skills)
- *   6. Update user_profile if fields are empty (never overwrites existing values)
- *   7. Return full result with validation object and fieldsUpdated list
+ *   3. Fetch user_profile — injected into AI prompt + reused for prefill
+ *   4. Clean text (strip LinkedIn UI noise)
+ *   5. AI extraction (LinkedIn-specific, with user context)
+ *   6. Map to evidence rows
+ *   7. Dual deduplication:
+ *      a. 5-field dedup against ALL existing evidence (prevents exact duplicates)
+ *      b. 3-field dedup against resume-sourced rows (tracks what came from resume)
+ *   8. Upsert new rows
+ *   9. Post-process "we/our" team voice check (belt-and-suspenders after AI)
+ *  10. Update user_profile if fields are empty
+ *  11. Return enriched response with newItemsAdded + duplicatesSkipped
  */
 
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { cleanProfileText } from "@/lib/linkedin/cleanProfileText"
-import { extractLinkedInProfile } from "@/lib/linkedin/extractLinkedInProfile"
+import {
+  extractLinkedInProfile,
+  type UserProfileContext,
+} from "@/lib/linkedin/extractLinkedInProfile"
 import { mapLinkedInToEvidence } from "@/lib/linkedin/mapLinkedInToEvidence"
 import { dedupeKey } from "@/lib/mapResumeToEvidence"
 
 export const maxDuration = 60
+
+// 3-field key used to match against resume-sourced rows
+function resumeDedupeKey(row: {
+  source_type: string
+  company_name: string | null
+  date_range: string | null
+}): string {
+  return [
+    row.source_type,
+    (row.company_name ?? "").toLowerCase().trim(),
+    (row.date_range ?? "").toLowerCase().trim(),
+  ].join("|")
+}
+
+const TEAM_VOICE_PATTERNS = /\b(we |our team|our processes|our clients|we built|we developed|we launched|we drove|we created)\b/i
+const TEAM_VOICE_FLAG =
+  "About section uses team voice ('we/our') — rewrite in first person to reflect your individual contributions."
 
 export async function POST(request: NextRequest) {
   try {
@@ -77,13 +103,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── 3. Clean text ────────────────────────────────────────────────────────
+    // ── 3. Fetch user profile — used for context injection + prefill ──────────
+    // Degrade gracefully if this fails — proceed without context rather than error.
+    const { data: profile } = await supabase
+      .from("user_profile")
+      .select("full_name, headline, location, summary")
+      .eq("user_id", userId)
+      .maybeSingle()
+
+    const userContext: UserProfileContext | undefined = profile
+      ? {
+          full_name: profile.full_name,
+          headline: profile.headline,
+          location: profile.location,
+          summary: profile.summary,
+        }
+      : undefined
+
+    // ── 4. Clean text ────────────────────────────────────────────────────────
     const { cleanedText, removedNoise } = cleanProfileText(rawText)
 
-    // ── 4. AI extraction ─────────────────────────────────────────────────────
+    // ── 5. AI extraction (with user context) ─────────────────────────────────
     let captureResult
     try {
-      captureResult = await extractLinkedInProfile(cleanedText)
+      captureResult = await extractLinkedInProfile(cleanedText, userContext)
     } catch (aiError) {
       console.error("[linkedin/capture] AI extraction failed:", aiError)
       return NextResponse.json(
@@ -96,39 +139,69 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Merge noise labels from text cleaning with anything the AI also flagged
     const allNoiseRemoved = [
       ...new Set([...removedNoise, ...captureResult.noise_removed]),
     ]
 
-    // ── 5. Write to evidence_library ─────────────────────────────────────────
+    // ── 6. Map to evidence rows ───────────────────────────────────────────────
     const candidateRows = mapLinkedInToEvidence(captureResult)
+    const totalFound = candidateRows.length
 
-    // Deduplicate against existing evidence — same pattern as resume/upload
+    // ── 7. Dual deduplication ─────────────────────────────────────────────────
+    // Single query — build both maps from the result.
     const { data: existing } = await supabase
       .from("evidence_library")
       .select(
-        "id, source_type, source_title, role_name, company_name, date_range"
+        "id, source_type, source_title, role_name, company_name, date_range, source_resume_id"
       )
       .eq("user_id", userId)
 
+    // 5-field map: all existing rows (exact duplicate prevention)
     const existingMap = new Map<string, string>()
+    // 3-field set: resume-sourced rows only (tracks what already came from resume)
+    const resumeSourcedSet = new Set<string>()
+
     for (const row of existing ?? []) {
-      const key = [
+      const fiveKey = [
         row.source_type ?? "",
         (row.source_title ?? "").toLowerCase().trim(),
         (row.role_name ?? "").toLowerCase().trim(),
         (row.company_name ?? "").toLowerCase().trim(),
         (row.date_range ?? "").toLowerCase().trim(),
       ].join("|")
-      existingMap.set(key, row.id)
+      existingMap.set(fiveKey, row.id)
+
+      if (row.source_resume_id) {
+        resumeSourcedSet.add(
+          resumeDedupeKey({
+            source_type: row.source_type ?? "",
+            company_name: row.company_name,
+            date_range: row.date_range,
+          })
+        )
+      }
     }
 
-    const rowsToInsert = candidateRows.filter(
-      (row) => !existingMap.has(dedupeKey(row))
-    )
+    // Filter: skip rows that match either dedup check
+    const rowsToInsert = candidateRows.filter((row) => {
+      if (existingMap.has(dedupeKey(row))) return false
+      if (
+        resumeSourcedSet.has(
+          resumeDedupeKey({
+            source_type: row.source_type,
+            company_name: row.company_name,
+            date_range: row.date_range,
+          })
+        )
+      )
+        return false
+      return true
+    })
 
-    let itemsExtracted = 0
+    const duplicatesSkipped = totalFound - rowsToInsert.length
+
+    // ── 8. Upsert new rows ────────────────────────────────────────────────────
+    let newItemsAdded = 0
 
     if (rowsToInsert.length > 0) {
       const { data: insertedData, error: insertError } = await supabase
@@ -153,19 +226,32 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      itemsExtracted = insertedData?.length ?? 0
+      newItemsAdded = insertedData?.length ?? 0
     }
 
-    // ── 6. Update user_profile if fields are empty ───────────────────────────
-    // Never overwrite existing values — only fill in what is missing.
+    // ── 9. Post-process team voice check (belt-and-suspenders) ───────────────
+    // The AI prompt already instructs flagging of "we/our" language.
+    // This server-side check ensures the flag is always present if the pattern
+    // exists, regardless of model compliance.
+    const aboutText = captureResult.about.raw_text ?? ""
+    let requiresReview = captureResult.validation.requires_user_review
+
+    if (TEAM_VOICE_PATTERNS.test(aboutText)) {
+      const alreadyFlagged = captureResult.about.rewrite_opportunities.some(
+        (r) => r.includes("team voice")
+      )
+      if (!alreadyFlagged) {
+        captureResult.about.rewrite_opportunities.push(TEAM_VOICE_FLAG)
+      }
+      requiresReview = true
+    }
+
+    const rewriteOpportunities = captureResult.about.rewrite_opportunities
+
+    // ── 10. Update user_profile if fields are empty ───────────────────────────
+    // Reuses the profile fetched in step 3 — no second DB round-trip.
     const fieldsUpdated: string[] = []
     const identity = captureResult.identity
-
-    const { data: profile } = await supabase
-      .from("user_profile")
-      .select("full_name, location, summary")
-      .eq("user_id", userId)
-      .maybeSingle()
 
     if (profile) {
       const updates: Record<string, unknown> = {}
@@ -192,12 +278,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── 7. Return result ─────────────────────────────────────────────────────
+    // ── 11. Return enriched response ──────────────────────────────────────────
     return NextResponse.json({
       success: true,
-      itemsExtracted,
+      itemsExtracted: totalFound,
+      newItemsAdded,
+      duplicatesSkipped,
       fieldsUpdated,
-      validation: captureResult.validation,
+      requiresReview,
+      rewriteOpportunities,
+      validation: {
+        ...captureResult.validation,
+        requires_user_review: requiresReview,
+      },
       data: {
         ...captureResult,
         noise_removed: allNoiseRemoved,

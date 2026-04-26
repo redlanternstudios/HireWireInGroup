@@ -183,9 +183,35 @@ export const LinkedInCaptureResultSchema = z.object({
 
 export type LinkedInCaptureResult = z.infer<typeof LinkedInCaptureResultSchema>
 
+// ── User context ──────────────────────────────────────────────────────────────
+
+export interface UserProfileContext {
+  full_name?: string | null
+  headline?: string | null
+  location?: string | null
+  summary?: string | null
+}
+
+function buildContextBlock(ctx: UserProfileContext): string {
+  const lines: string[] = []
+  if (ctx.full_name) lines.push(`Name: ${ctx.full_name}`)
+  if (ctx.headline) lines.push(`Current positioning: ${ctx.headline}`)
+  if (ctx.location) lines.push(`Location: ${ctx.location}`)
+  if (lines.length === 0) return ""
+  return `KNOWN USER CONTEXT (use this to ground your extraction)
+${lines.join("\n")}
+
+Apply this context as follows:
+- Cross-reference the extracted identity against the known user — flag any discrepancies as notes in rewrite_opportunities.
+- Evaluate each experience entry for relevance to the user's current positioning. Roles directly related to their headline (e.g. AI, TPM, product, engineering) are high relevance. Roles from a different career phase (e.g. sales, fitness, mortgage) are lower relevance — still capture them, but note in impact_claims_missing that strategic reframing may be needed.
+- If the About section contains first-person plural language ("we", "our team", "our processes", "we built", "our clients"), add this exact string to about.rewrite_opportunities: "About section uses team voice ('we/our') — rewrite in first person to reflect your individual contributions." Also set validation.requires_user_review to true.
+
+`
+}
+
 // ── Extraction prompt ─────────────────────────────────────────────────────────
 
-const EXTRACTION_PROMPT = `You are extracting structured professional data from raw LinkedIn profile text.
+const EXTRACTION_PROMPT_BASE = `You are extracting structured professional data from raw LinkedIn profile text.
 
 Return ONLY valid JSON matching the exact schema described below. No markdown, no explanation, no code blocks. The response must be parseable by JSON.parse().
 
@@ -197,6 +223,7 @@ CRITICAL RULES — violations corrupt the data:
 5. If a field is expected but not found, set status "missing" and value null.
 6. capture_for_resume is false for ALL reposts and activity items without verifiable professional proof authored by this user.
 7. Status labels: "explicit" = directly present (include source_excerpt), "inferred" = reasonably concluded but not stated verbatim, "missing" = expected but absent, "noise" = UI artifact to discard.
+8. If the About section uses "we", "our team", or "our" to describe work, add a rewrite_opportunity flagging team voice and set requires_user_review to true.
 
 SCHEMA (return exactly this structure):
 {
@@ -311,12 +338,21 @@ LINKEDIN PROFILE TEXT:
 // ── Main extractor ────────────────────────────────────────────────────────────
 
 export async function extractLinkedInProfile(
-  cleanedText: string
+  cleanedText: string,
+  userContext?: UserProfileContext
 ): Promise<LinkedInCaptureResult> {
+  const contextBlock =
+    userContext ? buildContextBlock(userContext) : ""
+
+  const prompt = `${EXTRACTION_PROMPT_BASE}
+
+${contextBlock}LINKEDIN PROFILE TEXT:
+${cleanedText}`
+
   const result = await generateText({
     model: CLAUDE_MODELS.SONNET,
     output: Output.object({ schema: LinkedInCaptureResultSchema }),
-    prompt: `${EXTRACTION_PROMPT}${cleanedText}`,
+    prompt,
   })
 
   const raw = result.experimental_output

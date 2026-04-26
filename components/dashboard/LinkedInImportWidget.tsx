@@ -2,16 +2,17 @@
 
 import { useState, useRef } from "react"
 import { Upload, CheckCircle2, Loader2, ExternalLink, RotateCcw } from "lucide-react"
-import type { LinkedInValidation } from "@/lib/linkedin/extractLinkedInProfile"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ImportState = "idle" | "uploading" | "extracting" | "success" | "error"
 
 interface CaptureResult {
-  count: number
+  newItemsAdded: number
+  duplicatesSkipped: number
   fieldsUpdated: string[]
-  validation: LinkedInValidation
+  requiresReview: boolean
+  rewriteOpportunities: string[]
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -83,9 +84,11 @@ export function LinkedInImportWidget() {
 
       const captureData: {
         success?: boolean
-        itemsExtracted?: number
+        newItemsAdded?: number
+        duplicatesSkipped?: number
         fieldsUpdated?: string[]
-        validation?: LinkedInValidation
+        requiresReview?: boolean
+        rewriteOpportunities?: string[]
         error?: string
       } = await captureRes.json()
 
@@ -96,9 +99,11 @@ export function LinkedInImportWidget() {
       }
 
       setResult({
-        count: captureData.itemsExtracted ?? 0,
+        newItemsAdded: captureData.newItemsAdded ?? 0,
+        duplicatesSkipped: captureData.duplicatesSkipped ?? 0,
         fieldsUpdated: captureData.fieldsUpdated ?? [],
-        validation: captureData.validation as LinkedInValidation,
+        requiresReview: captureData.requiresReview ?? false,
+        rewriteOpportunities: captureData.rewriteOpportunities ?? [],
       })
       setImportState("success")
     } catch (err) {
@@ -284,19 +289,25 @@ export function LinkedInImportWidget() {
                   <div className="flex items-center gap-2 text-sm text-green-600">
                     <CheckCircle2 className="h-4 w-4 shrink-0" />
                     <span>
-                      {result.count} item{result.count !== 1 ? "s" : ""} added
-                      to your evidence library
+                      {result.newItemsAdded} new item
+                      {result.newItemsAdded !== 1 ? "s" : ""} added to your
+                      evidence library
                     </span>
                   </div>
+                  {result.duplicatesSkipped > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {result.duplicatesSkipped} already existed — skipped
+                    </p>
+                  )}
                   {result.fieldsUpdated.length > 0 && (
                     <p className="text-xs text-muted-foreground">
                       Profile updated: {result.fieldsUpdated.join(", ")}
                     </p>
                   )}
-                  {result.validation.requires_user_review && (
+                  {result.requiresReview && (
                     <p className="text-xs text-amber-600">
-                      Review recommended — some entries need your confirmation
-                      before they can be used in documents.
+                      Your profile has improvement opportunities — review
+                      suggested
                     </p>
                   )}
                   <button
