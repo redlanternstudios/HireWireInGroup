@@ -1,136 +1,120 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Upload, CheckCircle2, Loader2, ExternalLink, RotateCcw } from "lucide-react"
+import {
+  ExternalLink,
+  Download,
+  Upload,
+  UploadCloud,
+  ChevronRight,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  X,
+  RotateCcw,
+} from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ImportState = "idle" | "uploading" | "extracting" | "success" | "error"
+export interface UserProfileContext {
+  full_name?: string | null
+  headline?: string | null
+  location?: string | null
+  summary?: string | null
+}
+
+interface LinkedInImportWidgetProps {
+  onImport?: () => void
+  userProfile: UserProfileContext
+}
+
+type Tab = "pdf" | "paste"
+type ImportState = "idle" | "loading" | "success" | "error"
 
 interface CaptureResult {
   newItemsAdded: number
   duplicatesSkipped: number
-  fieldsUpdated: string[]
   requiresReview: boolean
   rewriteOpportunities: string[]
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
+const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
 
-// ── Validation ────────────────────────────────────────────────────────────────
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 function validateFile(file: File): string | null {
-  if (file.type !== "application/pdf") {
-    return "Only PDF files are accepted. Export your LinkedIn profile as a PDF first."
-  }
-  if (file.size > MAX_BYTES) {
-    return "File is too large. Maximum size is 10MB."
-  }
+  if (file.type !== "application/pdf") return "Please upload a PDF file under 5MB."
+  if (file.size > MAX_SIZE) return "Please upload a PDF file under 5MB."
   return null
+}
+
+async function extractPdfText(file: File): Promise<string> {
+  const pdfjsLib = await import("pdfjs-dist")
+  // Pin worker to the same version as the package install
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"
+
+  const buffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
+  const pages: string[] = []
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item: Record<string, unknown>) =>
+        typeof item.str === "string" ? item.str : ""
+      )
+      .join(" ")
+    pages.push(pageText)
+  }
+
+  return pages.join("\n")
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function LinkedInImportWidget() {
+export function LinkedInImportWidget({
+  onImport,
+  userProfile,
+}: LinkedInImportWidgetProps) {
+  const [tab, setTab] = useState<Tab>("pdf")
   const [importState, setImportState] = useState<ImportState>("idle")
-  const [result, setResult] = useState<CaptureResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [pasteText, setPasteText] = useState("")
   const [isDragging, setIsDragging] = useState(false)
-  const [fileName, setFileName] = useState<string | null>(null)
+  const [result, setResult] = useState<CaptureResult | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  async function processFile(file: File) {
-    const validationError = validateFile(file)
-    if (validationError) {
-      setError(validationError)
-      setImportState("error")
-      return
-    }
+  // ── File handling ────────────────────────────────────────────────────────────
 
-    setFileName(file.name)
-    setError(null)
-    setResult(null)
-    setImportState("uploading")
-
-    try {
-      // ── Step 1: Extract text from the PDF server-side ──────────────────────
-      const formData = new FormData()
-      formData.append("file", file)
-
-      const extractRes = await fetch("/api/linkedin/pdf-extract", {
-        method: "POST",
-        body: formData,
-      })
-
-      const extractData: { text?: string; error?: string } =
-        await extractRes.json()
-
-      if (!extractRes.ok || !extractData.text) {
-        throw new Error(
-          extractData.error ?? "Failed to read PDF. Please try again."
-        )
-      }
-
-      // ── Step 2: Run LinkedIn-specific AI extraction ────────────────────────
-      setImportState("extracting")
-
-      const captureRes = await fetch("/api/linkedin/capture", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawText: extractData.text }),
-      })
-
-      const captureData: {
-        success?: boolean
-        newItemsAdded?: number
-        duplicatesSkipped?: number
-        fieldsUpdated?: string[]
-        requiresReview?: boolean
-        rewriteOpportunities?: string[]
-        error?: string
-      } = await captureRes.json()
-
-      if (!captureRes.ok || !captureData.success) {
-        throw new Error(
-          captureData.error ?? "Import failed. Please try again."
-        )
-      }
-
-      setResult({
-        newItemsAdded: captureData.newItemsAdded ?? 0,
-        duplicatesSkipped: captureData.duplicatesSkipped ?? 0,
-        fieldsUpdated: captureData.fieldsUpdated ?? [],
-        requiresReview: captureData.requiresReview ?? false,
-        rewriteOpportunities: captureData.rewriteOpportunities ?? [],
-      })
-      setImportState("success")
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong. Please try again."
-      )
-      setImportState("error")
+  function handleFileSelect(f: File) {
+    const err = validateFile(f)
+    if (err) {
+      setFileError(err)
+      setFile(null)
+    } else {
+      setFileError(null)
+      setFile(f)
     }
   }
 
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) processFile(file)
-    // Reset so the same file can be re-selected after an error
-    e.target.value = ""
-  }
-
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+  function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setIsDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) processFile(file)
+    const f = e.dataTransfer.files[0]
+    if (f) handleFileSelect(f)
   }
 
-  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+  function handleDragOver(e: React.DragEvent) {
     e.preventDefault()
     setIsDragging(true)
   }
@@ -139,84 +123,163 @@ export function LinkedInImportWidget() {
     setIsDragging(false)
   }
 
-  function handleRetry() {
-    setImportState("idle")
-    setError(null)
-    setResult(null)
-    setFileName(null)
+  // ── Import ───────────────────────────────────────────────────────────────────
+
+  async function handleImport() {
+    setImportState("loading")
+    setErrorMessage(null)
+
+    try {
+      let rawText = ""
+
+      if (tab === "pdf") {
+        if (!file) return
+        rawText = await extractPdfText(file)
+      } else {
+        rawText = pasteText.trim()
+      }
+
+      const res = await fetch("/api/linkedin/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText }),
+      })
+
+      const data: {
+        success?: boolean
+        newItemsAdded?: number
+        duplicatesSkipped?: number
+        requiresReview?: boolean
+        rewriteOpportunities?: string[]
+        error?: string
+      } = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? "Import failed. Please try again.")
+      }
+
+      setResult({
+        newItemsAdded: data.newItemsAdded ?? 0,
+        duplicatesSkipped: data.duplicatesSkipped ?? 0,
+        requiresReview: data.requiresReview ?? false,
+        rewriteOpportunities: data.rewriteOpportunities ?? [],
+      })
+      setImportState("success")
+      onImport?.()
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Something went wrong. Please try again."
+      )
+      setImportState("error")
+    }
   }
 
-  const isLoading =
-    importState === "uploading" || importState === "extracting"
-  const showUploadZone = importState === "idle" || importState === "error"
+  function handleReset() {
+    setImportState("idle")
+    setFile(null)
+    setFileError(null)
+    setPasteText("")
+    setResult(null)
+    setErrorMessage(null)
+    setTab("pdf")
+  }
+
+  const isLoading = importState === "loading"
+  const showResult = importState === "success" || importState === "error"
+  const canImportPdf = tab === "pdf" && !!file && !isLoading
+  const canImportPaste = tab === "paste" && pasteText.trim().length > 0 && !isLoading
 
   return (
-    <div className="rounded-xl border border-border bg-card">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="px-6 py-4 border-b border-border">
-        <h2 className="text-base font-medium">Import from LinkedIn</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Add your work history in seconds
-        </p>
-      </div>
-
-      {/* ── Body ────────────────────────────────────────────────────────────── */}
-      <div className="px-6 py-5 space-y-5">
-        {/* Steps */}
-        <ol className="space-y-5">
+    <div className="space-y-4">
+      {/* ── Steps panel ──────────────────────────────────────────────────────── */}
+      <div className="bg-zinc-900 rounded-lg p-4">
+        <div className="flex items-start gap-2">
           {/* Step 1 */}
-          <li className="flex items-start gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold mt-0.5">
+          <div className="flex-1 flex flex-col items-center text-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white text-xs font-semibold">
               1
-            </span>
-            <div className="space-y-1.5 pt-0.5">
-              <p className="text-sm font-medium leading-none">
-                Go to your LinkedIn profile
-              </p>
-              <a
-                href="https://www.linkedin.com/in/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-              >
-                Open LinkedIn
-                <ExternalLink className="h-3 w-3" />
-              </a>
             </div>
-          </li>
+            <ExternalLink className="h-4 w-4 text-zinc-400" strokeWidth={1.75} />
+            <p className="text-xs font-semibold text-zinc-200 uppercase tracking-wide">
+              Go to LinkedIn
+            </p>
+            <p className="text-[11px] text-zinc-500 leading-tight">
+              Open your LinkedIn profile in a browser
+            </p>
+          </div>
+
+          <ChevronRight className="h-4 w-4 text-zinc-600 mt-5 shrink-0" strokeWidth={1.75} />
 
           {/* Step 2 */}
-          <li className="flex items-start gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold mt-0.5">
+          <div className="flex-1 flex flex-col items-center text-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white text-xs font-semibold">
               2
-            </span>
-            <div className="pt-0.5">
-              <p className="text-sm font-medium leading-none">
-                Click More → Save to PDF
-              </p>
-              <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                On your profile, click the{" "}
-                <span className="font-medium text-foreground">More</span> button
-                below your name, then select{" "}
-                <span className="font-medium text-foreground">Save to PDF</span>
-                .
-              </p>
             </div>
-          </li>
+            <Download className="h-4 w-4 text-zinc-400" strokeWidth={1.75} />
+            <p className="text-xs font-semibold text-zinc-200 uppercase tracking-wide">
+              Save to PDF
+            </p>
+            <p className="text-[11px] text-zinc-500 leading-tight">
+              Click More → Save to PDF on your profile page
+            </p>
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2 text-amber-400 text-[10px] leading-snug text-left w-full">
+              On mobile: tap the share icon → Save as PDF. On desktop: click the
+              More... button under your name.
+            </div>
+          </div>
+
+          <ChevronRight className="h-4 w-4 text-zinc-600 mt-5 shrink-0" strokeWidth={1.75} />
 
           {/* Step 3 */}
-          <li className="flex items-start gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold mt-0.5">
+          <div className="flex-1 flex flex-col items-center text-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white text-xs font-semibold">
               3
-            </span>
-            <div className="w-full pt-0.5 space-y-3">
-              <p className="text-sm font-medium leading-none">
-                Upload your LinkedIn PDF
-              </p>
+            </div>
+            <Upload className="h-4 w-4 text-zinc-400" strokeWidth={1.75} />
+            <p className="text-xs font-semibold text-zinc-200 uppercase tracking-wide">
+              Drop it here
+            </p>
+            <p className="text-[11px] text-zinc-500 leading-tight">
+              Drag the file below or click to browse
+            </p>
+          </div>
+        </div>
+      </div>
 
-              {/* Upload zone — idle or error */}
-              {showUploadZone && (
-                <>
+      {/* ── Import zone ──────────────────────────────────────────────────────── */}
+      {!showResult ? (
+        <div className="bg-zinc-900 rounded-lg overflow-hidden">
+          {/* Tabs */}
+          <div className="flex border-b border-zinc-800">
+            <button
+              type="button"
+              onClick={() => setTab("pdf")}
+              className={`px-4 py-3 text-sm font-medium transition-colors ${
+                tab === "pdf"
+                  ? "text-zinc-100 border-b-2 border-sky-500 -mb-px"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Upload PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("paste")}
+              className={`px-4 py-3 text-sm font-medium transition-colors ${
+                tab === "paste"
+                  ? "text-zinc-100 border-b-2 border-sky-500 -mb-px"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Paste Text
+            </button>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {tab === "pdf" ? (
+              <>
+                {!file ? (
+                  /* Drop zone */
                   <div
                     role="button"
                     tabIndex={0}
@@ -229,113 +292,183 @@ export function LinkedInImportWidget() {
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
-                    className={`flex flex-col items-center justify-center gap-2.5 rounded-lg border-2 border-dashed p-6 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    className={`flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${
                       isDragging
-                        ? "border-primary bg-primary/5"
-                        : "border-muted-foreground/25 bg-muted/30 hover:border-muted-foreground/40 hover:bg-muted/50"
+                        ? "border-sky-500 bg-sky-500/10"
+                        : "border-zinc-700 hover:border-sky-500/50 hover:bg-sky-500/5"
                     }`}
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                      <Upload className="h-5 w-5 text-muted-foreground" />
+                    <UploadCloud
+                      className={`h-8 w-8 transition-colors ${
+                        isDragging ? "text-sky-400" : "text-zinc-500"
+                      }`}
+                      strokeWidth={1.75}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-zinc-200">
+                        Drop your LinkedIn PDF here
+                      </p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        or click to browse — PDF only, max 5MB
+                      </p>
                     </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-foreground">
-                        {fileName && importState === "error"
-                          ? fileName
-                          : "Drop PDF here or click to upload"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        PDF · Max 10MB
-                      </p>
+                  </div>
+                ) : (
+                  /* File chip */
+                  <div className="flex items-center justify-between bg-zinc-800 rounded-md px-3 py-2">
+                    <div className="flex items-center gap-2 text-sm text-zinc-200 min-w-0">
+                      <Upload
+                        className="h-4 w-4 shrink-0 text-zinc-400"
+                        strokeWidth={1.75}
+                      />
+                      <span className="truncate">{file.name}</span>
+                      <span className="text-zinc-500 shrink-0">
+                        {formatBytes(file.size)}
+                      </span>
                     </div>
+                    <button
+                      type="button"
+                      aria-label="Remove file"
+                      onClick={() => {
+                        setFile(null)
+                        setFileError(null)
+                      }}
+                      className="ml-2 shrink-0 text-zinc-500 hover:text-zinc-200 transition-colors"
+                    >
+                      <X className="h-4 w-4" strokeWidth={1.75} />
+                    </button>
                   </div>
+                )}
 
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/pdf"
-                    className="hidden"
-                    onChange={handleInputChange}
-                  />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFileSelect(f)
+                    e.target.value = ""
+                  }}
+                />
 
-                  {error && (
-                    <p className="text-xs text-destructive">{error}</p>
-                  )}
-                </>
-              )}
+                {fileError && (
+                  <p className="text-xs text-red-400">{fileError}</p>
+                )}
 
-              {/* Loading state */}
-              {isLoading && (
-                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      {importState === "uploading"
-                        ? "Reading PDF…"
-                        : "Analyzing your LinkedIn profile…"}
-                    </p>
-                    {importState === "extracting" && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        This takes 15–20 seconds
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Success state */}
-              {importState === "success" && result && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-green-600">
-                    <CheckCircle2 className="h-4 w-4 shrink-0" />
-                    <span>
-                      {result.newItemsAdded} new item
-                      {result.newItemsAdded !== 1 ? "s" : ""} added to your
-                      evidence library
-                    </span>
-                  </div>
-                  {result.duplicatesSkipped > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {result.duplicatesSkipped} already existed — skipped
-                    </p>
-                  )}
-                  {result.fieldsUpdated.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      Profile updated: {result.fieldsUpdated.join(", ")}
-                    </p>
-                  )}
-                  {result.requiresReview && (
-                    <p className="text-xs text-amber-600">
-                      Your profile has improvement opportunities — review
-                      suggested
-                    </p>
-                  )}
+                {canImportPdf && (
                   <button
                     type="button"
-                    onClick={handleRetry}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={handleImport}
+                    disabled={isLoading}
+                    className="w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: "#d90009" }}
                   >
-                    <RotateCcw className="h-3 w-3" />
-                    Import another
+                    Extract & Import
                   </button>
-                </div>
-              )}
-            </div>
-          </li>
-        </ol>
+                )}
+              </>
+            ) : (
+              /* Paste tab */
+              <>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  disabled={isLoading}
+                  placeholder="Paste your full LinkedIn profile text here — include Experience, Education, and Skills sections…"
+                  className="w-full h-40 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
+                />
 
-        {/* Primary CTA — only visible when user can act */}
-        {showUploadZone && (
+                {canImportPaste && (
+                  <button
+                    type="button"
+                    onClick={handleImport}
+                    disabled={isLoading}
+                    className="w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: "#d90009" }}
+                  >
+                    Extract & Import
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Loading overlay (replaces button during extraction) */}
+            {isLoading && (
+              <button
+                type="button"
+                disabled
+                className="w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white opacity-70 flex items-center justify-center gap-2"
+                style={{ backgroundColor: "#d90009" }}
+              >
+                <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+                Extracting & importing…
+              </button>
+            )}
+          </div>
+        </div>
+      ) : importState === "success" && result ? (
+        /* ── Success card ──────────────────────────────────────────────────── */
+        <div className="border border-emerald-500/40 bg-emerald-500/5 rounded-lg p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2
+              className="h-5 w-5 shrink-0 text-emerald-400"
+              strokeWidth={1.75}
+            />
+            <p className="text-sm font-semibold text-zinc-100">
+              LinkedIn imported
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-zinc-200">
+              {userProfile.full_name
+                ? `Added to ${userProfile.full_name}'s evidence library`
+                : "Added to your evidence library"}
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {result.newItemsAdded} new item
+              {result.newItemsAdded !== 1 ? "s" : ""} added
+              {result.duplicatesSkipped > 0
+                ? ` · ${result.duplicatesSkipped} already existed`
+                : ""}
+            </p>
+          </div>
+          {result.requiresReview && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2 text-amber-400 text-xs leading-snug">
+              {userProfile.headline
+                ? `Based on your profile as ${userProfile.headline}, your profile has improvement opportunities — review suggested`
+                : "Your profile has improvement opportunities — review suggested"}
+            </div>
+          )}
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-            className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            onClick={handleReset}
+            className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100 underline transition-colors"
           >
-            Import LinkedIn Profile
+            <RotateCcw className="h-3 w-3" strokeWidth={1.75} />
+            Import again
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        /* ── Error card ────────────────────────────────────────────────────── */
+        <div className="border border-red-500/40 bg-red-500/5 rounded-lg p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle
+              className="h-5 w-5 shrink-0 text-red-400"
+              strokeWidth={1.75}
+            />
+            <p className="text-sm font-semibold text-zinc-100">Import failed</p>
+          </div>
+          <p className="text-xs text-zinc-400">{errorMessage}</p>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-sm text-zinc-400 hover:text-zinc-100 underline transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
     </div>
   )
 }
