@@ -49,7 +49,7 @@ function LoginForm() {
   const [authMode, setAuthMode] = useState<'password' | 'magic'>('password')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/dashboard'
+  const redirectTo = searchParams.get('redirect') || '/jobs'
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault()
