@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { AnalyzeJobInputSchema } from "@/lib/schemas/job-intake"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
+import { checkSafety } from "@/lib/safety"
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,6 +26,11 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    }
+
+    const safetyResult = checkSafety([{ role: "user", content: job_url }], { userId: user.id })
+    if (!safetyResult.allowed) {
+      return NextResponse.json({ success: false, error: safetyResult.blockedResponse }, { status: 400 })
     }
 
     const result = await analyzeJobCore(job_url, supabase, user, request)

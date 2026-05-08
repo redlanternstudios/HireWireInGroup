@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server"
 import { parseResumeText } from "@/lib/resumeParser"
 import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
 import { extractEducationFromResumeText, buildEducationEvidenceRows } from "@/lib/resume/extractEducation"
+import { checkSafety } from "@/lib/safety"
 
 export const maxDuration = 60
 
@@ -94,6 +95,11 @@ export async function POST(request: NextRequest) {
 
     if (!rawText || rawText.trim().length < 50) {
       return NextResponse.json({ error: "No resume text received or text too short." }, { status: 400 })
+    }
+
+    const safetyResult = checkSafety([{ role: "user", content: rawText }], { userId })
+    if (!safetyResult.allowed) {
+      return NextResponse.json({ error: safetyResult.blockedResponse }, { status: 400 })
     }
 
     // ── 2. Store raw record ──────────────────────────────────────────────────
