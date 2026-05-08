@@ -7,13 +7,19 @@ const SIZE_MAP: Record<string, number> = {
   xl: 220,
 }
 
+const VARIANT_FILTER: Record<string, string | undefined> = {
+  dark: undefined,
+  light: "brightness(0) invert(1)",
+  red: "brightness(0) saturate(100%) invert(13%) sepia(74%) saturate(3000%) hue-rotate(340deg) brightness(80%)",
+}
+
 export function HireWireLogo({
   className,
   variant = "dark",
   size = "md",
 }: {
   className?: string
-  variant?: "dark" | "light"
+  variant?: "dark" | "light" | "red"
   size?: "sm" | "md" | "lg" | "xl"
 }) {
   const width = SIZE_MAP[size] ?? 120
@@ -26,7 +32,7 @@ export function HireWireLogo({
       width={width}
       height={height}
       className={className}
-      style={variant === "light" ? { filter: "brightness(0) invert(1)" } : undefined}
+      style={VARIANT_FILTER[variant] ? { filter: VARIANT_FILTER[variant] } : undefined}
       priority
     />
   )
