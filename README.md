@@ -13,7 +13,7 @@ It helps users:
 
 - Next.js (App Router, TypeScript)
 - Supabase (Auth, Postgres, Storage)
-- Groq + Vercel AI SDK
+- Anthropic Claude via Vercel AI Gateway
 - Tailwind + shadcn/ui
 - pnpm
 
@@ -46,7 +46,8 @@ Fill in `.env.local` with real values for:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `GROQ_API_KEY`
+
+AI is served via Vercel AI Gateway (Anthropic Claude, zero-config — no explicit API key required in `.env.local` when deployed to Vercel).
 
 ### 3. Apply database migrations
 
@@ -69,7 +70,7 @@ Open http://localhost:3000.
 ## Required Services
 
 1. Supabase project
-2. Groq API key
+2. Vercel (for AI Gateway - provides Anthropic Claude access zero-config)
 
 Optional:
 1. Supabase Storage bucket named `avatars` (for profile image upload)

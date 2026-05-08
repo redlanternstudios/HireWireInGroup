@@ -29,6 +29,7 @@ import {
   type FitBand,
 } from "@/lib/canonical-evidence"
 import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { getAnalysisModelName, getProviderLabel } from "@/lib/ai/provider-config"
 import { buildJobAnalysisPrompt } from "@/lib/ai/prompts"
 import { parseJobPage, detectSource } from "@/lib/parsers"
 import { findJobByUrl } from "@/lib/queries/jobs"
@@ -432,7 +433,8 @@ Instructions: Extract whatever information is available. For any fields that can
     matched_skills: fitResult.reasoning.filter((r: string) => !r.includes("gap")),
     known_gaps: fitResult.reasoning.filter((r: string) => r.includes("gap")),
     analysis_version: "3.0-explainable",
-    analysis_model: "llama-3.3-70b-versatile",
+    analysis_model: getAnalysisModelName(),
+    analysis_provider: getProviderLabel(),
   })
   if (analysisError) console.error("Analysis insert error:", analysisError)
 

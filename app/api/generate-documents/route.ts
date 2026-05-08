@@ -4,6 +4,7 @@ import { generateText, Output } from "ai"
 import { z } from "zod"
 import { createAdminClient, createClient } from "@/lib/supabase/server"
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { getAnalysisModelName, getProviderLabel, getQualityCheckModelName } from "@/lib/ai/provider-config"
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
   BANNED_PHRASES,
@@ -1033,12 +1034,19 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       user_id: userId,
       job_id,
       document_type: "resume",
+      provider: getProviderLabel(),
+      generation_model: getAnalysisModelName(),
+      quality_check_model: getQualityCheckModelName(),
       invented_claims_found: qualityCheck.invented_claims,
       vague_bullets_found: qualityCheck.vague_bullets,
       ai_filler_found: qualityCheck.ai_filler,
       repeated_structures_found: qualityCheck.repeated_structures,
       unsupported_claims_found: qualityCheck.unsupported_claims,
+      banned_phrases_found: allBannedPhrases,
+      unsafe_metrics_found: unsafeMetricsFound.map(m => m.unsafe_claims).flat(),
+      evidence_ids_used: resumeEvidence.map((e: { id: string }) => e.id),
       passed: qualityPassed,
+      quality_score: qualityScore,
       issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length,
     })
 
