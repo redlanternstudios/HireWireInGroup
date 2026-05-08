@@ -1,6 +1,6 @@
 /**
  * Job Analysis Prompt
- * 
+ *
  * Used when parsing job postings from URLs.
  * Extracts structured data for scoring and document generation.
  */
@@ -38,5 +38,31 @@ Evaluate these dimensions based on the posting:
 - Product ownership: Level of product ownership expected
 
 Be precise. The extracted data will be used for resume tailoring and fit scoring.`
+
+const ROLE_FAMILY_OPTIONS = `- AI Technical Product Manager (AI products + technical depth)
+- Technical Product Manager (technical products, systems, APIs)
+- AI Product Manager (AI products, less technical)
+- Product Manager (general product roles)
+- Senior Product Manager (senior IC roles)
+- Systems Product Manager (infrastructure, platform)
+- Workflow Product Manager (automation, process)
+- Analytics Product Manager (data, analytics products)
+- Product Owner (scrum-focused)
+- Program Manager (coordination, delivery)
+- Other (doesn't fit above)`
+
+export function buildJobAnalysisPrompt(pageContent: string): string {
+  return `Analyze this job posting and extract structured information.
+
+Be precise and extract only what is explicitly stated. Do not invent or assume information.
+
+Role family options for categorization:
+${ROLE_FAMILY_OPTIONS}
+
+Job posting content:
+${pageContent}
+
+Extract the job details following the schema.`
+}
 
 // Schema is defined in the route file as it depends on zod

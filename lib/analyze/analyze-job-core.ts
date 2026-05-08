@@ -29,6 +29,7 @@ import {
   type FitBand,
 } from "@/lib/canonical-evidence"
 import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { buildJobAnalysisPrompt } from "@/lib/ai/prompts"
 import { parseJobPage, detectSource } from "@/lib/parsers"
 import { findJobByUrl } from "@/lib/queries/jobs"
 import { linkJobToCompany } from "@/lib/company-utils"
@@ -242,27 +243,7 @@ Instructions: Extract whatever information is available. For any fields that can
   const analysisResult = await generateText({
     model: CLAUDE_MODELS.SONNET,
     output: Output.object({ schema: JobAnalysisSchema }),
-    prompt: `Analyze this job posting and extract structured information.
-
-Be precise and extract only what is explicitly stated. Do not invent or assume information.
-
-Role family options for categorization:
-- AI Technical Product Manager (AI products + technical depth)
-- Technical Product Manager (technical products, systems, APIs)
-- AI Product Manager (AI products, less technical)
-- Product Manager (general product roles)
-- Senior Product Manager (senior IC roles)
-- Systems Product Manager (infrastructure, platform)
-- Workflow Product Manager (automation, process)
-- Analytics Product Manager (data, analytics products)
-- Product Owner (scrum-focused)
-- Program Manager (coordination, delivery)
-- Other (doesn't fit above)
-
-Job posting content:
-${pageContent}
-
-Extract the job details following the schema.`,
+    prompt: buildJobAnalysisPrompt(pageContent),
   })
   const analysis = analysisResult.experimental_output!
 

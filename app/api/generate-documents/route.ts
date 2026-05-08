@@ -40,6 +40,12 @@ import {
   getTemplateGuidance,
 } from "@/lib/resume-templates"
 import { sanitizeInput } from "@/lib/safety"
+import {
+  buildEvidenceMappingPrompt,
+  buildResumeGenerationPrompt,
+  buildCoverLetterPrompt,
+  buildQualityCheckPrompt,
+} from "@/lib/ai/prompts"
 
 // Helper for retry with exponential backoff (handles 429 rate limits)
 async function withRetry<T>(
@@ -613,22 +619,7 @@ NOTE: The candidate provided this additional context to address gaps. Use this i
   const evidenceMapResult = await withRetry(() => generateText({
     model: CLAUDE_MODELS.SONNET,
     output: Output.object({ schema: EvidenceMapSchema }),
-    prompt: `Analyze the match between this candidate and job opportunity.
-
-${profileContext}
-
-${evidenceContext}
-
-${jobContext}
-
-Create an evidence map that:
-1. Identifies skills and tools from the profile that match job requirements
-2. Selects the most relevant work experiences (include evidence IDs when referencing evidence items)
-3. Notes any gaps in qualifications
-4. Provides an honest fit score
-5. Calculate what percentage of REQUIRED qualifications are covered
-
-Be conservative - only include matches that are clearly supported by the evidence. Do not exaggerate or invent connections.`,
+    prompt: buildEvidenceMappingPrompt(profileContext, evidenceContext, jobContext),
   }))
   const generatedEvidenceMap = evidenceMapResult.experimental_output!
 
@@ -682,54 +673,17 @@ Be conservative - only include matches that are clearly supported by the evidenc
   const resumeResult = await withRetry(() => generateText({
     model: CLAUDE_MODELS.SONNET,
     output: Output.object({ schema: ResumeWithProvenanceSchema }),
-    prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
-
-${profileContext}
-
-${evidenceContext}
-
-${jobContext}
-
-MATCH CONTEXT:
-Skills: ${generatedEvidenceMap.matched_skills.join(", ")}
-Tools: ${generatedEvidenceMap.matched_tools.join(", ")}
-Gaps: ${generatedEvidenceMap.gaps.join(", ")}
-
-${strategyPrompt}
-
-WRITING RULES:
-1. Link every bullet to a specific evidence ID
-2. Use only facts from the evidence - never invent
-3. Start bullets with strong verbs (Built, Led, Shipped, Launched)
-4. Include real metrics from evidence when available
-5. Write like a human professional would - confident but not robotic
-6. If pre-approved bullets exist in evidence, use them directly
-
-QUANTIFICATION POLICY - CRITICAL:
-ALLOWED metrics:
-- Numbers explicitly stated in the evidence (exact amounts, percentages, counts)
-- Deterministic derivations ("team of 5 across 3 regions")
-- Factual counts from evidence (number of products, countries, users if stated)
-
-NOT ALLOWED - DO NOT INVENT:
-- Percentages like "reduced churn by 25%" unless explicitly in evidence
-- Time savings like "saved 40 hours/week" unless explicitly in evidence
-- Revenue impact like "generated $2M" unless explicitly in evidence
-- Improvement claims like "improved efficiency by 30%" unless explicitly in evidence
-
-IF NO METRIC IN EVIDENCE, use qualitative language instead:
-- "Reduced manual work" (not "reduced by 60%")
-- "Improved visibility" (not "increased by 45%")
-- "Strengthened stakeholder alignment" (not "improved satisfaction by 90%")
-- "Accelerated delivery" (not "reduced time by 50%")
-
-KEEP IT SPECIFIC:
-- Use exact numbers ONLY when in evidence: "team of 5" not "team"
-- Name tools: "React, PostgreSQL" not "modern stack"
-- Include scale ONLY if in evidence: "50K users" not "users"
-- Preserve industry: "B2B fintech" not "software"
-
-Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to evidence.`,
+    prompt: buildResumeGenerationPrompt(
+      profileContext,
+      evidenceContext,
+      jobContext,
+      {
+        skills: generatedEvidenceMap.matched_skills,
+        tools: generatedEvidenceMap.matched_tools,
+        gaps: generatedEvidenceMap.gaps,
+      },
+      strategyPrompt
+    ),
   }))
   const resumeWithProvenance = resumeResult.experimental_output!
 
@@ -779,28 +733,17 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
   const coverLetterResult = await withRetry(() => generateText({
     model: CLAUDE_MODELS.SONNET,
     output: Output.object({ schema: CoverLetterWithProvenanceSchema }),
-    prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
-
-${profileContext}
-
-EVIDENCE:
-${coverLetterEvidence.map((e: {
-  id: string;
-  source_title: string;
-  source_type: string;
-  company_name?: string;
-}) => `[${e.id}] ${e.source_title} at ${e.company_name || "N/A"}`).join("\n")}
-
-${jobContext}
-
-${strategyPrompt}
-
-TONE: Write like a sharp professional sending a letter to someone they respect.
-- Open directly with who you are and why you fit
-- Give 1-2 specific examples of relevant work (link to evidence IDs)
-- Close briefly - no groveling or excessive enthusiasm
-- Never say "I am excited to apply" or "I would be thrilled"
-- 3-4 paragraphs total`,
+    prompt: buildCoverLetterPrompt(
+      profileContext,
+      coverLetterEvidence.map((e: {
+        id: string;
+        source_title: string;
+        source_type: string;
+        company_name?: string;
+      }) => `[${e.id}] ${e.source_title} at ${e.company_name || "N/A"}`).join("\n"),
+      jobContext,
+      strategyPrompt
+    ),
   }))
   const coverLetterWithProvenance = coverLetterResult.experimental_output!
 
@@ -904,24 +847,10 @@ ${signatureBlock}`
     const qualityResult = await withRetry(() => generateText({
       model: CLAUDE_MODELS.HAIKU,
       output: Output.object({ schema: QualityCheckSchema }),
-      prompt: `You are a resume quality reviewer. Analyze the generated documents and return a JSON object with your findings.
-
-GENERATED RESUME:
-${formattedResume.slice(0, 2000)}
-
-GENERATED COVER LETTER:
-${formattedCoverLetter.slice(0, 1500)}
-
-Return a JSON object with these exact fields:
-- invented_claims: array of strings (claims that seem fabricated)
-- vague_bullets: array of strings (bullets too generic)
-- ai_filler: array of strings (AI-sounding phrases)
-- repeated_structures: array of strings (repetitive patterns)
-- unsupported_claims: array of strings (unverifiable claims)
-- overall_passed: boolean (true if quality is acceptable)
-- improvement_suggestions: array of strings (suggestions to improve)
-
-If no issues found, return empty arrays and overall_passed: true.`,
+      prompt: buildQualityCheckPrompt(
+        formattedResume.slice(0, 2000),
+        formattedCoverLetter.slice(0, 1500)
+      ),
     }))
     qualityCheck = qualityResult.experimental_output!
     } catch (qualityCheckError) {
