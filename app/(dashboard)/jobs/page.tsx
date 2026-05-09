@@ -93,11 +93,11 @@ export default async function JobsPage() {
             {jobList.map(job => {
               const isReady = job.generation_status === "complete" || !!job.generated_resume
               return (
-                <Link key={job.id} href={`/jobs/${job.id}`} className="block group">
-                  <div className="hw-card px-5 py-4 flex items-center justify-between gap-4">
+                <Link key={job.id} href={`/jobs/${job.id}`} className="block group cursor-pointer">
+                  <div className="hw-card px-5 py-4 flex items-center justify-between gap-4 cursor-pointer">
                     <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center shrink-0">
-                        <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                        <Briefcase className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
@@ -120,7 +120,7 @@ export default async function JobsPage() {
                         {STATUS_LABEL[job.status] ?? job.status}
                       </Badge>
                       <span className="text-[10px] text-muted-foreground hidden md:block">{timeAgo(job.created_at)}</span>
-                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                     </div>
                   </div>
                 </Link>
