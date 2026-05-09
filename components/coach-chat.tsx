@@ -64,7 +64,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialMessageSent = useRef(false)
 
-  const { messages, input: rawInput, setInput, handleSubmit: submitMessage, isLoading, append, error } = useChat({
+  const { messages, input, handleInputChange, handleSubmit: submitMessage, isLoading, append, error } = useChat({
     api: "/api/coach",
     body: {
       ...(jobContext ? {
@@ -82,7 +82,6 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
       console.error("[coach] useChat error:", err)
     },
   })
-  const input = rawInput ?? ""
 
 
 
@@ -279,7 +278,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
           <Textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything about your job search..."
             className={cn(
