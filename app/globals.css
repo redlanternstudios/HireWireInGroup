@@ -269,4 +269,47 @@
     height: 2px;
     background: hsl(var(--primary));
   }
+
+  /* Page shell — consistent page header pattern */
+  .hw-page {
+    @apply max-w-5xl mx-auto px-6 py-8 space-y-6;
+  }
+
+  .hw-page-header {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .hw-page-title {
+    @apply text-2xl font-semibold tracking-tight text-foreground;
+  }
+
+  .hw-page-subtitle {
+    @apply text-sm text-muted-foreground mt-0.5 leading-relaxed;
+  }
+
+  /* Stat pill */
+  .hw-stat {
+    @apply hw-card px-4 py-3 flex flex-col gap-0.5 min-w-[100px];
+  }
+
+  .hw-stat-value {
+    @apply text-2xl font-semibold tabular-nums text-foreground;
+  }
+
+  .hw-stat-label {
+    @apply text-xs text-muted-foreground uppercase tracking-wide font-medium;
+  }
+
+  /* Status badge variants */
+  .status-draft      { @apply bg-muted text-muted-foreground border-transparent; }
+  .status-analyzing  { @apply bg-amber-50 text-amber-700 border-amber-200; }
+  .status-ready      { @apply bg-emerald-50 text-emerald-700 border-emerald-200; }
+  .status-applied    { @apply bg-blue-50 text-blue-700 border-blue-200; }
+  .status-offered    { @apply bg-violet-50 text-violet-700 border-violet-200; }
+  .status-rejected   { @apply bg-rose-50 text-rose-700 border-rose-100; }
+
+  /* Empty state */
+  .hw-empty {
+    @apply hw-card flex flex-col items-center justify-center gap-3 py-16 text-center;
+  }
 }

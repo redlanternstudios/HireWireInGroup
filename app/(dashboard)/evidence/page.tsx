@@ -169,19 +169,19 @@ export default function EvidencePage() {
   }, {} as Record<string, number>)
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="hw-page">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="hw-page-header">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Evidence Library</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="hw-page-title">Evidence Library</h1>
+          <p className="hw-page-subtitle">
             {items.length} item{items.length !== 1 ? "s" : ""} — your professional proof points used in every analysis.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-[#7B1212] hover:bg-[#6a0f0f] text-white">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button className="hw-btn-primary gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
               Add evidence
             </Button>
           </DialogTrigger>
@@ -270,7 +270,7 @@ export default function EvidencePage() {
               </div>
               {saveError && <p className="text-sm text-red-600">{saveError}</p>}
               <Button
-                className="w-full bg-[#7B1212] hover:bg-[#6a0f0f] text-white"
+                className="w-full hw-btn-primary"
                 onClick={handleAdd}
                 disabled={saving}
               >
@@ -286,7 +286,7 @@ export default function EvidencePage() {
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setFilterType("all")}
-          className={`px-3 py-1 rounded-full text-sm border transition-colors ${filterType === "all" ? "bg-foreground text-background border-foreground" : "bg-background text-muted-foreground border-border hover:border-foreground"}`}
+          className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterType === "all" ? "bg-foreground text-background border-foreground" : "text-muted-foreground border-border hover:border-foreground"}`}
         >
           All ({items.length})
         </button>
@@ -295,7 +295,7 @@ export default function EvidencePage() {
             <button
               key={key}
               onClick={() => setFilterType(filterType === key ? "all" : key as SourceType)}
-              className={`px-3 py-1 rounded-full text-sm border transition-colors ${filterType === key ? "bg-foreground text-background border-foreground" : "bg-background text-muted-foreground border-border hover:border-foreground"}`}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterType === key ? "bg-foreground text-background border-foreground" : "text-muted-foreground border-border hover:border-foreground"}`}
             >
               {cfg.label} ({counts[key]})
             </button>
@@ -326,12 +326,12 @@ export default function EvidencePage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {filtered.map(item => {
             const cfg = SOURCE_TYPE_CONFIG[item.source_type]
             const Icon = cfg.icon
             return (
-              <div key={item.id} className="border border-border rounded-lg p-4 bg-card">
+              <div key={item.id} className="hw-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
                     <div className={`p-1.5 rounded border ${cfg.color} shrink-0`}>
