@@ -63,42 +63,42 @@ const SOURCE_TYPE_CONFIG: Record<SourceType, {
   label: string
   icon: React.ElementType
   accent: string
-  iconBg: string
+
   description: string
 }> = {
   work_experience: {
     label: "Work Experience",
     icon: Briefcase,
     accent: "text-blue-700",
-    iconBg: "bg-blue-50 border-blue-200",
+
     description: "Roles, responsibilities, and achievements from past positions",
   },
   education: {
     label: "Education",
     icon: GraduationCap,
     accent: "text-emerald-700",
-    iconBg: "bg-emerald-50 border-emerald-200",
+
     description: "Degrees, academic achievements, and coursework",
   },
   certification: {
     label: "Certifications",
     icon: Award,
     accent: "text-amber-700",
-    iconBg: "bg-amber-50 border-amber-200",
+
     description: "Professional credentials and completed programs",
   },
   skill: {
     label: "Skills",
     icon: Wrench,
     accent: "text-violet-700",
-    iconBg: "bg-violet-50 border-violet-200",
+
     description: "Technical and soft skills with demonstrated proficiency",
   },
   project: {
     label: "Projects",
     icon: FolderOpen,
     accent: "text-orange-700",
-    iconBg: "bg-orange-50 border-orange-200",
+
     description: "Side projects, open source work, and portfolio pieces",
   },
 }
@@ -343,9 +343,7 @@ export default function CareerContextPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="hw-empty">
-          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-            <Briefcase className="h-5 w-5 text-muted-foreground" />
-          </div>
+          <Briefcase className="h-5 w-5 text-muted-foreground" />
           <p className="text-sm font-medium text-foreground">
             {search ? "No entries match your search." : "No career context yet."}
           </p>

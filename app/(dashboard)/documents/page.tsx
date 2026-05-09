@@ -66,9 +66,7 @@ export default async function DocumentsPage() {
           {jobList.map(job => (
             <div key={job.id} className="hw-card px-5 py-4 flex items-center justify-between gap-4">
               <Link href={`/jobs/${job.id}`} className="flex items-center gap-4 min-w-0 flex-1 group">
-                <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center shrink-0">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </div>
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                     {job.role_title ?? "Untitled role"}

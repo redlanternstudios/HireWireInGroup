@@ -108,9 +108,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* Processing state */}
       {stillProcessing && (
         <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
-            <RefreshCw className="h-5 w-5 text-amber-600 animate-spin" />
-          </div>
+          <RefreshCw className="h-5 w-5 text-amber-600 animate-spin" />
           <div>
             <p className="text-sm font-semibold">Analysis in progress</p>
             <p className="text-xs text-muted-foreground mt-1">This usually takes 15–30 seconds.</p>
@@ -240,9 +238,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* No analysis yet */}
       {!stillProcessing && !isAnalyzed && (
         <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
-          </div>
+          <AlertTriangle className="h-5 w-5 text-muted-foreground" />
           <div>
             <p className="text-sm font-semibold">Analysis not available</p>
             <p className="text-xs text-muted-foreground mt-1">

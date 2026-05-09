@@ -95,10 +95,8 @@ export default async function JobsPage() {
               return (
                 <Link key={job.id} href={`/jobs/${job.id}`} className="block group cursor-pointer">
                   <div className="hw-card px-5 py-4 flex items-center justify-between gap-4 cursor-pointer">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                        <Briefcase className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Briefcase className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                           {job.role_title ?? "Untitled role"}
