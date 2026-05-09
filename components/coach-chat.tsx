@@ -1,16 +1,17 @@
 "use client"
 
-import { useRef, useEffect } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { useChat } from "@ai-sdk/react"
+import { TextStreamChatTransport, UIMessage, isTextUIPart } from "ai"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { 
-  Send, 
-  Sparkles, 
-  User, 
+import {
+  Send,
+  Sparkles,
+  User,
   Loader2,
   Lightbulb,
   FileText,
@@ -54,41 +55,40 @@ const quickActions = [
   { label: "Build my evidence", icon: Lightbulb, prompt: "Help me add to my evidence library. Ask me about my achievements and experiences." },
 ]
 
-// Helper to extract text from message (v4 uses content directly)
-function getMessageText(message: { content?: string }): string {
-  return message.content || ""
+function getMessageText(message: UIMessage): string {
+  return (message.parts ?? []).filter(isTextUIPart).map(p => p.text).join('')
 }
 
 export function CoachChat({ className, conversationId, compact = false, onClose, jobContext, gapContext, initialMessage }: CoachChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialMessageSent = useRef(false)
+  const [input, setInput] = useState('')
 
-  const { messages, input, setInput, handleSubmit: submitMessage, isLoading, append, error } = useChat({
-    api: "/api/coach",
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const transport = useMemo(() => new TextStreamChatTransport({
+    api: '/api/coach',
     body: {
-      ...(jobContext ? {
-        jobContext: {
-          jobId: jobContext.jobId,
-          title: jobContext.title,
-          company: jobContext.company,
-          score: jobContext.score,
-          status: jobContext.status,
-        }
-      } : {}),
+      ...(jobContext ? { jobContext } : {}),
       ...(gapContext ? { gapContext } : {}),
     },
+  }), [])
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport,
     onError: (err) => {
       console.error("[v0] Coach useChat error:", err)
     },
   })
 
+  const isLoading = status === 'submitted' || status === 'streaming'
+
   // Debug logging
   useEffect(() => {
-    console.log("[v0] CoachChat mounted", { 
-      hasJobContext: !!jobContext, 
+    console.log("[v0] CoachChat mounted", {
+      hasJobContext: !!jobContext,
       hasGapContext: !!gapContext,
-      hasInitialMessage: !!initialMessage 
+      hasInitialMessage: !!initialMessage
     })
   }, [])
 
@@ -96,9 +96,9 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   useEffect(() => {
     if (initialMessage && !initialMessageSent.current && messages.length === 0) {
       initialMessageSent.current = true
-      append({ role: "user", content: initialMessage })
+      sendMessage({ text: initialMessage })
     }
-  }, [initialMessage, messages.length, append])
+  }, [initialMessage, messages.length, sendMessage])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -112,13 +112,14 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
     e.preventDefault()
     if (!input.trim() || isLoading) return
     console.log("[v0] CoachChat submitting message:", input.substring(0, 50))
-    submitMessage(e)
+    sendMessage({ text: input })
+    setInput('')
   }
 
   // Handle quick action click
   const handleQuickAction = (prompt: string) => {
     if (isLoading) return
-    append({ role: "user", content: prompt })
+    sendMessage({ text: prompt })
   }
 
   // Handle keyboard shortcuts
@@ -132,7 +133,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   return (
     <div className={cn("flex flex-col h-full", className)}>
       {/* Messages area */}
-      <ScrollArea 
+      <ScrollArea
         ref={scrollRef as React.RefObject<HTMLDivElement>}
         className={cn("flex-1 px-4", compact ? "py-2" : "py-4")}
       >
@@ -148,7 +149,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
               <div className="flex-1 space-y-2">
                 <p className="text-sm font-medium">HireWire Coach</p>
                 <p className="text-sm text-muted-foreground">
-                  Hey! I&apos;m your personal career coach. I can help you with job search strategy, 
+                  Hey! I&apos;m your personal career coach. I can help you with job search strategy,
                   interview prep, building your evidence library, and improving your application materials.
                 </p>
                 {jobContext ? (
@@ -193,7 +194,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
           {messages.map((message) => {
             const isUser = message.role === "user"
             const text = getMessageText(message)
-            
+
             if (!text) return null
 
             return (
@@ -264,7 +265,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
               </div>
             </div>
           )}
-          
+
           {/* Error display */}
           {error && (
             <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg mt-4">
@@ -290,14 +291,14 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything about your job search..."
             className={cn(
-              "min-h-[40px] max-h-[120px] resize-none",
+              "min-h-10 max-h-30 resize-none",
               compact && "text-sm"
             )}
             rows={1}
             disabled={isLoading}
           />
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             size="icon"
             disabled={!input.trim() || isLoading}
             className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"

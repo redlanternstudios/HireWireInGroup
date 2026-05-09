@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
-import { streamText } from "ai"
+import { streamText, convertToModelMessages } from "ai"
 import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
 
 export const maxDuration = 60
@@ -41,10 +41,10 @@ export async function POST(request: Request) {
     const result = streamText({
       model: "openai/gpt-4o-mini",
       system: systemPrompt,
-      messages,
+      messages: await convertToModelMessages(messages ?? []),
     })
 
-    return result.toDataStreamResponse()
+    return result.toTextStreamResponse()
   } catch (error) {
     console.error("[api/coach] error:", error)
     return new Response("Internal Server Error", { status: 500 })
