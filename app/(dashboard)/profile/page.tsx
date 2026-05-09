@@ -18,8 +18,8 @@ interface ProfileData {
   location: string | null
   summary: string | null
   skills: string[] | null
-  linkedin_url: string | null
-  portfolio_url: string | null
+  website_url: string | null
+  github_url: string | null
 }
 
 export default function ProfilePage() {
@@ -31,8 +31,8 @@ export default function ProfilePage() {
     location: "",
     summary: "",
     skills: [],
-    linkedin_url: "",
-    portfolio_url: "",
+    website_url: "",
+    github_url: "",
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -47,7 +47,7 @@ export default function ProfilePage() {
 
     const { data } = await supabase
       .from("user_profile")
-      .select("full_name, email, phone, location, summary, skills, linkedin_url, portfolio_url")
+      .select("full_name, email, phone, location, summary, skills, website_url, github_url")
       .eq("user_id", user.id)
       .single()
 
@@ -59,8 +59,8 @@ export default function ProfilePage() {
         location: data.location || "",
         summary: data.summary || "",
         skills: data.skills || [],
-        linkedin_url: data.linkedin_url || "",
-        portfolio_url: data.portfolio_url || "",
+        website_url: data.website_url || "",
+        github_url: data.github_url || "",
       })
     }
     setLoading(false)
@@ -86,8 +86,8 @@ export default function ProfilePage() {
           location: profile.location,
           summary: profile.summary,
           skills: profile.skills,
-          linkedin_url: profile.linkedin_url,
-          portfolio_url: profile.portfolio_url,
+          website_url: profile.website_url,
+          github_url: profile.github_url,
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" })
 
@@ -244,21 +244,21 @@ export default function ProfilePage() {
           <p className="text-xs uppercase tracking-widest text-muted-foreground font-mono mb-4">Links</p>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="linkedin_url">LinkedIn</Label>
+              <Label htmlFor="website_url">Portfolio / Website</Label>
               <Input
-                id="linkedin_url"
-                value={profile.linkedin_url || ""}
-                onChange={e => setProfile(p => ({ ...p, linkedin_url: e.target.value }))}
-                placeholder="https://linkedin.com/in/yourname"
+                id="website_url"
+                value={profile.website_url || ""}
+                onChange={e => setProfile(p => ({ ...p, website_url: e.target.value }))}
+                placeholder="https://yoursite.com"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="portfolio_url">Portfolio / Website</Label>
+              <Label htmlFor="github_url">GitHub</Label>
               <Input
-                id="portfolio_url"
-                value={profile.portfolio_url || ""}
-                onChange={e => setProfile(p => ({ ...p, portfolio_url: e.target.value }))}
-                placeholder="https://yoursite.com"
+                id="github_url"
+                value={profile.github_url || ""}
+                onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
+                placeholder="https://github.com/yourusername"
               />
             </div>
           </div>

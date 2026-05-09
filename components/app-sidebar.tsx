@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils"
 // Pipeline navigation - main workflow
 // NOTE: Removed placeholder pages that aren't wired (Companies, Templates)
 const pipelineNav = [
-  { name: "Home", href: "/", icon: Grid2X2 },
+  { name: "Home", href: "/dashboard", icon: Grid2X2 },
   { name: "Coach", href: "/coach", icon: Sparkles, premium: true },
   { name: "All Jobs", href: "/jobs", icon: Briefcase },
   { name: "Ready to Apply", href: "/ready-queue", icon: CheckSquare },
@@ -62,8 +62,8 @@ export function AppSidebar() {
   const pathname = usePathname()
 
   const renderNavItem = (item: { name: string; href: string; icon: React.ComponentType<{ className?: string }>; premium?: boolean }) => {
-    const isActive = pathname === item.href || 
-      (item.href !== "/" && pathname.startsWith(item.href))
+    const isActive = pathname === item.href ||
+      (item.href !== "/dashboard" && item.href !== "/" && pathname.startsWith(item.href))
     return (
       <SidebarMenuItem key={item.name}>
         <SidebarMenuButton 
@@ -98,7 +98,7 @@ export function AppSidebar() {
         <DiagonalStripes position="top-left" size="sm" variant="black" opacity={0.08} />
         <DiagonalStripes position="bottom-right" size="sm" variant="black" opacity={0.08} />
         
-        <Link href="/" className="flex items-center justify-center relative z-10">
+        <Link href="/dashboard" className="flex items-center justify-center relative z-10">
           <HireWireLogo variant="red" size="md" />
         </Link>
       </SidebarHeader>
