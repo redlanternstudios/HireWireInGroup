@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { streamText, convertToModelMessages } from "ai"
+import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
 
 export const maxDuration = 60
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     const result = streamText({
-      model: "openai/gpt-4o-mini",
+      model: CLAUDE_MODELS.HAIKU,
       system: systemPrompt,
       messages: await convertToModelMessages(messages ?? []),
     })
