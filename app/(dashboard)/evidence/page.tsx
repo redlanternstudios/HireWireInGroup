@@ -312,19 +312,19 @@ export default function CareerContextPage() {
       {items.length > 0 && (
         <div className="flex gap-3 flex-wrap">
           <div className="hw-stat">
-            <span className="hw-stat-value">{items.length}</span>
+            <span className="hw-stat-value text-primary">{items.length}</span>
             <span className="hw-stat-label">Total entries</span>
           </div>
           <div className="hw-stat">
-            <span className="hw-stat-value">{highConfidenceCount}</span>
+            <span className="hw-stat-value text-emerald-600">{highConfidenceCount}</span>
             <span className="hw-stat-label">Strong proof points</span>
           </div>
           <div className="hw-stat">
-            <span className="hw-stat-value">{items.filter(i => (i.outcomes || []).length > 0 || (i.approved_achievement_bullets || []).length > 0).length}</span>
+            <span className="hw-stat-value text-blue-600">{items.filter(i => (i.outcomes || []).length > 0 || (i.approved_achievement_bullets || []).length > 0).length}</span>
             <span className="hw-stat-label">With outcomes</span>
           </div>
           <div className="hw-stat">
-            <span className="hw-stat-value">{totalActive}</span>
+            <span className="hw-stat-value text-amber-600">{totalActive}</span>
             <span className="hw-stat-label">Categories</span>
           </div>
         </div>
