@@ -20,7 +20,7 @@ export default async function AnalyticsPage() {
 
   const { data: jobs } = await supabase
     .from("jobs")
-    .select("status, created_at, overall_score")
+    .select("id, status, created_at, job_scores(overall_score)")
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
@@ -29,8 +29,18 @@ export default async function AnalyticsPage() {
   const total = jobList.length
   const applied = jobList.filter(j => ["applied","interviewing","offered","rejected"].includes(j.status)).length
   const generated = jobList.filter(j => j.status !== "draft" && j.status !== "analyzing" && j.status !== "queued").length
-  const avgScore = jobList.filter(j => j.overall_score).length
-    ? Math.round(jobList.filter(j => j.overall_score).reduce((a, j) => a + (j.overall_score ?? 0), 0) / jobList.filter(j => j.overall_score).length)
+
+  const scoredJobs = jobList.filter(j => {
+    const scores = j.job_scores
+    const score = Array.isArray(scores) ? scores[0]?.overall_score : (scores as { overall_score?: number } | null)?.overall_score
+    return typeof score === "number"
+  })
+  const avgScore = scoredJobs.length
+    ? Math.round(scoredJobs.reduce((a, j) => {
+        const scores = j.job_scores
+        const score = Array.isArray(scores) ? scores[0]?.overall_score : (scores as { overall_score?: number } | null)?.overall_score
+        return a + (score ?? 0)
+      }, 0) / scoredJobs.length)
     : null
 
   return (

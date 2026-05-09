@@ -22,7 +22,7 @@ export default async function DashboardPage() {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (profile && profile.onboarding_complete === false) {
+  if (!profile || profile.onboarding_complete === false) {
     redirect('/onboarding')
   }
 

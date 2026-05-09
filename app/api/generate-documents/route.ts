@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { generateText, Output } from "ai"
 import { z } from "zod"
-import { createAdminClient, createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
@@ -288,24 +288,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Auth with getSession() fallback for v0 sandbox
     const userClient = await createClient()
-    let userId: string | undefined
     const { data: { user } } = await userClient.auth.getUser()
-    if (user) {
-      userId = user.id
-    } else {
-      const { data: { session } } = await userClient.auth.getSession()
-      if (session?.user) userId = session.user.id
-    }
-    if (!userId) {
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       )
     }
+    const userId = user.id
 
-    const supabase = createAdminClient()
+    // Use user-scoped client for all reads and writes (RLS enforced)
+    const supabase = userClient
 
     // === PLAN ENFORCEMENT ===
     // Check user's plan and generation count this month
