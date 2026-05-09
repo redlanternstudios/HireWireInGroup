@@ -371,13 +371,9 @@ export default function CareerContextPage() {
                   aria-expanded={!isCollapsed}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`p-1.5 rounded border ${cfg.iconBg}`}>
-                      <Icon className={`h-3.5 w-3.5 ${cfg.accent}`} />
-                    </div>
-                    <div>
-                      <span className="text-sm font-semibold text-foreground">{cfg.label}</span>
-                      <span className="text-xs text-muted-foreground ml-2">{sectionItems.length} {sectionItems.length === 1 ? "entry" : "entries"}</span>
-                    </div>
+                    <Icon className={`h-5 w-5 ${cfg.accent} shrink-0`} strokeWidth={1.75} />
+                    <span className="text-sm font-semibold text-foreground">{cfg.label}</span>
+                    <span className="text-xs text-muted-foreground">{sectionItems.length} {sectionItems.length === 1 ? "entry" : "entries"}</span>
                   </div>
                   {isCollapsed
                     ? <ChevronRight className="h-4 w-4 text-muted-foreground" />
