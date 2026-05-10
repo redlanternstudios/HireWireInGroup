@@ -1,174 +1,152 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { getProfileLinks } from '@/lib/actions/profile-links'
-import { ProfileLinksWidget } from '@/components/profile-links-widget'
-import { LinkedInImportWidget } from '@/components/dashboard/LinkedInImportWidget'
+import { createClient } from "@/lib/supabase/server"
+import { redirect } from "next/navigation"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { LinkedInImportWidget } from "@/components/dashboard/LinkedInImportWidget"
+import { getProfileLinks } from "@/lib/actions/profile-links"
+import { Plus, Briefcase, CheckSquare, Send, FileText, TrendingUp, Sparkles, ArrowRight } from "lucide-react"
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return "Today"
+  if (days === 1) return "Yesterday"
+  if (days < 7) return `${days}d ago`
+  return `${Math.floor(days / 7)}w ago`
+}
+
+const STATUS_CLASS: Record<string, string> = {
+  draft: "status-draft", analyzing: "status-analyzing", analyzed: "status-analyzing",
+  generating: "status-analyzing", ready: "status-ready", applied: "status-applied",
+  interviewing: "status-applied", offered: "status-offered", rejected: "status-rejected",
+}
+const STATUS_LABEL: Record<string, string> = {
+  draft: "Draft", analyzing: "Analyzing", analyzed: "Analyzed", generating: "Generating",
+  ready: "Ready", applied: "Applied", interviewing: "Interviewing", offered: "Offered", rejected: "Rejected",
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect("/login")
 
-  if (!user) {
-    redirect('/login')
-  }
+  const [{ data: profile }, { data: jobs }, profileLinksResult] = await Promise.all([
+    supabase.from("user_profile").select("full_name, onboarding_complete, headline").eq("user_id", user.id).maybeSingle(),
+    supabase.from("jobs").select("id, role_title, company_name, status, generation_status, created_at").eq("user_id", user.id).is("deleted_at", null).order("created_at", { ascending: false }).limit(6),
+    getProfileLinks(),
+  ])
 
-  // Check onboarding status — onboarding_complete lives on user_profile
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('full_name, onboarding_complete')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (profile && profile.onboarding_complete === false) {
-    redirect('/onboarding')
-  }
-
-  // Load recent jobs for the job list
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select('id, role_title, company_name, status, generated_resume, generation_timestamp, created_at')
-    .eq('user_id', user.id)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .limit(20)
-
-  const { links: profileLinks } = await getProfileLinks()
+  if (!profile || profile.onboarding_complete === false) redirect("/onboarding")
 
   const jobList = jobs ?? []
-  const generatedCount = jobList.filter(j => j.generated_resume).length
-  const appliedCount = jobList.filter(j => j.status === 'applied').length
-
-  const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'there'
-
-  const STATUS_LABELS: Record<string, string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    analyzing: 'Analyzing…',
-    analyzed: 'Analyzed',
-    generating: 'Generating…',
-    ready: 'Ready',
-    needs_review: 'Needs review',
-    applied: 'Applied',
-    interviewing: 'Interviewing',
-    offered: 'Offered',
-    rejected: 'Rejected',
-    archived: 'Archived',
-    error: 'Error',
-  }
-
-  const STATUS_COLORS: Record<string, string> = {
-    ready: 'bg-green-100 text-green-800',
-    needs_review: 'bg-yellow-100 text-yellow-800',
-    generating: 'bg-blue-100 text-blue-800',
-    analyzing: 'bg-blue-100 text-blue-800',
-    applied: 'bg-purple-100 text-purple-800',
-    interviewing: 'bg-purple-100 text-purple-800',
-    offered: 'bg-green-100 text-green-800',
-    error: 'bg-red-100 text-red-800',
-  }
+  const readyCount = jobList.filter(j => j.generation_status === "complete" || j.status === "ready").length
+  const appliedCount = jobList.filter(j => ["applied", "interviewing", "offered"].includes(j.status)).length
+  const profileLinks = (profileLinksResult as { links?: unknown[] })?.links ?? []
+  const firstName = profile.full_name?.split(" ")[0] ?? "there"
 
   return (
-    <div className="space-y-8">
+    <div className="hw-page">
+      {/* Header */}
+      <div className="hw-page-header">
+        <div>
+          <h1 className="hw-page-title">Good morning, {firstName}.</h1>
+          <p className="hw-page-subtitle">{profile.headline ?? "Your career operating system."}</p>
+        </div>
+        <Link href="/jobs/new">
+          <Button size="sm" className="hw-btn-primary gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> Add Job
+          </Button>
+        </Link>
+      </div>
+
+      {/* Stats */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="hw-stat"><span className="hw-stat-value">{jobList.length}</span><span className="hw-stat-label">Jobs tracked</span></div>
+        <div className="hw-stat"><span className="hw-stat-value text-emerald-600">{readyCount}</span><span className="hw-stat-label">Ready to apply</span></div>
+        <div className="hw-stat"><span className="hw-stat-value text-blue-600">{appliedCount}</span><span className="hw-stat-label">Applied</span></div>
+        <div className="hw-stat"><span className="hw-stat-value">{profileLinks.length}</span><span className="hw-stat-label">Profile links</span></div>
+      </div>
+
+      {/* Main grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Recent jobs — 2 cols */}
+        <div className="md:col-span-2 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Recent Jobs</h2>
+            <Link href="/jobs" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+              View all <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+          {jobList.length === 0 ? (
+            <div className="hw-empty">
+              <Briefcase className="h-8 w-8 text-muted-foreground/40" />
+              <div>
+                <p className="text-sm font-medium">No jobs yet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Add your first job to get started.</p>
+              </div>
+              <Link href="/jobs/new"><Button size="sm" className="hw-btn-primary gap-1.5 mt-1"><Plus className="h-3.5 w-3.5" /> Add Job</Button></Link>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {jobList.map(job => (
+                <Link key={job.id} href={`/jobs/${job.id}`} className="block group">
+                  <div className="hw-card px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
+                        <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{job.role_title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{job.company_name}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="outline" className={`text-[10px] font-medium ${STATUS_CLASS[job.status] ?? "status-draft"}`}>
+                        {STATUS_LABEL[job.status] ?? job.status}
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground hidden sm:block">{timeAgo(job.created_at)}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Quick actions — 1 col */}
+        <div className="space-y-3">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Quick Actions</h2>
+          <div className="space-y-2">
+            {[
+              { href: "/ready-queue", icon: CheckSquare, label: "Ready to Apply", sub: `${readyCount} ready`, color: "text-emerald-600" },
+              { href: "/coach", icon: Sparkles, label: "Career Coach", sub: "Ask anything", color: "text-primary" },
+              { href: "/analytics", icon: TrendingUp, label: "Analytics", sub: "Your progress", color: "text-blue-600" },
+              { href: "/applications", icon: Send, label: "Applications", sub: `${appliedCount} in progress`, color: "text-blue-500" },
+              { href: "/documents", icon: FileText, label: "Materials", sub: "Docs & resumes", color: "text-muted-foreground" },
+            ].map(item => (
+              <Link key={item.href} href={item.href}>
+                <div className="hw-card px-3 py-2.5 flex items-center gap-3 group">
+                  <item.icon className={`h-4 w-4 ${item.color} shrink-0`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">{item.label}</p>
+                    <p className="text-xs text-muted-foreground">{item.sub}</p>
+                  </div>
+                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Import */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Welcome back, {displayName}
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Here&apos;s where your job search stands.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-6">
-          <p className="text-sm text-muted-foreground">Total jobs tracked</p>
-          <p className="text-3xl font-semibold mt-1">{jobList.length}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-6">
-          <p className="text-sm text-muted-foreground">Documents generated</p>
-          <p className="text-3xl font-semibold mt-1">{generatedCount}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-6">
-          <p className="text-sm text-muted-foreground">Applications sent</p>
-          <p className="text-3xl font-semibold mt-1">{appliedCount}</p>
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Import Profile</h2>
+        <div className="hw-card p-5">
+          <LinkedInImportWidget />
         </div>
       </div>
-
-      <ProfileLinksWidget initialLinks={profileLinks} />
-
-      <LinkedInImportWidget />
-
-      {jobList.length > 0 ? (
-        <div className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-            <h2 className="text-base font-medium">Your jobs</h2>
-            <a href="/jobs" className="text-sm text-primary hover:underline">
-              Add job →
-            </a>
-          </div>
-          <ul className="divide-y divide-border">
-            {jobList.map(job => {
-              const hasDocs = !!job.generated_resume
-              const statusLabel = STATUS_LABELS[job.status] ?? job.status
-              const statusColor = STATUS_COLORS[job.status] ?? 'bg-gray-100 text-gray-700'
-
-              return (
-                <li key={job.id} className="flex items-center justify-between px-6 py-4 gap-4">
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">
-                      {job.role_title ?? 'Untitled role'}
-                    </p>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {job.company_name ?? '—'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor}`}>
-                      {statusLabel}
-                    </span>
-                    {hasDocs && (
-                      <Link
-                        href={`/jobs/${job.id}/documents`}
-                        className="inline-flex items-center rounded bg-black px-3 py-1 text-xs text-white hover:bg-gray-800 transition-colors"
-                      >
-                        View documents
-                      </Link>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h2 className="text-base font-medium mb-4">Get started</h2>
-          <div className="space-y-3">
-            <a
-              href="/jobs"
-              className="flex items-center justify-between rounded-lg border border-border p-4 hover:bg-muted/50 transition-colors"
-            >
-              <div>
-                <p className="font-medium text-sm">Browse &amp; add jobs</p>
-                <p className="text-sm text-muted-foreground">Paste a job URL to analyze fit and generate documents</p>
-              </div>
-              <span className="text-muted-foreground">→</span>
-            </a>
-            <a
-              href="/profile"
-              className="flex items-center justify-between rounded-lg border border-border p-4 hover:bg-muted/50 transition-colors"
-            >
-              <div>
-                <p className="font-medium text-sm">Complete your profile</p>
-                <p className="text-sm text-muted-foreground">Add work history and evidence to power document generation</p>
-              </div>
-              <span className="text-muted-foreground">→</span>
-            </a>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

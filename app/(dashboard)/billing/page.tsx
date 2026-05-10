@@ -32,6 +32,7 @@ export default function BillingPage() {
   const { plan, isPro, isLoading, refreshUsage } = usePremium()
 
   const [upgrading, setUpgrading] = useState(false)
+  const [portalLoading, setPortalLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [userData, setUserData] = useState<{
     subscription_status?: string
@@ -60,6 +61,24 @@ export default function BillingPage() {
     }
     fetchUserData()
   }, [isPro])
+
+  const handleManage = async () => {
+    setPortalLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/stripe/portal", { method: "POST" })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        setError(data.error || "Failed to open billing portal")
+      }
+    } catch {
+      setError("Something went wrong. Please try again.")
+    } finally {
+      setPortalLoading(false)
+    }
+  }
 
   const handleUpgrade = async () => {
     setUpgrading(true)
@@ -151,15 +170,17 @@ export default function BillingPage() {
             )}
           </div>
           {isPro && (
-            <a
-              href="https://billing.stripe.com/p/login/test_00g00000000000"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleManage}
+              disabled={portalLoading}
             >
-              <Button variant="outline" size="sm">
-                Manage subscription
-              </Button>
-            </a>
+              {portalLoading ? (
+                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+              ) : null}
+              Manage subscription
+            </Button>
           )}
         </div>
 

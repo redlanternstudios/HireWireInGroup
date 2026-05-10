@@ -45,7 +45,7 @@ const pipelineNav = [
   { name: "Ready to Apply", href: "/ready-queue", icon: CheckSquare },
   { name: "Applied", href: "/applications", icon: Send },
   { name: "Materials", href: "/documents", icon: FileText },
-  { name: "Evidence", href: "/evidence", icon: Library },
+  { name: "Career Context", href: "/evidence", icon: Library },
   { name: "Analytics", href: "/analytics", icon: BarChart3, premium: true },
   { name: "Activity Log", href: "/logs", icon: History },
   { name: "Add Job", href: "/jobs/new", icon: PlusCircle },
@@ -99,7 +99,7 @@ export function AppSidebar() {
         <DiagonalStripes position="bottom-right" size="sm" variant="black" opacity={0.08} />
         
         <Link href="/dashboard" className="flex items-center justify-center relative z-10">
-          <HireWireLogo variant="red" size="md" />
+          <HireWireLogo variant="color" size="md" />
         </Link>
       </SidebarHeader>
       

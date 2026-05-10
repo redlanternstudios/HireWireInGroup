@@ -1,9 +1,14 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { FileText } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { FileText, Plus, ArrowRight } from "lucide-react"
 
 export const dynamic = "force-dynamic"
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
 
 export default async function DocumentsPage() {
   const supabase = await createClient()
@@ -12,60 +17,81 @@ export default async function DocumentsPage() {
 
   const { data: jobs } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, status, generated_resume, generation_timestamp, created_at")
+    .select("id, role_title, company_name, status, generated_resume, generated_cover_letter, generation_timestamp, created_at")
     .eq("user_id", user.id)
     .not("generated_resume", "is", null)
     .is("deleted_at", null)
-    .order("generation_timestamp", { ascending: false })
+    .order("generation_timestamp", { ascending: false, nullsFirst: false })
     .limit(50)
 
   const jobList = jobs ?? []
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Materials</h1>
-        <p className="text-muted-foreground mt-1">
-          All generated resumes and cover letters across your jobs.
-        </p>
+    <div className="hw-page">
+      <div className="hw-page-header">
+        <div>
+          <h1 className="hw-page-title">Materials</h1>
+          <p className="hw-page-subtitle">All generated resumes and cover letters.</p>
+        </div>
+        <Link href="/jobs/new">
+          <Button size="sm" className="hw-btn-primary gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> Add Job
+          </Button>
+        </Link>
+      </div>
+
+      {/* Stats */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="hw-stat"><span className="hw-stat-value">{jobList.length}</span><span className="hw-stat-label">Jobs with docs</span></div>
+        <div className="hw-stat"><span className="hw-stat-value">{jobList.filter(j => j.generated_cover_letter).length}</span><span className="hw-stat-label">Cover letters</span></div>
       </div>
 
       {jobList.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 flex flex-col items-center justify-center text-center gap-4">
-          <FileText className="h-10 w-10 text-muted-foreground/40" />
+        <div className="hw-empty">
+          <FileText className="h-8 w-8 text-muted-foreground/40" />
           <div>
-            <p className="font-medium">No documents generated yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm font-medium">No documents generated yet</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
               Add a job and run document generation to see your materials here.
             </p>
           </div>
-          <Link
-            href="/jobs"
-            className="inline-flex items-center rounded-lg bg-[#7B1212] px-4 py-2 text-sm font-medium text-white hover:bg-[#6a0f0f] transition-colors"
-          >
-            Add a job
+          <Link href="/jobs">
+            <Button size="sm" className="hw-btn-primary gap-1.5 mt-1">
+              <Plus className="h-3.5 w-3.5" /> Add a job
+            </Button>
           </Link>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-card divide-y divide-border">
-          {jobList.map((job) => (
-            <div key={job.id} className="flex items-center justify-between px-6 py-4 gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-sm truncate">{job.role_title ?? "Untitled role"}</p>
-                <p className="text-sm text-muted-foreground truncate">{job.company_name ?? "—"}</p>
-                {job.generation_timestamp && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Generated {new Date(job.generation_timestamp).toLocaleDateString()}
+        <div className="space-y-2">
+          {jobList.map(job => (
+            <div key={job.id} className="hw-card px-5 py-4 flex items-center justify-between gap-4">
+              <Link href={`/jobs/${job.id}`} className="flex items-center gap-4 min-w-0 flex-1 group">
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                    {job.role_title ?? "Untitled role"}
                   </p>
-                )}
-              </div>
-              <Link
-                href={`/jobs/${job.id}/documents`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors shrink-0"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                View
+                  <p className="text-xs text-muted-foreground truncate">
+                    {job.company_name ?? "—"}
+                    {job.generation_timestamp && (
+                      <span className="hidden sm:inline"> · {formatDate(job.generation_timestamp)}</span>
+                    )}
+                  </p>
+                </div>
               </Link>
+              <div className="flex items-center gap-2 shrink-0">
+                {job.generated_cover_letter && (
+                  <span className="text-[10px] text-muted-foreground hidden sm:block border border-border rounded px-1.5 py-0.5">
+                    + Cover letter
+                  </span>
+                )}
+                <Link
+                  href={`/jobs/${job.id}/documents`}
+                  className="inline-flex items-center gap-1.5 hw-card px-3 py-1.5 text-xs font-medium hover:border-primary/30 transition-colors"
+                >
+                  View <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
             </div>
           ))}
         </div>
