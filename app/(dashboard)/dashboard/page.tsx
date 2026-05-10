@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { LinkedInImportWidget } from "@/components/dashboard/LinkedInImportWidget"
+
 import { getReadyJobIds } from "@/lib/readiness"
 import {
   Plus, Briefcase, ArrowRight, Target, AlertTriangle,
@@ -149,10 +149,10 @@ export default async function DashboardPage() {
     : "Your pipeline is up to date."
 
   return (
-    <div className="hw-page">
+    <div className="w-full px-5 py-4" style={{ maxWidth: 1200, marginInline: "auto" }}>
 
       {/* ─── Top Header ─── */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <p className="hw-section-label mb-1">Command Center</p>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
@@ -186,10 +186,10 @@ export default async function DashboardPage() {
       </div>
 
       {/* ─── Two-column workspace ─── */}
-      <div className="hw-workspace mt-1">
+      <div className="flex gap-4 items-start">
 
         {/* ─── MAIN COLUMN ─── */}
-        <div className="hw-workspace-main space-y-5">
+        <div className="flex-1 min-w-0 space-y-3">
 
           {/* HERO: Your Next Move */}
           {heroJob ? (
@@ -197,11 +197,11 @@ export default async function DashboardPage() {
               className="rounded-2xl overflow-hidden"
               style={{ background: "hsl(var(--card))", border: "1px solid rgba(26,23,20,0.07)", boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 6px 20px rgba(26,23,20,0.07)" }}
             >
-              <div className="px-6 pt-5 pb-4">
+              <div className="px-5 pt-4 pb-3">
                 {/* Badge */}
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "hsl(var(--primary)/0.1)" }}>
-                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <div className="flex items-center gap-2 mb-2.5">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "hsl(var(--primary)/0.1)" }}>
+                    <Sparkles className="h-3 w-3 text-primary" />
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Your Next Move</p>
                 </div>
@@ -215,14 +215,14 @@ export default async function DashboardPage() {
                     <p className="text-sm text-muted-foreground mt-0.5">{heroJob.company_name ?? "—"}</p>
 
                     {heroWarning && (
-                      <div className="flex items-center gap-1.5 mt-3">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
                         <p className="text-xs font-medium text-amber-700">{heroWarning}</p>
                       </div>
                     )}
 
                     {heroTier === "action" && (heroJob.score_gaps as string[] | null)?.length ? (
-                      <div className="mt-3 px-3 py-2.5 rounded-xl" style={{ background: "hsl(var(--muted))" }}>
+                      <div className="mt-2 px-3 py-2 rounded-lg" style={{ background: "hsl(var(--muted))" }}>
                         <p className="text-xs text-foreground">
                           <span className="font-semibold">Why this matters: </span>
                           Strengthening these areas will significantly increase your match confidence.
@@ -246,7 +246,7 @@ export default async function DashboardPage() {
               </div>
 
               {/* Action footer */}
-              <div className="px-6 py-3 flex items-center gap-2" style={{ borderTop: "1px solid rgba(26,23,20,0.06)", background: "hsl(var(--muted)/0.4)" }}>
+              <div className="px-5 py-2.5 flex items-center gap-2" style={{ borderTop: "1px solid rgba(26,23,20,0.06)", background: "hsl(var(--muted)/0.4)" }}>
                 <Link href={heroAction.href}>
                   <Button size="sm" className="hw-btn-primary gap-1.5">
                     {heroAction.cta} <ArrowRight className="h-3.5 w-3.5" />
@@ -289,7 +289,7 @@ export default async function DashboardPage() {
 
           {/* TODAY'S QUEUE */}
           <div>
-            <p className="hw-section-label mb-2.5">{"Today's Queue"}</p>
+            <p className="hw-section-label mb-2">{"Today's Queue"}</p>
             <div className="grid grid-cols-3 gap-3">
               {[
                 {
@@ -322,17 +322,17 @@ export default async function DashboardPage() {
               ].map((q) => (
                 <Link key={q.label} href={q.href}>
                   <div
-                    className="rounded-xl px-4 py-3.5 flex flex-col gap-1.5 group transition-all hover:-translate-y-0.5"
+                    className="rounded-xl px-3.5 py-3 flex flex-col gap-1 group transition-all hover:-translate-y-0.5"
                     style={{
                       background: "hsl(var(--card))",
                       border: "1px solid rgba(26,23,20,0.07)",
                       boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 3px 8px rgba(26,23,20,0.04)",
                     }}
                   >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${q.iconBg}`}>
-                      <q.icon className={`h-4 w-4 ${q.color}`} />
+                    <div className={`w-7 h-7 rounded-md flex items-center justify-center ${q.iconBg}`}>
+                      <q.icon className={`h-3.5 w-3.5 ${q.color}`} />
                     </div>
-                    <p className={`text-2xl font-bold tabular-nums ${q.count > 0 ? q.color : "text-muted-foreground/40"}`}>
+                    <p className={`text-xl font-bold tabular-nums ${q.count > 0 ? q.color : "text-muted-foreground/40"}`}>
                       {q.count}
                     </p>
                     <div className="flex items-center justify-between">
@@ -347,8 +347,8 @@ export default async function DashboardPage() {
 
           {/* PIPELINE OVERVIEW */}
           <div>
-            <p className="hw-section-label mb-2.5">Pipeline Overview</p>
-            <div className="grid grid-cols-4 gap-2.5">
+            <p className="hw-section-label mb-2">Pipeline Overview</p>
+            <div className="grid grid-cols-4 gap-2">
               {[
                 { label: "Jobs Active",     value: activeJobs.length,     icon: Briefcase, color: "text-foreground" },
                 { label: "Need Attention",  value: needAttention,          icon: AlertTriangle, color: "text-amber-600" },
@@ -357,16 +357,16 @@ export default async function DashboardPage() {
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="rounded-xl px-3.5 py-3 flex flex-col gap-1"
+                  className="rounded-xl px-3 py-2.5 flex flex-col gap-0.5"
                   style={{
                     background: "hsl(var(--card))",
                     border: "1px solid rgba(26,23,20,0.07)",
                     boxShadow: "0 1px 3px rgba(26,23,20,0.04)",
                   }}
                 >
-                  <s.icon className={`h-4 w-4 ${s.color} mb-0.5`} />
-                  <p className={`text-2xl font-bold tabular-nums leading-none ${s.color}`}>{s.value}</p>
-                  <p className="text-[11px] text-muted-foreground leading-tight">{s.label}</p>
+                  <s.icon className={`h-3.5 w-3.5 ${s.color} mb-0.5`} />
+                  <p className={`text-xl font-bold tabular-nums leading-none ${s.color}`}>{s.value}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{s.label}</p>
                 </div>
               ))}
             </div>
@@ -374,7 +374,7 @@ export default async function DashboardPage() {
 
           {/* RECENT PIPELINE */}
           <div>
-            <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center justify-between mb-2">
               <p className="hw-section-label">Recent Pipeline</p>
               <Link href="/jobs" className="text-xs text-primary font-medium flex items-center gap-1 hover:gap-1.5 transition-all">
                 View all jobs <ArrowRight className="h-3 w-3" />
@@ -405,7 +405,7 @@ export default async function DashboardPage() {
                   return (
                     <div
                       key={job.id}
-                      className={`flex items-center gap-3 px-4 py-3.5 group ${i > 0 ? "border-t border-border/50" : ""}`}
+                      className={`flex items-center gap-3 px-4 py-2.5 group ${i > 0 ? "border-t border-border/50" : ""}`}
                     >
                       {/* Icon */}
                       <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center shrink-0">
@@ -493,35 +493,25 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* LinkedIn Import — lower priority */}
-          <div>
-            <p className="hw-section-label mb-2.5">Import Profile</p>
-            <div
-              className="rounded-2xl p-5"
-              style={{ background: "hsl(var(--card))", border: "1px solid rgba(26,23,20,0.07)", boxShadow: "0 1px 3px rgba(26,23,20,0.04)" }}
-            >
-              <LinkedInImportWidget />
-            </div>
-          </div>
         </div>
 
         {/* ─── RIGHT RAIL ─── */}
-        <div className="hw-workspace-rail">
+        <div className="shrink-0 space-y-3" style={{ width: 256 }}>
 
           {/* PIPELINE INTELLIGENCE */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-xl p-3.5"
             style={{ background: "hsl(var(--card))", border: "1px solid rgba(26,23,20,0.07)", boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 3px 8px rgba(26,23,20,0.04)" }}
           >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center">
-                <BarChart2 className="h-3.5 w-3.5 text-primary" />
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <div className="w-5 h-5 rounded-md bg-primary/10 flex items-center justify-center">
+                <BarChart2 className="h-3 w-3 text-primary" />
               </div>
               <p className="hw-section-label">Pipeline Intelligence</p>
             </div>
 
-            <p className="text-xs font-semibold text-foreground mb-2">Your pipeline at a glance</p>
-            <div className="space-y-1.5 mb-4">
+            <p className="text-xs font-semibold text-foreground mb-1.5">Your pipeline at a glance</p>
+            <div className="space-y-1 mb-3">
               {needAttention > 0 && (
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
@@ -542,10 +532,10 @@ export default async function DashboardPage() {
 
             {heroJob && (
               <>
-                <p className="text-xs font-semibold text-foreground mb-2">Biggest opportunity</p>
+                <p className="text-xs font-semibold text-foreground mb-1.5">Biggest opportunity</p>
                 <Link href={`/jobs/${heroJob.id}`}>
                   <div
-                    className="rounded-xl p-3 group transition-all hover:border-primary/30"
+                    className="rounded-lg p-2.5 group transition-all hover:border-primary/30"
                     style={{ background: "hsl(var(--muted)/0.6)", border: "1px solid rgba(26,23,20,0.06)" }}
                   >
                     <p className="text-xs font-semibold text-foreground leading-snug">{heroJob.role_title}</p>
@@ -563,30 +553,30 @@ export default async function DashboardPage() {
 
           {/* QUICK ACTIONS */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-xl p-3.5"
             style={{ background: "hsl(var(--card))", border: "1px solid rgba(26,23,20,0.07)", boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 3px 8px rgba(26,23,20,0.04)" }}
           >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-lg bg-amber-100 flex items-center justify-center">
-                <Zap className="h-3.5 w-3.5 text-amber-600" />
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <div className="w-5 h-5 rounded-md bg-amber-100 flex items-center justify-center">
+                <Zap className="h-3 w-3 text-amber-600" />
               </div>
               <p className="hw-section-label">Quick Actions</p>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {[
                 { href: "/jobs/new",   icon: Plus,     label: "Paste a job description", desc: "Analyze a new opportunity" },
                 { href: "/coach",       icon: Sparkles, label: "Improve a resume",         desc: "Tailor for a specific role" },
                 { href: "/coach",       icon: Target,   label: "Ask Coach",                desc: "Get personalized guidance" },
               ].map((a) => (
                 <Link key={a.label} href={a.href}>
-                  <div className="flex items-center gap-3 p-2.5 rounded-xl group hover:bg-muted/60 transition-colors">
-                    <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                      <a.icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                  <div className="flex items-center gap-2.5 p-2 rounded-lg group hover:bg-muted/60 transition-colors">
+                    <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center shrink-0">
+                      <a.icon className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-foreground">{a.label}</p>
-                      <p className="text-[11px] text-muted-foreground">{a.desc}</p>
+                      <p className="text-xs font-semibold text-foreground leading-tight">{a.label}</p>
+                      <p className="text-[10px] text-muted-foreground">{a.desc}</p>
                     </div>
                     <ArrowRight className="h-3 w-3 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors shrink-0" />
                   </div>
@@ -597,20 +587,20 @@ export default async function DashboardPage() {
 
           {/* MOMENTUM */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-xl p-3.5"
             style={{ background: "hsl(var(--card))", border: "1px solid rgba(26,23,20,0.07)", boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 3px 8px rgba(26,23,20,0.04)" }}
           >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-lg bg-blue-50 flex items-center justify-center">
-                <BarChart2 className="h-3.5 w-3.5 text-blue-500" />
+            <div className="flex items-center gap-1.5 mb-2">
+              <div className="w-5 h-5 rounded-md bg-blue-50 flex items-center justify-center">
+                <BarChart2 className="h-3 w-3 text-blue-500" />
               </div>
               <p className="hw-section-label">Momentum</p>
             </div>
 
-            <p className="text-xs text-muted-foreground mb-2">Applications this week</p>
-            <div className="flex items-baseline justify-between mb-2">
-              <p className="text-2xl font-bold tabular-nums text-foreground">{submittedJobs.length} <span className="text-sm font-normal text-muted-foreground">/ 5</span></p>
-              <p className="text-xs text-muted-foreground">Target</p>
+            <p className="text-xs text-muted-foreground mb-1">Applications this week</p>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <p className="text-xl font-bold tabular-nums text-foreground">{submittedJobs.length} <span className="text-xs font-normal text-muted-foreground">/ 5</span></p>
+              <p className="text-[10px] text-muted-foreground">Target</p>
             </div>
 
             {/* Progress bar */}
