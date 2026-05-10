@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
+import { AnalyzeJobButton } from "./AnalyzeJobButton"
 import {
   ChevronLeft,
   ExternalLink,
@@ -134,6 +135,22 @@ function NextStepBanner({ workflow, jobId, hasDocs }: {
 
   if (!nextAction) return null
 
+  // job_ingested stage: the CTA is to analyze — render the interactive button inline
+  if (stage === "job_ingested") {
+    return (
+      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
+        <ArrowRight className="h-5 w-5 text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground">Next: Analyze Job</p>
+          <p className="text-xs text-muted-foreground">Extract requirements, score your fit, and unlock coaching.</p>
+        </div>
+        <div className="shrink-0">
+          <AnalyzeJobButton jobId={jobId} hasUrl={true} label="Analyze Job" size="sm" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
       <ArrowRight className="h-5 w-5 text-primary shrink-0" />
@@ -179,7 +196,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, summary")
+      .select("matched_skills, known_gaps, summary, qualifications_required, responsibilities, title, company, location")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -195,11 +212,25 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .maybeSingle(),
   ])
 
-  // Merge analysis fields into job so workflow functions can read them
+  // Merge analysis fields into job so workflow functions can read them.
+  // Priority: jobs row (backfilled by analyzeJobCore) > job_analyses join.
+  // Never use matched_skills as a proxy for qualifications_required.
   const jobWithAnalysis: Job = {
     ...job,
-    qualifications_required: job.qualifications_required ?? analysis?.matched_skills ?? undefined,
-    responsibilities: job.responsibilities ?? undefined,
+    title: job.role_title ?? job.title ?? analysis?.title ?? "Untitled role",
+    company: job.company_name ?? job.company ?? analysis?.company ?? "",
+    qualifications_required:
+      (job.qualifications_required?.length ?? 0) > 0
+        ? job.qualifications_required
+        : (analysis?.qualifications_required?.length ?? 0) > 0
+          ? analysis!.qualifications_required
+          : undefined,
+    responsibilities:
+      (job.responsibilities?.length ?? 0) > 0
+        ? job.responsibilities
+        : (analysis?.responsibilities?.length ?? 0) > 0
+          ? analysis!.responsibilities
+          : undefined,
     score: scores?.overall_score ?? job.score ?? null,
   }
 
@@ -208,7 +239,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
-  const isAnalyzed = !!(analysis || scores)
+  const hasUrl = !!(job.job_url)
+  // isAnalyzed is true if the job has requirements extracted (either on the row or in job_analyses)
+  const isAnalyzed = !!(
+    analysis ||
+    scores ||
+    (jobWithAnalysis.qualifications_required?.length ?? 0) > 0 ||
+    (jobWithAnalysis.responsibilities?.length ?? 0) > 0
+  )
   const overallScore = scores?.overall_score ?? job.score ?? null
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
@@ -241,7 +279,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               </a>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             <Badge
               variant="outline"
               className={`text-[10px] font-medium ${STATUS_CLASS[job.status] ?? "status-draft"}`}
@@ -259,6 +297,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               >
                 {job.fit} fit
               </Badge>
+            )}
+            {isAnalyzed && hasUrl && (
+              <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Re-analyze" size="sm" />
             )}
           </div>
         </div>
@@ -386,19 +427,20 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </>
       )}
 
-      {/* No analysis yet — show CTA to trigger analysis */}
+      {/* No analysis yet — show AnalyzeJobButton */}
       {!stillProcessing && !isAnalyzed && (
-        <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-3">
+        <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-4">
           <div className="hw-empty-icon">
             <AlertTriangle className="h-5 w-5 text-muted-foreground" />
           </div>
-          <div>
+          <div className="max-w-xs">
             <p className="text-sm font-semibold">Analysis not run yet</p>
             <p className="text-xs text-muted-foreground mt-1">
-              No results for this job yet. Return to the{" "}
-              <Link href="/jobs" className="text-primary hover:underline">jobs list</Link>{" "}
-              and trigger analysis, or add a job URL with a description to begin.
+              Extract requirements, score your fit, and get coaching specific to this role.
             </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <AnalyzeJobButton jobId={id} hasUrl={hasUrl} />
           </div>
         </div>
       )}
