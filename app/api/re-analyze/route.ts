@@ -263,6 +263,7 @@ async function reAnalyzeExistingJob(
     strong_match: "HIGH", moderate_match: "MEDIUM", stretch_but_viable: "MEDIUM", low_match: "LOW",
   }
 
+  // Prefix format must match the /^Gap:/i regex used in analyzeJobCore and job_analyses inserts.
   const gaps = explainableFit.gaps.filter((g) => g.severity === "critical").slice(0, 5).map((g) => `Gap: ${g.requirement.slice(0, 80)}`)
   const strengths = explainableFit.strengths.slice(0, 5).map((s) => `Strong: ${s.requirement.slice(0, 80)}`)
 
@@ -272,8 +273,6 @@ async function reAnalyzeExistingJob(
     .update({
       role_title: title,
       company_name: company,
-      title,
-      company,
       status: "analyzed",
       qualifications_required: analysis.qualifications_required,
       responsibilities: analysis.responsibilities,
@@ -308,8 +307,8 @@ async function reAnalyzeExistingJob(
     qualifications_preferred: analysis.qualifications_preferred,
     keywords: analysis.keywords,
     ats_phrases: analysis.ats_phrases,
-    matched_skills: strengths,
-    known_gaps: gaps,
+    matched_skills: strengths.filter((r: string) => !/^Gap:/i.test(r)),
+    known_gaps: gaps.filter((r: string) => /^Gap:/i.test(r)),
     analysis_version: "3.0-explainable",
     analysis_model: "claude-sonnet",
   })

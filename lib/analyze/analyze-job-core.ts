@@ -436,8 +436,8 @@ Extract the job details following the schema.`,
     qualifications_preferred: validatedAnalysis.qualifications_preferred,
     keywords: validatedAnalysis.keywords,
     ats_phrases: validatedAnalysis.keywords,
-    matched_skills: fitResult.reasoning.filter((r: string) => !r.includes("gap")),
-    known_gaps: fitResult.reasoning.filter((r: string) => r.includes("gap")),
+    matched_skills: fitResult.reasoning.filter((r: string) => !/^Gap:/i.test(r)),
+    known_gaps: fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r)),
     analysis_version: "3.0-explainable",
     analysis_model: "llama-3.3-70b-versatile",
   })
@@ -461,13 +461,14 @@ Extract the job details following the schema.`,
 
   // Backfill the jobs row with extracted requirements so hasJobAnalysis() returns true
   // and the workflow stepper advances correctly without needing a separate join.
-  const gaps = fitResult.reasoning.filter((r: string) => r.includes("Gap:"))
-  const strengths = fitResult.reasoning.filter((r: string) => !r.includes("Gap:"))
+  // NOTE: jobs table uses role_title/company_name — NOT title/company.
+  const gaps = fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r))
+  const strengths = fitResult.reasoning.filter((r: string) => !/^Gap:/i.test(r))
   const { error: backfillError } = await supabase
     .from("jobs")
     .update({
-      title: validatedAnalysis.title,
-      company: validatedAnalysis.company,
+      role_title: validatedAnalysis.title,
+      company_name: validatedAnalysis.company,
       qualifications_required: validatedAnalysis.qualifications_required,
       responsibilities: validatedAnalysis.responsibilities,
       score: fitResult.score,
