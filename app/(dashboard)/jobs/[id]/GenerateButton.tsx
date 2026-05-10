@@ -56,7 +56,7 @@ export function GenerateButton({ jobId }: { jobId: string }) {
       <button
         onClick={handleGenerate}
         disabled={isLoading}
-        className="w-full rounded-md bg-black text-white px-4 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
+        className="w-full rounded-lg hw-btn-primary px-4 py-2.5 text-sm disabled:opacity-50 transition-all"
       >
         {isLoading ? "Generating documents…" : "Generate resume & cover letter"}
       </button>
