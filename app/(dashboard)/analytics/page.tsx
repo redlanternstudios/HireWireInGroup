@@ -1,7 +1,14 @@
+import { sanitizeCoachContext, sanitizeRecommendations } from "@/lib/coach/context/sanitize"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+
 import { BarChart3, Lock } from "lucide-react"
 import Link from "next/link"
+import { buildCoachContext } from "@/lib/coach/context/build-context"
+import { detectCoachSignals } from "@/lib/coach/signals/engine"
+import { generateRecommendations } from "@/lib/coach/recommendations"
+import { sortRecommendations } from "@/lib/coach/recommendations/priority"
+import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
 
 export const dynamic = "force-dynamic"
 
@@ -27,6 +34,7 @@ export default async function AnalyticsPage() {
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
 
+
   const jobList = jobs ?? []
   const total = jobList.length
   const applied = jobList.filter(j => ["applied","interviewing","offered","rejected"].includes(j.status)).length
@@ -35,8 +43,42 @@ export default async function AnalyticsPage() {
   const scores = jobList.map(j => (Array.isArray(j.job_scores) && j.job_scores[0]?.overall_score != null) ? j.job_scores[0].overall_score : null).filter(s => s != null)
   const avgScore = scores.length ? Math.round(scores.reduce((a, s) => a + (s ?? 0), 0) / scores.length) : null
 
+  // Build CoachContext for analytics
+  const coachContext = buildCoachContext({
+    workflowStage: "analytics",
+    blockers: [],
+    readiness: null,
+    evidenceCoverage: null,
+    fitScore: avgScore ?? 0,
+    generationHistory: [], // TODO: wire real generation history if available
+    applicationHistory: jobList.map(j => ({ status: j.status, date: j.created_at })),
+    recentOutcomes: [], // TODO: wire real outcomes if available
+    userPreferences: {},
+    currentPage: "/analytics",
+    currentAction: "analytics",
+  })
+  const coachMemory = { priorRecommendations: [], acceptedRecommendations: [], ignoredRecommendations: [], generationOutcomes: [], applicationOutcomes: [], recurringWeakAreas: [] }
+  const coachSignals = detectCoachSignals(coachContext, coachMemory)
+  let coachRecommendations = generateRecommendations(coachContext, coachSignals)
+  coachRecommendations = coachRecommendations.filter((rec, idx, arr) => arr.findIndex(r => r.message === rec.message) === idx)
+  coachRecommendations = sortRecommendations(coachRecommendations)
+  const coachInsights: string[] = []
+  const coachMomentum = undefined
+  const showCoach = (coachRecommendations.length > 0 || coachInsights.length > 0)
+
   return (
     <div className="space-y-8">
+      {/* Embedded Coach Panel */}
+      {showCoach && (
+        <div className="mb-4">
+          <WorkflowCoachPanelClient
+            recommendations={sanitizeRecommendations(coachRecommendations)}
+            blockers={[]}
+            insights={Array.isArray(coachInsights) ? coachInsights.map(String) : []}
+            momentum={coachMomentum ? String(coachMomentum) : undefined}
+          />
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
         <p className="text-muted-foreground mt-1">

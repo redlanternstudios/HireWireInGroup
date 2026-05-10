@@ -1,3 +1,4 @@
+import { sanitizeCoachContext, sanitizeRecommendations } from "@/lib/coach/context/sanitize"
 // NOTE: Coach Governance: Analyze missing state bug
 // If you see 'Analysis not available' after Analyze, it means either:
 // - job.analysis_status is not 'analyzed' or equivalent
@@ -8,9 +9,17 @@
 // Generation must be blocked in these cases. See COACH_CONSTITUTION.md.
 import { createClient } from "@/lib/supabase/server"
 import { redirect, notFound } from "next/navigation"
+
 import Link from "next/link"
 import { GenerateButton } from "./GenerateButton"
 import { getWorkflowState } from "@/lib/job-workflow"
+import { evaluateJobReadiness } from "@/lib/readiness"
+import { buildCoachContext } from "@/lib/coach/context/build-context"
+import { detectCoachSignals } from "@/lib/coach/signals/engine"
+import { generateRecommendations } from "@/lib/coach/recommendations"
+import { sortRecommendations, RecommendationPriority } from "@/lib/coach/recommendations/priority"
+import { getCoachMessage } from "@/lib/coach/messaging"
+import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
 
 export const dynamic = "force-dynamic"
 
@@ -45,10 +54,50 @@ export default async function JobDetailPage({
     .is("deleted_at", null)
     .single()
   // Derive workflow state for this job
+
+  // Canonical workflow state
   const workflowState = getWorkflowState(job, job.id)
-  // Next step CTA logic
   const nextAction = workflowState.nextAction
   const blockers = workflowState.blockers
+
+  // Readiness (canonical)
+  const readiness = await evaluateJobReadiness(job.id, user.id)
+
+  // Build CoachContext from real data
+  const coachContext = buildCoachContext({
+    workflowStage: workflowState.stage,
+    blockers,
+    readiness: readiness?.is_ready ?? false,
+    evidenceCoverage: readiness?.evidence_count ? (readiness.evidence_count / (readiness.requirement_count || 1)) : 0,
+    fitScore: job.score ?? 0,
+    generationHistory: [], // TODO: wire real generation history if available
+    applicationHistory: [], // TODO: wire real application history if available
+    recentOutcomes: [], // TODO: wire real outcomes if available
+    userPreferences: {}, // TODO: wire real preferences if available
+    currentPage: `/jobs/${job.id}`,
+    currentAction: nextAction?.label || "",
+  })
+
+  // Coach memory (stub for now)
+  const coachMemory = { priorRecommendations: [], acceptedRecommendations: [], ignoredRecommendations: [], generationOutcomes: [], applicationOutcomes: [], recurringWeakAreas: [] }
+
+  // Detect signals
+  const coachSignals = detectCoachSignals(coachContext, coachMemory)
+
+  // Generate recommendations (real logic should deduplicate, cooldown, and prioritize)
+  let coachRecommendations = generateRecommendations(coachContext, coachSignals)
+  // Deduplicate by message
+  coachRecommendations = coachRecommendations.filter((rec, idx, arr) => arr.findIndex(r => r.message === rec.message) === idx)
+  // TODO: implement cooldown logic (skip for now)
+  // Sort by priority
+  coachRecommendations = sortRecommendations(coachRecommendations)
+
+  // Insights and momentum (stub for now)
+  const coachInsights: string[] = []
+  const coachMomentum = undefined
+
+  // Coach visibility logic
+  const showCoach = (coachRecommendations.length > 0 || blockers.length > 0 || coachInsights.length > 0)
 
   if (jobError || !job) notFound()
 
@@ -90,6 +139,17 @@ export default async function JobDetailPage({
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Embedded Coach Panel (client boundary) */}
+      {showCoach && (
+        <div className="mb-4">
+          <WorkflowCoachPanelClient
+            recommendations={sanitizeRecommendations(coachRecommendations)}
+            blockers={Array.isArray(blockers) ? blockers.map(String) : []}
+            insights={Array.isArray(coachInsights) ? coachInsights.map(String) : []}
+            momentum={coachMomentum ? String(coachMomentum) : undefined}
+          />
+        </div>
+      )}
       {/* Next step CTA card */}
       {nextAction && (
         <div className="rounded-xl border border-primary bg-card p-6 flex flex-col items-center text-center mb-2">

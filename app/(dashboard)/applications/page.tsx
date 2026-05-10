@@ -1,7 +1,14 @@
+import { sanitizeCoachContext, sanitizeRecommendations } from "@/lib/coach/context/sanitize"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import Link from "next/link"
+
 import { Send } from "lucide-react"
+import { buildCoachContext } from "@/lib/coach/context/build-context"
+import { detectCoachSignals } from "@/lib/coach/signals/engine"
+import { generateRecommendations } from "@/lib/coach/recommendations"
+import { sortRecommendations } from "@/lib/coach/recommendations/priority"
+import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
 
 export const dynamic = "force-dynamic"
 
@@ -33,6 +40,7 @@ export default async function ApplicationsPage() {
     .order("created_at", { ascending: false })
     .limit(50)
 
+
   const jobList = jobs ?? []
 
   const counts = {
@@ -42,8 +50,42 @@ export default async function ApplicationsPage() {
     rejected: jobList.filter(j => j.status === "rejected").length,
   }
 
+  // Build CoachContext for applications
+  const coachContext = buildCoachContext({
+    workflowStage: "applications",
+    blockers: [],
+    readiness: null,
+    evidenceCoverage: null,
+    fitScore: null,
+    generationHistory: [],
+    applicationHistory: jobList.map(j => ({ status: j.status, date: j.created_at })),
+    recentOutcomes: [],
+    userPreferences: {},
+    currentPage: "/applications",
+    currentAction: "applications",
+  })
+  const coachMemory = { priorRecommendations: [], acceptedRecommendations: [], ignoredRecommendations: [], generationOutcomes: [], applicationOutcomes: [], recurringWeakAreas: [] }
+  const coachSignals = detectCoachSignals(coachContext, coachMemory)
+  let coachRecommendations = generateRecommendations(coachContext, coachSignals)
+  coachRecommendations = coachRecommendations.filter((rec, idx, arr) => arr.findIndex(r => r.message === rec.message) === idx)
+  coachRecommendations = sortRecommendations(coachRecommendations)
+  const coachInsights: string[] = []
+  const coachMomentum = undefined
+  const showCoach = (coachRecommendations.length > 0 || coachInsights.length > 0)
+
   return (
     <div className="space-y-8">
+      {/* Embedded Coach Panel */}
+      {showCoach && (
+        <div className="mb-4">
+          <WorkflowCoachPanelClient
+            recommendations={sanitizeRecommendations(coachRecommendations)}
+            blockers={[]}
+            insights={Array.isArray(coachInsights) ? coachInsights.map(String) : []}
+            momentum={coachMomentum ? String(coachMomentum) : undefined}
+          />
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Applications</h1>
         <p className="text-muted-foreground mt-1">
