@@ -16,7 +16,8 @@ import {
   Lightbulb,
   FileText,
   Target,
-  HelpCircle
+  HelpCircle,
+  Mic,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 
@@ -44,11 +45,43 @@ interface CoachChatProps {
   initialMessage?: string
 }
 
-const quickActions = [
-  { label: "Review my pipeline",    icon: Target,     prompt: "What should I focus on next in my job search? Review my pipeline and suggest the best next action." },
-  { label: "Interview prep tips",   icon: HelpCircle, prompt: "I have an upcoming interview. Can you help me prepare? Give me your top tips." },
-  { label: "Improve my resume",     icon: FileText,   prompt: "Can you review my evidence library and suggest how I could strengthen my resume?" },
-  { label: "Build my evidence",     icon: Lightbulb,  prompt: "Help me add to my evidence library. Ask me about my achievements and experiences." },
+const promptClusters = [
+  {
+    group: "Pipeline",
+    icon: Target,
+    prompts: [
+      { label: "Review my pipeline",         prompt: "What should I focus on next in my job search? Review my pipeline and suggest the best next action." },
+      { label: "Which job should I prioritize?", prompt: "Looking at my pipeline, which job should I prioritize and why?" },
+      { label: "Why is nothing ready?",      prompt: "Why aren't any of my jobs in the Ready to Apply queue? What's blocking me?" },
+    ],
+  },
+  {
+    group: "Resume & package",
+    icon: FileText,
+    prompts: [
+      { label: "Improve my resume",          prompt: "Can you review my evidence library and suggest how I could strengthen my resume?" },
+      { label: "Review flagged claims",      prompt: "Are there any claims in my application materials that need stronger evidence backing?" },
+      { label: "Help me tailor this package", prompt: "Help me tailor my application package to better match a specific job's requirements." },
+    ],
+  },
+  {
+    group: "Career Context",
+    icon: Lightbulb,
+    prompts: [
+      { label: "Build my evidence",          prompt: "Help me add to my evidence library. Ask me about my achievements and experiences." },
+      { label: "What proof am I missing?",   prompt: "What types of evidence or achievements am I missing that could strengthen my applications?" },
+      { label: "Stronger bullets",           prompt: "Help me turn my experience into stronger, more impactful achievement bullets." },
+    ],
+  },
+  {
+    group: "Interview & follow up",
+    icon: Mic,
+    prompts: [
+      { label: "Interview prep tips",        prompt: "I have an upcoming interview. Can you help me prepare with targeted tips?" },
+      { label: "Draft a recruiter follow up", prompt: "Help me draft a professional follow-up message to a recruiter." },
+      { label: "What to say after applying", prompt: "I just applied for a job. What should I do next and what should I say if I follow up?" },
+    ],
+  },
 ]
 
 export function CoachChat({ className, compact = false, jobContext, gapContext, initialMessage }: CoachChatProps) {
@@ -156,24 +189,34 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                 </div>
               </div>
 
-              {/* Quick actions */}
-              <div className={cn("grid gap-2 pl-11", compact ? "grid-cols-1" : "grid-cols-2")}>
-                {quickActions.map((action) => (
-                  <button
-                    key={action.label}
-                    onClick={() => handleQuickAction(action.prompt)}
-                    disabled={isLoading}
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all",
-                      "bg-card border border-border hover:border-primary/30 hover:bg-primary/5",
-                      "shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                    )}
-                  >
-                    <div className="h-6 w-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <action.icon className="h-3.5 w-3.5 text-primary" />
+              {/* Grouped prompt clusters */}
+              <div className="pl-11 space-y-3">
+                {promptClusters.map((cluster) => (
+                  <div key={cluster.group}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <cluster.icon className="h-3 w-3 text-muted-foreground" />
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        {cluster.group}
+                      </p>
                     </div>
-                    <span className="text-xs font-medium text-foreground">{action.label}</span>
-                  </button>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cluster.prompts.map((p) => (
+                        <button
+                          key={p.label}
+                          onClick={() => handleQuickAction(p.prompt)}
+                          disabled={isLoading}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-left transition-all text-xs font-medium",
+                            "bg-card border border-border text-foreground",
+                            "hover:border-primary/40 hover:bg-primary/6 hover:text-primary",
+                            "disabled:opacity-40 disabled:cursor-not-allowed"
+                          )}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
