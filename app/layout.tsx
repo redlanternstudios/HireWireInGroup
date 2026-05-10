@@ -17,8 +17,24 @@ const jetbrains = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'App Shell',
-  description: 'Framework-only application shell with auth and infrastructure wiring.',
+  title: {
+    default: 'HireWire — AI-Powered Career OS',
+    template: '%s | HireWire',
+  },
+  description: 'HireWire builds your application package from your real career evidence — resume, cover letter, and strategy, grounded in truth.',
+  applicationName: 'HireWire',
+  authors: [{ name: 'HireWire' }],
+  keywords: ['career', 'job search', 'resume', 'cover letter', 'AI', 'job application'],
+  openGraph: {
+    type: 'website',
+    siteName: 'HireWire',
+    title: 'HireWire — AI-Powered Career OS',
+    description: 'Your job search, grounded in real evidence. AI-generated materials that actually sound like you.',
+  },
+  icons: {
+    icon: '/brand/favicon.ico',
+    apple: '/brand/apple-touch-icon.png',
+  },
 }
 
 export const viewport: Viewport = {

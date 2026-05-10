@@ -57,22 +57,20 @@ export default function SignUpPage() {
 
   if (isSuccess) {
     return (
-      <Card className="border-0 shadow-none lg:border lg:shadow-sm">
+      <Card className="border-0 shadow-none">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
-            <CheckCircle2 className="h-6 w-6 text-green-600" />
-          </div>
-          <CardTitle className="text-2xl font-semibold">Check your email</CardTitle>
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 mx-auto mb-3" />
+          <CardTitle className="text-xl font-semibold">Check your email</CardTitle>
           <CardDescription className="text-base">
-            We sent a confirmation link to <strong>{email}</strong>
+            Confirmation link sent to <strong>{email}</strong>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground text-center">
-            Click the link in your email to verify your account, then return to log in.
+            Click the link to verify your account, then sign in to get started.
           </p>
           <Button className="w-full h-11 font-semibold" onClick={() => router.push('/login')}>
-            Go to Log in
+            Go to sign in
           </Button>
         </CardContent>
       </Card>
@@ -80,10 +78,10 @@ export default function SignUpPage() {
   }
 
   return (
-    <Card className="border-0 shadow-none lg:border lg:shadow-sm">
+    <Card className="border-0 shadow-none">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-semibold">Create your account</CardTitle>
-        <CardDescription>Start with a clean auth experience.</CardDescription>
+        <CardTitle className="text-xl font-semibold">Create your HireWire account</CardTitle>
+        <CardDescription>Build your job search on real evidence.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <form onSubmit={handleSignUp}>

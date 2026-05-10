@@ -99,7 +99,7 @@ export function AppSidebar() {
         <DiagonalStripes position="bottom-right" size="sm" variant="black" opacity={0.08} />
         
         <Link href="/dashboard" className="flex items-center justify-center relative z-10">
-          <HireWireLogo variant="red" size="md" />
+          <HireWireLogo variant="color" size="md" />
         </Link>
       </SidebarHeader>
       
