@@ -1,0 +1,89 @@
+This file is the canonical AI coding prompt for this repository.
+The full instructions live in .github/copilot-instructions.md — read that file first.
+
+Below is a condensed quick-reference version.
+
+---
+
+# HireWire — AI Coding Rules (Cursor)
+
+## What this app is
+Truth-based job application OS. Every generated document word is traceable to a real
+evidence_library record. No hallucination, no inflation, no fabrication.
+
+## Stack
+Next.js 16 App Router · TypeScript · Supabase · Tailwind v4 · shadcn/ui · Vercel AI SDK v6
+
+---
+
+## Workflow Pipeline (NEVER bypass)
+job_ingested → job_parsed → evidence_mapped → fit_scored → materials_generated → ready → applied
+
+Stage derivation: lib/job-workflow.ts::getWorkflowState() — ONLY function for this.
+Gate evaluation: lib/readiness.ts::evaluateJobReadiness() — ONLY function for gates.
+
+job_parsed is TRUE when: job.qualifications_required.length > 0 OR job.responsibilities.length > 0
+job.job_description is raw scraped text — NOT an analysis gate signal. Never use it as one.
+
+---
+
+## DB Backfill Rule
+After analyzeJobCore completes, MUST write qualifications_required, responsibilities,
+score, fit, score_gaps, score_strengths back to the jobs row (not only job_analyses).
+Workflow functions read from jobs row directly — they never join job_analyses.
+
+---
+
+## Governance Hard Blocks (lib/coach/)
+- Every bullet must cite a real evidence_library row (claim_validator.ts)
+- Numbers may not exceed 2× the largest figure in cited evidence (drift-scorer.ts)
+- drift.score >= 40 → HARD BLOCK (no DB write, 400 response)
+- strategy = "do_not_generate" (coverage < 25%) → HARD BLOCK
+- validateAllClaims() + scoreDrift() MUST run on every generation — never skip
+
+---
+
+## Tenant Isolation
+Every Supabase query MUST include .eq("user_id", userId). No exceptions.
+
+---
+
+## UI Design System Classes
+.hw-page .hw-workspace .hw-workspace-main .hw-workspace-rail
+.hw-card .hw-panel .hw-btn-primary
+.hw-stat .hw-stat-value .hw-stat-label
+.hw-section-label .hw-empty .hw-next-action
+Status badges: .status-draft .status-analyzing .status-ready .status-applied .status-offered .status-rejected
+
+Design tokens: primary = #BD0A0A (Supreme Red), background = warm off-white #ede9e3
+
+---
+
+## Column Mapping (DB → TypeScript)
+DB: role_title → Job.title (normalized in queries/jobs.ts)
+DB: company_name → Job.company
+Always use job.title / job.company in UI. Never job.role_title.
+
+---
+
+## Never Do
+- Compute workflow stage locally — use getWorkflowState()
+- Use job.job_description as analysis gate
+- Query without .eq("user_id", userId)
+- Write requirements only to job_analyses — must backfill jobs row too
+- Generate documents without evaluateJobReadiness() can_generate check
+- Use localStorage for persistence
+- Use useEffect for data fetching
+- @apply a custom hw-* class inside another @layer components rule (Tailwind v4)
+- Add banned phrases (results-driven, spearheaded, proven track record, etc.)
+- Skip governance checks in generate-documents route
+
+## Always Do
+- requireUser() at top of every API route
+- Await params/searchParams in Server Components (Next.js 16)
+- "use client" on components with hooks or event handlers
+- hw-* classes instead of re-implementing card/button/layout styles
+- gap-* for spacing, never space-x-*/space-y-*
+- Semantic tokens (bg-background, text-foreground) — never hardcoded colors
+- Import Job/EvidenceRecord from lib/types.ts — no local duplicates
+- console.error("[HireWire] ...") for all Supabase errors — never swallow silently
