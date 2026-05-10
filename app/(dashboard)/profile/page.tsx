@@ -8,7 +8,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Loader2, Save, X, Plus, Upload } from "lucide-react"
+import {
+  Loader2, Save, X, Plus, Upload,
+  User, MapPin, Mail, Phone, Globe, Github,
+  FileText, CheckCircle, AlertCircle, ShieldCheck,
+} from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface ProfileData {
@@ -22,17 +26,15 @@ interface ProfileData {
   github_url: string | null
 }
 
+function strengthItem(label: string, filled: boolean) {
+  return { label, filled }
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const [profile, setProfile] = useState<ProfileData>({
-    full_name: "",
-    email: "",
-    phone: "",
-    location: "",
-    summary: "",
-    skills: [],
-    website_url: "",
-    github_url: "",
+    full_name: "", email: "", phone: "", location: "",
+    summary: "", skills: [], website_url: "", github_url: "",
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -113,174 +115,268 @@ export default function ProfilePage() {
     setProfile(p => ({ ...p, skills: (p.skills || []).filter(s => s !== skill) }))
   }
 
+  // Profile strength calc
+  const strengthItems = [
+    strengthItem("Full name",    !!profile.full_name?.trim()),
+    strengthItem("Email",        !!profile.email?.trim()),
+    strengthItem("Location",     !!profile.location?.trim()),
+    strengthItem("Phone",        !!profile.phone?.trim()),
+    strengthItem("Summary",      (profile.summary?.trim() || "").length > 40),
+    strengthItem("Skills",       (profile.skills?.length ?? 0) >= 3),
+    strengthItem("Website / portfolio", !!profile.website_url?.trim()),
+    strengthItem("GitHub",       !!profile.github_url?.trim()),
+  ]
+  const filledCount = strengthItems.filter(i => i.filled).length
+  const strengthPct = Math.round((filledCount / strengthItems.length) * 100)
+  const strengthLabel = strengthPct >= 80 ? "Strong" : strengthPct >= 50 ? "Good" : "Needs work"
+  const strengthColor = strengthPct >= 80 ? "text-emerald-600" : strengthPct >= 50 ? "text-amber-600" : "text-rose-500"
+  const barColor = strengthPct >= 80 ? "bg-emerald-500" : strengthPct >= 50 ? "bg-amber-500" : "bg-rose-500"
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48">
+      <div className="flex items-center justify-center h-64">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
-      <div className="flex items-start justify-between">
+    <div className="hw-page">
+      {/* ─── Header ─── */}
+      <div className="hw-page-header">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Your professional identity. Used across all analyses and document generation.
-          </p>
+          <p className="hw-section-label mb-1">Career Identity</p>
+          <h1 className="hw-page-title">Profile</h1>
+          <p className="hw-page-subtitle">Your professional identity — used across all analyses and document generation.</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push("/onboarding")}
-          className="shrink-0"
-        >
-          <Upload className="h-3.5 w-3.5 mr-1.5" />
-          Upload resume
-        </Button>
-      </div>
-
-      <div className="border border-border rounded-lg p-6 bg-card space-y-6">
-        {/* Basic info */}
-        <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground font-mono mb-4">Basic Info</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="full_name">Full name</Label>
-              <Input
-                id="full_name"
-                value={profile.full_name || ""}
-                onChange={e => setProfile(p => ({ ...p, full_name: e.target.value }))}
-                placeholder="Your full name"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="location">Location</Label>
-              <Input
-                id="location"
-                value={profile.location || ""}
-                onChange={e => setProfile(p => ({ ...p, location: e.target.value }))}
-                placeholder="City, State"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={profile.email || ""}
-                onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
-                placeholder="you@example.com"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="phone">Phone</Label>
-              <Input
-                id="phone"
-                value={profile.phone || ""}
-                onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))}
-                placeholder="+1 (555) 000-0000"
-              />
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Summary */}
-        <div className="space-y-1.5">
-          <Label htmlFor="summary">Professional summary</Label>
-          <Textarea
-            id="summary"
-            value={profile.summary || ""}
-            onChange={e => setProfile(p => ({ ...p, summary: e.target.value }))}
-            placeholder="2-3 sentences describing your professional background and key strengths..."
-            rows={4}
-            className="resize-none"
-          />
-        </div>
-
-        <Separator />
-
-        {/* Skills */}
-        <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground font-mono mb-4">Skills</p>
-          <div className="flex flex-wrap gap-2 mb-3 min-h-[32px]">
-            {(profile.skills || []).map(skill => (
-              <Badge key={skill} variant="secondary" className="gap-1 pr-1">
-                {skill}
-                <button
-                  onClick={() => removeSkill(skill)}
-                  className="hover:text-foreground text-muted-foreground ml-0.5"
-                  aria-label={`Remove ${skill}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
-            {(profile.skills || []).length === 0 && (
-              <p className="text-sm text-muted-foreground">No skills added yet.</p>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Input
-              value={skillInput}
-              onChange={e => setSkillInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSkill() } }}
-              placeholder="Add a skill and press Enter"
-              className="max-w-xs"
-            />
-            <Button variant="outline" size="sm" onClick={addSkill} disabled={!skillInput.trim()}>
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Links */}
-        <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground font-mono mb-4">Links</p>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="website_url">Portfolio / Website</Label>
-              <Input
-                id="website_url"
-                value={profile.website_url || ""}
-                onChange={e => setProfile(p => ({ ...p, website_url: e.target.value }))}
-                placeholder="https://yoursite.com"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="github_url">GitHub</Label>
-              <Input
-                id="github_url"
-                value={profile.github_url || ""}
-                onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
-                placeholder="https://github.com/yourusername"
-              />
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/onboarding")}
+            className="gap-1.5 shrink-0"
+          >
+            <Upload className="h-3.5 w-3.5" /> Upload resume
+          </Button>
+          {saved && (
+            <span className="text-sm text-emerald-600 font-medium flex items-center gap-1">
+              <CheckCircle className="h-4 w-4" /> Saved
+            </span>
+          )}
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            size="sm"
+            className="hw-btn-primary gap-1.5 shrink-0"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            {saving ? "Saving..." : "Save profile"}
+          </Button>
         </div>
       </div>
 
       {error && (
-        <p className="text-sm text-red-600">{error}</p>
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
       )}
 
-      <div className="flex items-center justify-end gap-3">
-        {saved && (
-          <p className="text-sm text-green-600 font-medium">Saved</p>
-        )}
-        <Button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-[#7B1212] hover:bg-[#6a0f0f] text-white"
-        >
-          {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-          {saving ? "Saving..." : "Save profile"}
-        </Button>
+      {/* ─── Workspace ─── */}
+      <div className="hw-workspace">
+        {/* Main — Profile Form */}
+        <div className="hw-workspace-main">
+          {/* Basic Info */}
+          <div className="hw-card p-6 space-y-5">
+            <div>
+              <p className="hw-section-label mb-4">Basic Info</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="full_name" className="flex items-center gap-1.5 text-xs">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" /> Full name
+                  </Label>
+                  <Input
+                    id="full_name"
+                    value={profile.full_name || ""}
+                    onChange={e => setProfile(p => ({ ...p, full_name: e.target.value }))}
+                    placeholder="Your full name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="location" className="flex items-center gap-1.5 text-xs">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Location
+                  </Label>
+                  <Input
+                    id="location"
+                    value={profile.location || ""}
+                    onChange={e => setProfile(p => ({ ...p, location: e.target.value }))}
+                    placeholder="City, State"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="flex items-center gap-1.5 text-xs">
+                    <Mail className="h-3.5 w-3.5 text-muted-foreground" /> Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={profile.email || ""}
+                    onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="phone" className="flex items-center gap-1.5 text-xs">
+                    <Phone className="h-3.5 w-3.5 text-muted-foreground" /> Phone
+                  </Label>
+                  <Input
+                    id="phone"
+                    value={profile.phone || ""}
+                    onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))}
+                    placeholder="+1 (555) 000-0000"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Summary */}
+            <div className="space-y-1.5">
+              <Label htmlFor="summary" className="flex items-center gap-1.5 text-xs">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" /> Professional summary
+              </Label>
+              <Textarea
+                id="summary"
+                value={profile.summary || ""}
+                onChange={e => setProfile(p => ({ ...p, summary: e.target.value }))}
+                placeholder="2-3 sentences describing your professional background and key strengths..."
+                rows={4}
+                className="resize-none"
+              />
+              <p className="text-[11px] text-muted-foreground">Used in cover letters and AI analysis context.</p>
+            </div>
+          </div>
+
+          {/* Skills */}
+          <div className="hw-card p-6 space-y-4">
+            <p className="hw-section-label">Skills</p>
+            <div className="flex flex-wrap gap-2 min-h-[36px]">
+              {(profile.skills || []).map(skill => (
+                <Badge key={skill} variant="secondary" className="gap-1 pr-1.5">
+                  {skill}
+                  <button
+                    onClick={() => removeSkill(skill)}
+                    className="hover:text-foreground text-muted-foreground ml-0.5"
+                    aria-label={`Remove ${skill}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+              {(profile.skills || []).length === 0 && (
+                <p className="text-sm text-muted-foreground">No skills added yet.</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={skillInput}
+                onChange={e => setSkillInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSkill() } }}
+                placeholder="Type a skill and press Enter"
+                className="max-w-xs"
+              />
+              <Button variant="outline" size="sm" onClick={addSkill} disabled={!skillInput.trim()}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Links */}
+          <div className="hw-card p-6 space-y-4">
+            <p className="hw-section-label">Links</p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="website_url" className="flex items-center gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" /> Portfolio / Website
+                </Label>
+                <Input
+                  id="website_url"
+                  value={profile.website_url || ""}
+                  onChange={e => setProfile(p => ({ ...p, website_url: e.target.value }))}
+                  placeholder="https://yoursite.com"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="github_url" className="flex items-center gap-1.5 text-xs">
+                  <Github className="h-3.5 w-3.5 text-muted-foreground" /> GitHub
+                </Label>
+                <Input
+                  id="github_url"
+                  value={profile.github_url || ""}
+                  onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
+                  placeholder="https://github.com/yourusername"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Rail — Profile Strength */}
+        <div className="hw-workspace-rail">
+          <h2 className="hw-section-label mb-3">Profile Strength</h2>
+          <div className="hw-panel p-4">
+            {/* Score */}
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <p className={`text-2xl font-bold tabular-nums ${strengthColor}`}>{strengthPct}%</p>
+                <p className={`text-xs font-semibold ${strengthColor}`}>{strengthLabel}</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground text-right">
+                {filledCount} of {strengthItems.length} fields
+              </p>
+            </div>
+            <div className="quality-bar mb-4 h-2">
+              <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${strengthPct}%` }} />
+            </div>
+
+            {/* Field checklist */}
+            <div className="space-y-2.5">
+              {strengthItems.map(item => (
+                <div key={item.label} className="flex items-center gap-2">
+                  {item.filled
+                    ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    : <AlertCircle className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+                  }
+                  <p className={`text-xs ${item.filled ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                    {item.label}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* How it's used */}
+          <div className="mt-4">
+            <h2 className="hw-section-label mb-2">How HireWire Uses This</h2>
+            <div className="hw-panel p-4 space-y-3">
+              {[
+                { label: "Job analysis",   desc: "Matches your skills to requirements" },
+                { label: "Resume gen",     desc: "Populates contact and summary sections" },
+                { label: "Cover letters",  desc: "Personalizes tone and positioning" },
+                { label: "Fit scoring",    desc: "Baseline for gap identification" },
+              ].map(item => (
+                <div key={item.label} className="flex items-start gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">{item.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
