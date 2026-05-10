@@ -166,6 +166,13 @@ function normalizeSeniority(level: string | null): string {
  * @param requestLike - Object satisfying RequestLike for cookie/origin forwarding in runJobFlow
  */
 export async function analyzeJobCore(
+    // COACH: Block generation if analysis is missing or job status is invalid
+    // TODO: Integrate coach validators before allowing generation. See COACH_CONSTITUTION.md.
+    // Example:
+    // if (!hasJobAnalysis(existingJob) || existingJob.status !== 'analyzed') {
+    //   console.error('COACH: Generation blocked - analysis missing or job status invalid')
+    //   return { success: false, error: 'Generation blocked: analysis missing or job status invalid' }
+    // }
   job_url: string,
   supabase: ServerSupabase,
   user: User,

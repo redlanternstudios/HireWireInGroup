@@ -1,3 +1,11 @@
+// NOTE: Coach Governance: Analyze missing state bug
+// If you see 'Analysis not available' after Analyze, it means either:
+// - job.analysis_status is not 'analyzed' or equivalent
+// - job_analyses row is missing
+// - requirement graph is missing
+// - evidence match is below threshold
+// - generation is being attempted before analysis is valid
+// Generation must be blocked in these cases. See COACH_CONSTITUTION.md.
 import { createClient } from "@/lib/supabase/server"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
