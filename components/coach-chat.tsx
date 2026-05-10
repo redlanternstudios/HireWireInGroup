@@ -103,7 +103,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    if (!(input ?? "").trim() || isLoading) return
     submitMessage(e)
   }
 
@@ -291,7 +291,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
           <Button 
             type="submit" 
             size="icon"
-            disabled={!input.trim() || isLoading}
+            disabled={!(input ?? "").trim() || isLoading}
             className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isLoading ? (
