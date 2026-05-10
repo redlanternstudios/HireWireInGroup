@@ -48,11 +48,14 @@ export async function POST(request: Request) {
       return new Response("Invalid request", { status: 400 })
     }
 
-    // Sanitize all user messages for injection attempts
+    // Sanitize all user messages for injection attempts.
+    // AI SDK v6 messages use parts[].text instead of content string.
     for (const msg of messages) {
       if (msg.role === "user") {
-        const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-        const check = sanitizeInput(content)
+        const textContent = Array.isArray(msg.parts)
+          ? msg.parts.filter((p: { type: string }) => p.type === "text").map((p: { text?: string }) => p.text ?? "").join(" ")
+          : typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+        const check = sanitizeInput(textContent)
         if (!check.safe) {
           return new Response(
             JSON.stringify({ error: "Message rejected", reason: check.reason }),
@@ -90,7 +93,7 @@ export async function POST(request: Request) {
       messages,
     })
 
-    return result.toDataStreamResponse()
+    return result.toUIMessageStreamResponse()
   } catch (error) {
     console.error("[api/coach] error:", error)
     return new Response("Internal Server Error", { status: 500 })

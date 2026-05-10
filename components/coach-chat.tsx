@@ -1,7 +1,8 @@
 "use client"
 
-import { useRef, useEffect } from "react"
-import { useChat } from "@ai-sdk/react"
+import { useRef, useEffect, useState } from "react"
+import { useChat, Chat } from "@ai-sdk/react"
+import { DefaultChatTransport } from "ai"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -53,37 +54,32 @@ const quickActions = [
 export function CoachChat({ className, compact = false, jobContext, gapContext, initialMessage }: CoachChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const initialMessageSent = useRef(false)
+  const [input, setInput] = useState("")
 
-  const {
-    messages,
-    input,
-    setInput,
-    handleInputChange,
-    handleSubmit,
-    isLoading,
-    status,
-    error,
-  } = useChat({
-    api: "/api/coach",
-    body: {
-      ...(jobContext ? { jobContext } : {}),
-      ...(gapContext  ? { gapContext  } : {}),
-    },
-    onError: (err) => {
+  // AI SDK v6: Chat requires a transport instance for custom api/body.
+  // DefaultChatTransport handles the fetch to our route.
+  const chat = useRef(new Chat({
+    transport: new DefaultChatTransport({
+      api: "/api/coach",
+      body: {
+        ...(jobContext ? { jobContext } : {}),
+        ...(gapContext  ? { gapContext  } : {}),
+      },
+    }),
+    onError: (err: Error) => {
       console.error("[coach] stream error:", err)
     },
-  })
+  })).current
+
+  const { messages, status, sendMessage } = useChat({ chat })
+
+  const isLoading = status === "streaming" || status === "submitted"
 
   // Fire initial message once on mount
   useEffect(() => {
     if (initialMessage && !initialMessageSent.current && messages.length === 0) {
       initialMessageSent.current = true
-      setInput(initialMessage)
-      // Give React one tick to flush the input state, then submit
-      setTimeout(() => {
-        const fakeEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>
-        handleSubmit(fakeEvent)
-      }, 0)
+      sendMessage({ role: "user", parts: [{ type: "text", text: initialMessage }] })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -93,23 +89,24 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages, isLoading])
+  }, [messages, status])
+
+  const submit = () => {
+    const text = input.trim()
+    if (!text || isLoading) return
+    setInput("")
+    sendMessage({ role: "user", parts: [{ type: "text", text }] })
+  }
 
   const handleQuickAction = (prompt: string) => {
     if (isLoading) return
-    setInput(prompt)
-    setTimeout(() => {
-      const fakeEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>
-      handleSubmit(fakeEvent)
-    }, 0)
+    sendMessage({ role: "user", parts: [{ type: "text", text: prompt }] })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      if (!input.trim() || isLoading) return
-      const fakeEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>
-      handleSubmit(fakeEvent)
+      submit()
     }
   }
 
@@ -163,6 +160,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                   <span className="text-xs">{action.label}</span>
                 </Button>
               ))}
+
             </div>
           </div>
         )}
@@ -170,7 +168,11 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
         <div className="space-y-4">
           {messages.map((message) => {
             const isUser = message.role === "user"
-            const text = typeof message.content === "string" ? message.content : ""
+            // AI SDK v6: message text lives in parts, not message.content
+            const text = (message.parts ?? [])
+              .filter((p: { type: string }) => p.type === "text")
+              .map((p: { type: string; text?: string }) => p.text ?? "")
+              .join("")
             if (!text) return null
 
             return (
@@ -207,7 +209,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             )
           })}
 
-          {(isLoading || status === "streaming") && (
+          {isLoading && (
             <div className="flex items-start gap-3">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary text-white">
@@ -221,10 +223,10 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             </div>
           )}
 
-          {error && (
+          {status === "error" && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm font-medium text-red-700">Something went wrong</p>
-              <p className="text-xs text-red-600 mt-0.5">{error.message || "Failed to get a response. Please try again."}</p>
+              <p className="text-xs text-red-600 mt-0.5">Failed to get a response. Please try again.</p>
             </div>
           )}
         </div>
@@ -232,10 +234,10 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
 
       {/* Input */}
       <div className={cn("border-t bg-background", compact ? "p-2" : "p-4")}>
-        <form onSubmit={handleSubmit} className="flex gap-2">
+        <form onSubmit={(e) => { e.preventDefault(); submit() }} className="flex gap-2">
           <Textarea
             value={input}
-            onChange={handleInputChange}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything about your job search..."
             className={cn("min-h-[40px] max-h-[120px] resize-none", compact && "text-sm")}

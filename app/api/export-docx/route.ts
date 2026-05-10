@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const buffer = await Packer.toBuffer(doc)
   const safeName = filename.replace(/[^a-z0-9\-_]/gi, '').slice(0, 64) || 'document'
 
-  return new NextResponse(buffer, {
+  return new NextResponse(buffer as unknown as BodyInit, {
     status: 200,
     headers: {
       'Content-Type':

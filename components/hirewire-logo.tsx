@@ -13,6 +13,8 @@ const VARIANT_FILTER: Record<string, string | undefined> = {
   color: undefined,
   // White version — for dark backgrounds (auth dark mode, emails)
   white: "brightness(0) invert(1)",
+  // "light" is an alias for "white" — kept for backwards compatibility
+  light: "brightness(0) invert(1)",
   // Pure red — accent usage
   red: "brightness(0) saturate(100%) invert(13%) sepia(74%) saturate(3000%) hue-rotate(340deg) brightness(80%)",
   // Black/dark — for light backgrounds without red
@@ -25,7 +27,7 @@ export function HireWireLogo({
   size = "md",
 }: {
   className?: string
-  variant?: "color" | "white" | "red" | "dark"
+  variant?: "color" | "white" | "light" | "red" | "dark"
   size?: "sm" | "md" | "lg" | "xl"
 }) {
   const width = SIZE_MAP[size] ?? 120
