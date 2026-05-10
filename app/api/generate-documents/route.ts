@@ -57,7 +57,7 @@ async function withRetry<T>(
       
       if (isRateLimited && attempt < maxRetries) {
         const delay = baseDelayMs * Math.pow(2, attempt) // 2s, 4s, 8s
-        console.log(`[v0] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+        console.log(`[hirewire] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
         await new Promise(resolve => setTimeout(resolve, delay))
         continue
       }
