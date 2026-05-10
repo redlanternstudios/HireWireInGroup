@@ -14,6 +14,7 @@ export default function SignUpPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
@@ -24,6 +25,12 @@ export default function SignUpPage() {
     const supabase = createClient()
     setIsLoading(true)
     setError(null)
+
+    if (!agreedToTerms) {
+      setError('Please agree to the Terms of Service and Privacy Policy to continue.')
+      setIsLoading(false)
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
@@ -124,13 +131,47 @@ export default function SignUpPage() {
               />
             </div>
 
+            <div className="flex items-start gap-3 pt-1">
+              <input
+                id="terms"
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                disabled={isLoading}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border border-input accent-primary cursor-pointer"
+              />
+              <label
+                htmlFor="terms"
+                className="text-sm text-muted-foreground leading-snug cursor-pointer select-none"
+              >
+                I agree to the{' '}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Privacy Policy
+                </a>
+              </label>
+            </div>
+
             {error && (
               <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
                 {error}
               </p>
             )}
 
-            <Button type="submit" className="w-full h-11 font-semibold" disabled={isLoading}>
+            <Button type="submit" className="w-full h-11 font-semibold" disabled={isLoading || !agreedToTerms}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

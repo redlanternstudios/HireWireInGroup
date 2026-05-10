@@ -54,14 +54,26 @@ export async function createClient() {
   )
 }
 
-// Admin client that bypasses RLS - use for server-side operations
+// Admin client that bypasses RLS - use for server-side operations ONLY.
+// Must never be available in Preview or Development environments.
+// Restrict SUPABASE_SERVICE_ROLE_KEY to Production in Vercel env var settings.
 export function createAdminClient() {
   const config = getSupabaseConfig()
 
   if (!config.supabaseServiceRoleKey) {
     throw new Error(
-      'Missing SUPABASE_SERVICE_ROLE_KEY environment variable. ' +
-      'Please add Supabase integration via the Settings menu.'
+      'SUPABASE_SERVICE_ROLE_KEY is not set. ' +
+      'This key must only be configured for the Production environment.'
+    )
+  }
+
+  // Hard block: refuse to create an admin client in non-production Vercel deployments.
+  // VERCEL_ENV is set by Vercel automatically: "production" | "preview" | "development"
+  const vercelEnv = process.env.VERCEL_ENV
+  if (vercelEnv && vercelEnv !== 'production') {
+    throw new Error(
+      `createAdminClient() called in Vercel "${vercelEnv}" environment. ` +
+      'The service role key must not be used outside Production.'
     )
   }
 
