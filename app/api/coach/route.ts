@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
-import { streamText } from "ai"
+import { streamText, convertToModelMessages } from "ai"
 import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
 import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 
@@ -90,7 +90,9 @@ export async function POST(request: Request) {
     const result = streamText({
       model: CLAUDE_MODELS.HAIKU,
       system: systemPrompt,
-      messages,
+      // convertToModelMessages converts v6 UIMessage[] (parts-based) to
+      // ModelMessage[] (content-based) that streamText expects.
+      messages: convertToModelMessages(messages),
     })
 
     return result.toUIMessageStreamResponse()
