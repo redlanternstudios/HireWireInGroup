@@ -41,6 +41,8 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
+    // AI SDK v6 DefaultChatTransport sends: { id, messages, message, trigger, messageId, ...extraBody }
+    // jobContext and gapContext arrive as merged extraBody fields.
     const { messages, jobContext, gapContext } = body
 
     // Validate message array
@@ -48,11 +50,19 @@ export async function POST(request: Request) {
       return new Response("Invalid request", { status: 400 })
     }
 
-    // Sanitize all user messages for injection attempts
+    // Helper: extract plain text from a v6 UIMessage.
+    // v6 messages have parts[{ type, text }] instead of a content string.
+    function extractText(msg: { role: string; parts?: { type: string; text?: string }[]; content?: unknown }): string {
+      if (Array.isArray(msg.parts)) {
+        return msg.parts.filter(p => p.type === "text").map(p => p.text ?? "").join(" ")
+      }
+      return typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "")
+    }
+
+    // Sanitize all user messages for injection attempts.
     for (const msg of messages) {
       if (msg.role === "user") {
-        const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-        const check = sanitizeInput(content)
+        const check = sanitizeInput(extractText(msg))
         if (!check.safe) {
           return new Response(
             JSON.stringify({ error: "Message rejected", reason: check.reason }),
@@ -61,6 +71,15 @@ export async function POST(request: Request) {
         }
       }
     }
+
+    // Convert v6 UIMessage[] (parts-based) → CoreMessage[] (content-based) for streamText.
+    // We only keep user and assistant turns — strip tool/data parts.
+    const coreMessages = messages
+      .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
+      .map((m: { role: string; parts?: { type: string; text?: string }[]; content?: unknown }) => ({
+        role: m.role as "user" | "assistant",
+        content: extractText(m),
+      }))
 
     // Build system prompt with optional context
     let systemPrompt = COACH_SYSTEM_PROMPT
@@ -87,10 +106,10 @@ export async function POST(request: Request) {
     const result = streamText({
       model: CLAUDE_MODELS.HAIKU,
       system: systemPrompt,
-      messages,
+      messages: coreMessages,
     })
 
-    return result.toDataStreamResponse()
+    return result.toUIMessageStreamResponse()
   } catch (error) {
     console.error("[api/coach] error:", error)
     return new Response("Internal Server Error", { status: 500 })

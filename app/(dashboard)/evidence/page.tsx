@@ -35,6 +35,8 @@ import {
   ChevronRight,
   TrendingUp,
   Zap,
+  ShieldCheck,
+  AlertCircle,
 } from "lucide-react"
 
 type SourceType = "work_experience" | "education" | "skill" | "certification" | "project"
@@ -240,6 +242,7 @@ export default function CareerContextPage() {
       {/* Header */}
       <div className="hw-page-header">
         <div>
+          <p className="hw-section-label mb-1">Proof Vault</p>
           <h1 className="hw-page-title">Career Context</h1>
           <p className="hw-page-subtitle">
             {items.length} proof point{items.length !== 1 ? "s" : ""} across {totalActive} categor{totalActive !== 1 ? "ies" : "y"} — the evidence base behind every analysis and document.
@@ -309,51 +312,57 @@ export default function CareerContextPage() {
       </div>
 
       {/* Stats row */}
-      {items.length > 0 && (
-        <div className="flex gap-3 flex-wrap">
-          <div className="hw-stat">
-            <span className="hw-stat-value text-primary">{items.length}</span>
-            <span className="hw-stat-label">Total entries</span>
-          </div>
-          <div className="hw-stat">
-            <span className="hw-stat-value text-emerald-600">{highConfidenceCount}</span>
-            <span className="hw-stat-label">Strong proof points</span>
-          </div>
-          <div className="hw-stat">
-            <span className="hw-stat-value text-blue-600">{items.filter(i => (i.outcomes || []).length > 0 || (i.approved_achievement_bullets || []).length > 0).length}</span>
-            <span className="hw-stat-label">With outcomes</span>
-          </div>
-          <div className="hw-stat">
-            <span className="hw-stat-value text-amber-600">{totalActive}</span>
-            <span className="hw-stat-label">Categories</span>
-          </div>
+      <div className="hw-metrics">
+        <div className="hw-stat">
+          <span className="hw-stat-value text-primary">{items.length}</span>
+          <span className="hw-stat-label">Total entries</span>
         </div>
-      )}
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title, company, skill, or role..." className="pl-9" />
+        <div className="hw-stat">
+          <span className="hw-stat-value text-emerald-600">{highConfidenceCount}</span>
+          <span className="hw-stat-label">Strong proof</span>
+        </div>
+        <div className="hw-stat">
+          <span className="hw-stat-value text-blue-600">{items.filter(i => (i.outcomes || []).length > 0 || (i.approved_achievement_bullets || []).length > 0).length}</span>
+          <span className="hw-stat-label">With outcomes</span>
+        </div>
+        <div className="hw-stat">
+          <span className="hw-stat-value text-amber-600">{totalActive}</span>
+          <span className="hw-stat-label">Categories</span>
+        </div>
       </div>
 
-      {/* Body */}
-      {loading ? (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="hw-empty">
-          <Briefcase className="h-5 w-5 text-muted-foreground" />
-          <p className="text-sm font-medium text-foreground">
-            {search ? "No entries match your search." : "No career context yet."}
-          </p>
-          <p className="text-xs text-muted-foreground max-w-xs">
-            {search ? "Try a different term." : "Upload your resume or add entries manually to build your evidence base."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {SECTION_ORDER.map(type => {
+      {/* Workspace */}
+      <div className="hw-workspace">
+        {/* Main */}
+        <div className="hw-workspace-main">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title, company, skill, or role..." className="pl-9" />
+          </div>
+
+          {/* Body */}
+          {loading ? (
+            <div className="flex items-center justify-center h-48">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="hw-empty">
+              <div className="hw-empty-icon">
+                <Briefcase className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">
+                  {search ? "No entries match your search." : "No career context yet."}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  {search ? "Try a different term." : "Upload your resume or add entries manually to build your evidence base. Every entry strengthens your application packages."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {SECTION_ORDER.map(type => {
             const sectionItems = grouped[type]
             if (sectionItems.length === 0) return null
             const cfg = SOURCE_TYPE_CONFIG[type]
@@ -485,8 +494,56 @@ export default function CareerContextPage() {
               </div>
             )
           })}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Right Rail — Context Health */}
+        <div className="hw-workspace-rail">
+          <h2 className="hw-section-label mb-3">Context Health</h2>
+          <div className="hw-panel p-4 space-y-3">
+            {SECTION_ORDER.map(type => {
+              const cfg = SOURCE_TYPE_CONFIG[type]
+              const count = items.filter(i => i.source_type === type).length
+              const hasItems = count > 0
+              return (
+                <div key={type} className="flex items-center gap-2.5">
+                  <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${hasItems ? "bg-emerald-100" : "bg-muted"}`}>
+                    {hasItems
+                      ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      : <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-medium ${hasItems ? "text-foreground" : "text-muted-foreground"}`}>{cfg.label}</p>
+                  </div>
+                  <span className={`text-xs font-bold tabular-nums ${hasItems ? "text-foreground" : "text-muted-foreground/50"}`}>{count}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Tips */}
+          <div className="mt-4">
+            <h2 className="hw-section-label mb-2">Proof Tips</h2>
+            <div className="hw-panel p-4 space-y-3">
+              {[
+                { tip: "Add outcomes to work entries", desc: "Quantified results power stronger bullets." },
+                { tip: "Include tools used", desc: "Keyword matching improves fit scores." },
+                { tip: "Certifications count", desc: "They validate skill claims automatically." },
+              ].map(item => (
+                <div key={item.tip} className="flex items-start gap-2">
+                  <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">{item.tip}</p>
+                    <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
