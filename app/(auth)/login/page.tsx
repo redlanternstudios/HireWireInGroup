@@ -100,19 +100,17 @@ function LoginForm() {
 
   if (isMagicLinkSent) {
     return (
-      <Card className="border-0 shadow-none lg:border lg:shadow-sm">
+      <Card className="border-0 shadow-none">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
-            <Mail className="h-6 w-6 text-green-600" />
-          </div>
-          <CardTitle className="text-2xl font-semibold">Check your email</CardTitle>
+          <Mail className="h-5 w-5 text-muted-foreground mx-auto mb-3" />
+          <CardTitle className="text-xl font-semibold">Check your email</CardTitle>
           <CardDescription className="text-base">
-            We sent a magic link to <strong>{email}</strong>
+            Sign-in link sent to <strong>{email}</strong>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground text-center">
-            Click the link in your email to sign in. The link expires in 1 hour.
+            Click the link to sign in. It expires in 1 hour.
           </p>
           <Button variant="outline" className="w-full" onClick={() => {
             setIsMagicLinkSent(false)
@@ -126,10 +124,10 @@ function LoginForm() {
   }
 
   return (
-    <Card className="border-0 shadow-none lg:border lg:shadow-sm">
+    <Card className="border-0 shadow-none">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-semibold">Welcome back</CardTitle>
-        <CardDescription>Sign in to your account</CardDescription>
+        <CardTitle className="text-xl font-semibold">Sign in to HireWire</CardTitle>
+        <CardDescription>Your career OS is waiting.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <form onSubmit={authMode === 'magic' ? handleMagicLink : handlePasswordLogin}>

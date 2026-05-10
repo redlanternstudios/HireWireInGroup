@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
     const doc = new Document({
       sections: [{ properties: {}, children: paragraphs }],
     })
+<<<<<<< HEAD
     const buffer = await Packer.toBuffer(doc)
     const safeName = filename.replace(/[^a-z0-9\-_]/gi, '').slice(0, 64) || 'document'
     return new NextResponse(buffer as unknown as BodyInit, {
@@ -49,4 +50,24 @@ export async function POST(req: NextRequest) {
     logErr(err, { route: "/api/export-docx" })
     return NextResponse.json(toApiErrorResponse(err), { status: 500 })
   }
+=======
+  )
+
+  const doc = new Document({
+    sections: [{ properties: {}, children: paragraphs }],
+  })
+
+  const buffer = await Packer.toBuffer(doc)
+  const safeName = filename.replace(/[^a-z0-9\-_]/gi, '').slice(0, 64) || 'document'
+
+  return new NextResponse(buffer as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${safeName}.docx"`,
+      'Cache-Control': 'no-store',
+    },
+  })
+>>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 }

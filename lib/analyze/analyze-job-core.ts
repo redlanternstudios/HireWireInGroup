@@ -498,6 +498,31 @@ Extract the job details following the schema.`,
   })
   if (scoresError) console.error("Scores insert error:", scoresError)
 
+  // Backfill the jobs row with extracted requirements so hasJobAnalysis() returns true
+  // and the workflow stepper advances correctly without needing a separate join.
+  const gaps = fitResult.reasoning.filter((r: string) => r.includes("Gap:"))
+  const strengths = fitResult.reasoning.filter((r: string) => !r.includes("Gap:"))
+  const { error: backfillError } = await supabase
+    .from("jobs")
+    .update({
+      title: validatedAnalysis.title,
+      company: validatedAnalysis.company,
+      qualifications_required: validatedAnalysis.qualifications_required,
+      responsibilities: validatedAnalysis.responsibilities,
+      score: fitResult.score,
+      fit: fitResult.fit,
+      score_gaps: gaps,
+      score_strengths: strengths,
+      seniority_level: normalizedSeniority,
+      role_family: validatedAnalysis.role_family,
+      location: validatedAnalysis.location,
+      industry_guess: validatedAnalysis.industry_guess,
+      ats_keywords: validatedAnalysis.keywords,
+    })
+    .eq("id", job.id)
+    .eq("user_id", user.id)
+  if (backfillError) console.error("Jobs backfill error:", backfillError)
+
   // Run orchestration flow
   const orchestration = await runJobFlow({
     supabase,

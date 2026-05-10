@@ -91,7 +91,7 @@ export interface MappedEvidenceRow {
 export function mapResumeToEvidence(parsed: ParsedResume): MappedEvidenceRow[] {
   // Guard against null/undefined parsed object
   if (!parsed || typeof parsed !== "object") {
-    console.error("[v0] mapResumeToEvidence received invalid parsed data:", parsed)
+    console.error("[hirewire] mapResumeToEvidence received invalid parsed data:", parsed)
     return []
   }
 

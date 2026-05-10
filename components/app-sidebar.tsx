@@ -46,12 +46,16 @@ const pipelineNav = [
   { name: "Ready to Apply", href: "/ready-queue", icon: CheckSquare },
   { name: "Applied", href: "/applications", icon: Send },
   { name: "Materials", href: "/documents", icon: FileText },
+<<<<<<< HEAD
   { name: "Career Context", href: "/career-context", icon: BookOpen },
   { name: "Resume Integrity", href: "/integrity", icon: Zap },
   { name: "Consistency Check", href: "/integrity/consistency", icon: SlidersHorizontal },
   { name: "AI Content", href: "/integrity/ai-content", icon: Library },
   { name: "Verification Sim", href: "/integrity/verification", icon: BarChart3 },
   { name: "Gap Analyzer", href: "/integrity/gap", icon: SlidersHorizontal },
+=======
+  { name: "Career Context", href: "/evidence", icon: Library },
+>>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   { name: "Analytics", href: "/analytics", icon: BarChart3, premium: true },
   { name: "Activity Log", href: "/logs", icon: History },
   { name: "Add Job", href: "/jobs/new", icon: PlusCircle },
@@ -105,7 +109,7 @@ export function AppSidebar() {
         <DiagonalStripes position="bottom-right" size="sm" variant="black" opacity={0.08} />
         
         <Link href="/dashboard" className="flex items-center justify-center relative z-10">
-          <HireWireLogo variant="red" size="md" />
+          <HireWireLogo variant="color" size="md" />
         </Link>
       </SidebarHeader>
       

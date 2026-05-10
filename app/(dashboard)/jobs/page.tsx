@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+<<<<<<< HEAD
 import Link from "next/link"
 
 
@@ -10,50 +11,44 @@ import { PipelineFilters } from "./PipelineFilters"
 import { JobPipelineBoard } from "./JobPipelineBoard"
 import { JobIntelligencePanel } from "./JobIntelligencePanel"
 import { JobsPipelineClient } from "./JobsPipelineClient"
+=======
+import { JobsPipelineClient, type PipelineJob } from "@/components/jobs/jobs-pipeline-client"
+>>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 export const dynamic = "force-dynamic"
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  queued: "Queued",
-  analyzing: "Analyzing…",
-  analyzed: "Analyzed",
-  generating: "Generating…",
-  ready: "Ready",
-  needs_review: "Needs review",
-  applied: "Applied",
-  interviewing: "Interviewing",
-  offered: "Offered",
-  rejected: "Rejected",
-  archived: "Archived",
-  error: "Error",
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  ready: "bg-green-100 text-green-800",
-  needs_review: "bg-yellow-100 text-yellow-800",
-  generating: "bg-blue-100 text-blue-800",
-  analyzing: "bg-blue-100 text-blue-800",
-  applied: "bg-purple-100 text-purple-800",
-  interviewing: "bg-purple-100 text-purple-800",
-  offered: "bg-green-100 text-green-800",
-  error: "bg-red-100 text-red-800",
-}
-
 export default async function JobsPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
+<<<<<<< HEAD
 
+=======
+  // Fetch all fields needed by display-stage, staleness, and priority helpers
+>>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   const { data: jobs } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, status, generated_resume, created_at")
+    .select(`
+      id,
+      role_title,
+      company_name,
+      status,
+      generation_status,
+      generated_resume,
+      generated_cover_letter,
+      quality_passed,
+      applied_at,
+      evidence_map,
+      score,
+      updated_at,
+      created_at,
+      job_scores ( overall_score )
+    `)
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
+<<<<<<< HEAD
     .limit(100)
 
   const jobList = Array.isArray(jobs) ? jobs : []
@@ -84,3 +79,30 @@ export default async function JobsPage() {
               <JobsPipelineClient jobs={jobList} />
             )
                       {statusLabel}
+=======
+    .limit(200)
+
+  // Normalize score — prefer job_scores.overall_score, fall back to jobs.score
+  const pipeline: PipelineJob[] = (jobs ?? []).map(j => {
+    const scores = (j.job_scores as Array<{ overall_score?: number }> | null) ?? []
+    const score = scores[0]?.overall_score ?? (j.score as number | null) ?? null
+    return {
+      id:                    j.id,
+      role_title:            j.role_title ?? null,
+      company_name:          j.company_name ?? null,
+      status:                j.status ?? null,
+      generation_status:     j.generation_status ?? null,
+      generated_resume:      j.generated_resume ?? null,
+      generated_cover_letter: j.generated_cover_letter ?? null,
+      quality_passed:        j.quality_passed ?? null,
+      applied_at:            j.applied_at ?? null,
+      evidence_map:          (j.evidence_map as Record<string, unknown> | null) ?? null,
+      score,
+      updated_at:            j.updated_at ?? null,
+      created_at:            j.created_at,
+    }
+  })
+
+  return <JobsPipelineClient jobs={pipeline} />
+}
+>>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
