@@ -6,7 +6,7 @@ import { DefaultChatTransport } from "ai"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+
 import { cn } from "@/lib/utils"
 import {
   Send,
@@ -112,136 +112,176 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
   const canSend = input.trim().length > 0 && !isLoading
 
   return (
-    <div className={cn("flex flex-col h-full", className)}>
-      {/* Messages — plain div so ref targets the actual scrollable element */}
+    <div className={cn("flex flex-col h-full bg-background", className)}>
+
+      {/* Scrollable message area */}
       <div
         ref={scrollRef}
-        className={cn("flex-1 overflow-y-auto px-4", compact ? "py-2" : "py-4")}
+        className="flex-1 overflow-y-auto"
       >
-        {messages.length === 0 && (
-          <div className={cn("space-y-4", compact ? "py-2" : "py-6")}>
-            <div className="flex items-start gap-3">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-white">
-                  <Sparkles className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium">HireWire Coach</p>
-                <p className="text-sm text-muted-foreground">
-                  Hey! I&apos;m your personal career coach. I can help you with job search strategy,
-                  interview prep, building your evidence library, and improving your application materials.
-                </p>
-                {jobContext ? (
-                  <div className="p-2 bg-muted rounded-md border text-sm">
-                    <p className="font-medium">Currently focused on:</p>
-                    <p className="text-muted-foreground">
-                      {jobContext.title} at {jobContext.company}
-                      {jobContext.score != null && ` · Fit: ${jobContext.score}%`}
+        <div className={cn("space-y-1 px-4", compact ? "py-3" : "py-5")}>
+
+          {/* Welcome state */}
+          {messages.length === 0 && (
+            <div className="space-y-4">
+              {/* Coach intro bubble */}
+              <div className="flex items-start gap-3">
+                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm">
+                  <Sparkles className="h-4 w-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">HireWire Coach</p>
+                  <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+                    <p className="text-sm text-foreground leading-relaxed">
+                      Hey! I&apos;m your personal career coach. I can help you with job search strategy,
+                      interview prep, building your evidence library, and improving your application materials.
                     </p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">What would you like to work on today?</p>
-                )}
-              </div>
-            </div>
-
-            <div className={cn("grid gap-2", compact ? "grid-cols-1" : "grid-cols-2")}>
-              {quickActions.map((action) => (
-                <Button
-                  key={action.label}
-                  variant="outline"
-                  className="justify-start gap-2 h-auto py-2 px-3 text-left"
-                  onClick={() => handleQuickAction(action.prompt)}
-                  disabled={isLoading}
-                >
-                  <action.icon className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-xs">{action.label}</span>
-                </Button>
-              ))}
-
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          {messages.map((message) => {
-            const isUser = message.role === "user"
-            // AI SDK v6: message text lives in parts, not message.content
-            const text = (message.parts ?? [])
-              .filter((p: { type: string }) => p.type === "text")
-              .map((p: { type: string; text?: string }) => p.text ?? "")
-              .join("")
-            if (!text) return null
-
-            return (
-              <div key={message.id} className={cn("flex items-start gap-3", isUser && "flex-row-reverse")}>
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className={cn(isUser ? "bg-muted text-muted-foreground" : "bg-primary text-white")}>
-                    {isUser ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-                  </AvatarFallback>
-                </Avatar>
-                <div className={cn("flex-1 space-y-1", isUser && "text-right")}>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {isUser ? "You" : "HireWire Coach"}
-                  </p>
-                  <div className={cn("prose prose-sm max-w-none", isUser ? "text-right" : "text-left")}>
-                    {isUser ? (
-                      <p className="text-sm">{text}</p>
+                    {jobContext ? (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Focused on</p>
+                        <p className="text-sm font-medium text-foreground">
+                          {jobContext.title}
+                          <span className="text-muted-foreground font-normal"> at {jobContext.company}</span>
+                          {jobContext.score != null && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
+                              {jobContext.score}% fit
+                            </span>
+                          )}
+                        </p>
+                      </div>
                     ) : (
-                      <ReactMarkdown
-                        components={{
-                          p:      ({ children }) => <p className="text-sm text-foreground mb-2">{children}</p>,
-                          ul:     ({ children }) => <ul className="text-sm list-disc pl-4 mb-2">{children}</ul>,
-                          ol:     ({ children }) => <ol className="text-sm list-decimal pl-4 mb-2">{children}</ol>,
-                          li:     ({ children }) => <li className="text-sm mb-1">{children}</li>,
-                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                          code:   ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs">{children}</code>,
-                        }}
-                      >
-                        {text}
-                      </ReactMarkdown>
+                      <p className="text-sm text-muted-foreground mt-1">What would you like to work on today?</p>
                     )}
                   </div>
                 </div>
               </div>
-            )
-          })}
 
-          {isLoading && (
-            <div className="flex items-start gap-3">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-white">
-                  <Sparkles className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex items-center gap-2 py-2">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground">Thinking...</span>
+              {/* Quick actions */}
+              <div className={cn("grid gap-2 pl-11", compact ? "grid-cols-1" : "grid-cols-2")}>
+                {quickActions.map((action) => (
+                  <button
+                    key={action.label}
+                    onClick={() => handleQuickAction(action.prompt)}
+                    disabled={isLoading}
+                    className={cn(
+                      "flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all",
+                      "bg-card border border-border hover:border-primary/30 hover:bg-primary/5",
+                      "shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    <div className="h-6 w-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <action.icon className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <span className="text-xs font-medium text-foreground">{action.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
-          {status === "error" && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm font-medium text-red-700">Something went wrong</p>
-              <p className="text-xs text-red-600 mt-0.5">Failed to get a response. Please try again.</p>
-            </div>
-          )}
-          {/* Scroll sentinel — scrollIntoView targets this */}
-          <div ref={messagesEndRef} />
+          {/* Conversation messages */}
+          <div className="space-y-4 pt-2">
+            {messages.map((message) => {
+              const isUser = message.role === "user"
+              const text = (message.parts ?? [])
+                .filter((p: { type: string }) => p.type === "text")
+                .map((p: { type: string; text?: string }) => p.text ?? "")
+                .join("")
+              if (!text) return null
+
+              return (
+                <div
+                  key={message.id}
+                  className={cn("flex items-end gap-2.5", isUser ? "flex-row-reverse" : "flex-row")}
+                >
+                  {/* Avatar */}
+                  {!isUser && (
+                    <div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center shrink-0 mb-0.5 shadow-sm">
+                      <Sparkles className="h-3.5 w-3.5 text-white" />
+                    </div>
+                  )}
+                  {isUser && (
+                    <div className="h-7 w-7 rounded-full bg-foreground/10 border border-border flex items-center justify-center shrink-0 mb-0.5">
+                      <User className="h-3.5 w-3.5 text-foreground/60" />
+                    </div>
+                  )}
+
+                  {/* Bubble */}
+                  <div className={cn("max-w-[78%]", isUser ? "items-end" : "items-start", "flex flex-col gap-1")}>
+                    <div
+                      className={cn(
+                        "px-4 py-2.5 text-sm leading-relaxed",
+                        isUser
+                          ? "bg-foreground text-background rounded-2xl rounded-br-sm shadow-sm"
+                          : "bg-card border border-border text-foreground rounded-2xl rounded-bl-sm shadow-sm"
+                      )}
+                    >
+                      {isUser ? (
+                        <p>{text}</p>
+                      ) : (
+                        <ReactMarkdown
+                          components={{
+                            p:      ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            ul:     ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+                            ol:     ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+                            li:     ({ children }) => <li>{children}</li>,
+                            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                            code:   ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                          }}
+                        >
+                          {text}
+                        </ReactMarkdown>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Typing indicator */}
+            {isLoading && (
+              <div className="flex items-end gap-2.5">
+                <div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center shrink-0 mb-0.5 shadow-sm">
+                  <Sparkles className="h-3.5 w-3.5 text-white" />
+                </div>
+                <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {status === "error" && (
+              <div className="flex justify-center">
+                <div className="px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-center">
+                  <p className="text-sm font-medium text-red-700">Something went wrong</p>
+                  <p className="text-xs text-red-500 mt-0.5">Failed to get a response. Please try again.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Scroll sentinel */}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
       </div>
 
-      {/* Input */}
-      <div className={cn("border-t bg-background", compact ? "p-2" : "p-4")}>
-        <form onSubmit={(e) => { e.preventDefault(); submit() }} className="flex gap-2">
+      {/* Input bar — always pinned at bottom, visually distinct */}
+      <div className="shrink-0 border-t border-border bg-card px-4 py-3">
+        <form onSubmit={(e) => { e.preventDefault(); submit() }} className="flex items-end gap-2">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything about your job search..."
-            className={cn("min-h-[40px] max-h-[120px] resize-none", compact && "text-sm")}
+            className={cn(
+              "flex-1 min-h-[40px] max-h-[120px] resize-none bg-background border-border",
+              "focus-visible:ring-1 focus-visible:ring-primary/50 text-sm",
+              compact && "text-xs"
+            )}
             rows={1}
             disabled={isLoading}
           />
@@ -249,7 +289,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             type="submit"
             size="icon"
             disabled={!canSend}
-            className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+            className="shrink-0 h-10 w-10 rounded-xl bg-primary text-white hover:bg-primary/90 shadow-sm disabled:opacity-40"
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -258,6 +298,9 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             )}
           </Button>
         </form>
+        <p className="text-[10px] text-muted-foreground mt-2 text-center">
+          Responses grounded in your verified evidence library
+        </p>
       </div>
     </div>
   )
