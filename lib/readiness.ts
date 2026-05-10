@@ -1,23 +1,19 @@
 import { createClient } from "@/lib/supabase/server"
+// WorkflowStage is the single canonical type — always import from job-workflow.
+// readiness.ts never re-declares it.
+import type { WorkflowStage } from "@/lib/job-workflow"
+export type { WorkflowStage }
 
 /**
- * Readiness Engine - Single source of truth for job workflow state
- * 
- * This module provides the canonical gates and workflow stage derivation.
- * No page, component, or action may compute readiness locally.
- * All readiness flows from evaluateJobReadiness() for per-job views
- * or getReadyJobIds() for list views.
+ * Readiness Engine — DB-querying side of the workflow pipeline.
+ *
+ * This module owns:
+ *   - evaluateJobReadiness(): per-job artifact check (async, uses Supabase)
+ *   - getReadyJobIds(): list-view ready/pending_quality buckets
+ *
+ * It does NOT own WorkflowStage (that lives in lib/job-workflow.ts).
+ * No page or component may compute readiness locally.
  */
-
-export type WorkflowStage =
-  | "draft"              // Job added, no analysis
-  | "job_parsed"         // job_analyses row exists
-  | "evidence_mapped"    // evidence_map.matching_complete = true
-  | "fit_scored"         // job_scores row exists
-  | "materials_generated" // generated_resume and generated_cover_letter exist
-  | "quality_passed"     // quality_passed = true (red team approved)
-  | "applied"            // applied_at set, applications row exists
-  | "archived"           // status = archived
 
 export interface ReadinessResult {
   job_id: string
@@ -58,28 +54,8 @@ export interface ReadinessResult {
   } | null
 }
 
-// Workflow stages in order
-const STAGES: WorkflowStage[] = [
-  "draft",
-  "job_parsed",
-  "evidence_mapped",
-  "fit_scored",
-  "materials_generated",
-  "quality_passed",
-  "applied",
-  "archived",
-]
-
-const STAGE_LABELS: Record<WorkflowStage, string> = {
-  draft: "Draft",
-  job_parsed: "Analyzed",
-  evidence_mapped: "Evidence Mapped",
-  fit_scored: "Scored",
-  materials_generated: "Materials Ready",
-  quality_passed: "Quality Verified",
-  applied: "Applied",
-  archived: "Archived",
-}
+// Use WORKFLOW_STAGES from job-workflow for ordering — no local duplicate.
+import { WORKFLOW_STAGES } from "@/lib/job-workflow"
 
 /**
  * Evaluate job readiness from persisted artifacts
@@ -144,14 +120,14 @@ export async function evaluateJobReadiness(
     gapCount = requirementCount
   }
   
-  // Derive workflow stage from artifacts
-  let stage: WorkflowStage = "draft"
-  if (is_archived) {
-    stage = "archived"
-  } else if (is_applied) {
+  // Derive workflow stage from artifacts.
+  // Stage names must match the canonical WorkflowStage union in lib/job-workflow.ts.
+  // "job_ingested" (not "draft"), "ready" (not "quality_passed").
+  let stage: WorkflowStage = "job_ingested"
+  if (is_applied) {
     stage = "applied"
   } else if (quality_passed) {
-    stage = "quality_passed"
+    stage = "ready"
   } else if (has_resume && has_cover_letter) {
     stage = "materials_generated"
   } else if (has_score) {
@@ -162,7 +138,7 @@ export async function evaluateJobReadiness(
     stage = "job_parsed"
   }
   
-  const stage_index = STAGES.indexOf(stage)
+  const stage_index = WORKFLOW_STAGES.indexOf(stage)
   
   // Calculate gates
   const can_match_evidence = has_job_analysis
@@ -211,21 +187,21 @@ export async function evaluateJobReadiness(
     }
   } else if (!has_score) {
     next_action = {
-      label: "Score Fit",
-      href: `/jobs/${jobId}/scoring`,
-      description: "Calculate your fit score",
+      label: "Generate Materials",
+      href: `/jobs/${jobId}/documents`,
+      description: "Generate tailored resume and cover letter",
     }
   } else if (!has_resume || !has_cover_letter) {
     next_action = {
       label: "Generate Materials",
-      href: `/jobs/${jobId}`,
+      href: `/jobs/${jobId}/documents`,
       description: "Create tailored resume and cover letter",
     }
   } else if (!quality_passed) {
     next_action = {
-      label: "Red Team Review",
-      href: `/jobs/${jobId}/red-team`,
-      description: "Review and approve materials",
+      label: "Review & Export",
+      href: `/jobs/${jobId}/documents`,
+      description: "Review materials and export for application",
     }
   } else if (!is_applied) {
     next_action = {
@@ -299,7 +275,4 @@ export async function getReadyJobIds(userId: string): Promise<{
   }
 }
 
-/**
- * Export stage labels for UI
- */
-export { STAGES as WORKFLOW_STAGES, STAGE_LABELS }
+
