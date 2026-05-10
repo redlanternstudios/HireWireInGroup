@@ -5,7 +5,7 @@ import { useChat, Chat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import {
@@ -53,6 +53,7 @@ const quickActions = [
 
 export function CoachChat({ className, compact = false, jobContext, gapContext, initialMessage }: CoachChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialMessageSent = useRef(false)
   const [input, setInput] = useState("")
 
@@ -84,11 +85,9 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-scroll on new messages
+  // Auto-scroll to bottom on new messages / streaming updates
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, status])
 
   const submit = () => {
@@ -114,10 +113,10 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
 
   return (
     <div className={cn("flex flex-col h-full", className)}>
-      {/* Messages */}
-      <ScrollArea
-        ref={scrollRef as React.RefObject<HTMLDivElement>}
-        className={cn("flex-1 px-4", compact ? "py-2" : "py-4")}
+      {/* Messages — plain div so ref targets the actual scrollable element */}
+      <div
+        ref={scrollRef}
+        className={cn("flex-1 overflow-y-auto px-4", compact ? "py-2" : "py-4")}
       >
         {messages.length === 0 && (
           <div className={cn("space-y-4", compact ? "py-2" : "py-6")}>
@@ -229,8 +228,10 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
               <p className="text-xs text-red-600 mt-0.5">Failed to get a response. Please try again.</p>
             </div>
           )}
+          {/* Scroll sentinel — scrollIntoView targets this */}
+          <div ref={messagesEndRef} />
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Input */}
       <div className={cn("border-t bg-background", compact ? "p-2" : "p-4")}>
