@@ -73,63 +73,72 @@ export type CreateJobResult = AnalyzeJobResult
  * user_id is derived from supabase.auth.getUser() only, never from input.
  */
 export async function analyzeJobFromUrl(url: string): Promise<AnalyzeJobResult> {
+  // --- Error system integration ---
+  const { authError, validationError, logError, toActionResult } = await import("@/lib/errors/factory")
+  const { logError: logErr } = await import("@/lib/errors/logger")
+  const { toActionResult: toAction } = await import("@/lib/errors/response")
+  const { createCorrelationId } = await import("@/lib/errors/correlation")
+  const correlationId = createCorrelationId()
   try {
     const normalizedUrl = url.trim()
-
     if (!normalizedUrl) {
-      return { success: false, error: "Please provide a job URL." }
+      const err = validationError({ code: "MISSING_JOB_URL", correlationId })
+      logErr(err, { action: "analyzeJobFromUrl" })
+      return toAction(err)
     }
-
     let parsedUrl: URL
     try {
       parsedUrl = new URL(normalizedUrl)
     } catch {
-      return { success: false, error: "Please provide a valid URL." }
+      const err = validationError({ code: "INVALID_JOB_URL", correlationId })
+      logErr(err, { action: "analyzeJobFromUrl" })
+      return toAction(err)
     }
-
     if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return { success: false, error: "URL must use http or https protocol." }
+      const err = validationError({ code: "INVALID_PROTOCOL", correlationId })
+      logErr(err, { action: "analyzeJobFromUrl" })
+      return toAction(err)
     }
-
     const supabase = await createClient()
     const {
       data: { user },
-      error: authError,
+      error: authErrorObj,
     } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return { success: false, error: "Not authenticated" }
+    if (authErrorObj || !user) {
+      const err = authError({ code: "NOT_AUTHENTICATED", correlationId })
+      logErr(err, { action: "analyzeJobFromUrl" })
+      return toAction(err)
     }
-
-    // Build a RequestLike from next/headers so runJobFlow can forward cookies
-    // and resolve the base URL without a real NextRequest object.
     const requestHeaders = await headers()
     const requestLike = {
       headers: {
         get: (name: string) => requestHeaders.get(name),
       },
     }
-
     const result = await analyzeJobCore(normalizedUrl, supabase, user, requestLike)
-
     if (!result.success) {
-      return { success: false, error: result.error }
+      const err = validationError({ code: "ANALYZE_JOB_FAILED", message: result.error, correlationId })
+      logErr(err, { action: "analyzeJobFromUrl" })
+      return toAction(err)
     }
-
     revalidatePath("/")
     revalidatePath("/jobs")
     revalidatePath(`/jobs/${result.job_id}`)
-
     return {
       success: true,
       job: result.job,
       analysis: result.analysis,
       duplicate: result.duplicate || false,
       message: result.message,
+      correlationId,
     }
   } catch (err) {
-    console.error("Error analyzing job from URL:", err)
-    return { success: false, error: "Failed to analyze job URL" }
+    const { unknownError } = await import("@/lib/errors/factory")
+    const { logError: logErr } = await import("@/lib/errors/logger")
+    const { toActionResult: toAction } = await import("@/lib/errors/response")
+    const errorObj = unknownError({ code: "ANALYZE_JOB_EXCEPTION", cause: err, correlationId })
+    logErr(errorObj, { action: "analyzeJobFromUrl" })
+    return toAction(errorObj)
   }
 }
 
@@ -307,18 +316,19 @@ function transformJobForUI(job: Record<string, unknown>): Record<string, unknown
 }
 
 export async function getJobs(): Promise<JobsResult> {
+  const { authError, supabaseError, unknownError } = await import("@/lib/errors/factory")
+  const { logError: logErr } = await import("@/lib/errors/logger")
+  const { toActionResult: toAction } = await import("@/lib/errors/response")
+  const { createCorrelationId } = await import("@/lib/errors/correlation")
+  const correlationId = createCorrelationId()
   try {
-    // Use authenticated client - RLS will filter by user_id
     const supabase = await createClient()
-    
-    // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
-      return { success: false, error: "Not authenticated" }
+      const err = authError({ code: "NOT_AUTHENTICATED", correlationId })
+      logErr(err, { action: "getJobs" })
+      return toAction(err)
     }
-
-    // Fetch jobs with their scores from job_scores table
-    // Filter out soft-deleted jobs (deleted_at IS NULL)
     const { data, error } = await supabase
       .from("jobs")
       .select(`
@@ -331,18 +341,17 @@ export async function getJobs(): Promise<JobsResult> {
       .eq("user_id", user.id)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
-
     if (error) {
-      console.error("Error fetching jobs:", error)
-      return { success: false, error: error.message }
+      const err = supabaseError({ code: "JOBS_FETCH_FAILED", message: error.message, correlationId })
+      logErr(err, { action: "getJobs" })
+      return toAction(err)
     }
-
-    // Transform data for UI compatibility
     const transformedData = (data || []).map(transformJobForUI) as unknown as Job[]
-    return { success: true, data: transformedData }
+    return { success: true, data: transformedData, correlationId }
   } catch (err) {
-    console.error("Connection error:", err)
-    return { success: false, error: "Unable to connect to database" }
+    const errorObj = unknownError({ code: "JOBS_FETCH_EXCEPTION", cause: err, correlationId })
+    logErr(errorObj, { action: "getJobs" })
+    return toAction(errorObj)
   }
 }
 

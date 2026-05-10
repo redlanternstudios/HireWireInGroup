@@ -17,9 +17,15 @@ export default function GlobalError({
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <div className="text-center space-y-4 max-w-md">
-        <h2 className="text-2xl font-bold text-destructive">Something went wrong</h2>
-        <p className="text-muted-foreground">{error.message}</p>
-        <Button onClick={reset}>Try again</Button>
+        <ErrorCard
+          title="Something went wrong"
+          message={error.message || 'An unexpected error occurred.'}
+          actionLabel="Try again"
+          onAction={reset}
+          severity="error"
+          correlationId={error.digest}
+          retryable
+        />
       </div>
     </div>
   )

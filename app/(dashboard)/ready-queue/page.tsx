@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+
+import { EmptyWithAction } from "@/components/error/empty-with-action"
+import { getClientMessage } from "@/lib/comms/client-messages"
 import Link from "next/link"
 import { CheckSquare, FileText } from "lucide-react"
 
@@ -21,6 +24,8 @@ export default async function ReadyQueuePage() {
 
   const jobList = jobs ?? []
 
+  const emptyMsg = getClientMessage('readyQueue.empty')
+
   return (
     <div className="space-y-8">
       <div>
@@ -31,21 +36,13 @@ export default async function ReadyQueuePage() {
       </div>
 
       {jobList.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 flex flex-col items-center justify-center text-center gap-4">
-          <CheckSquare className="h-10 w-10 text-muted-foreground/40" />
-          <div>
-            <p className="font-medium">Nothing in the queue yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Jobs move here once documents are generated and ready to review.
-            </p>
-          </div>
-          <Link
-            href="/jobs"
-            className="inline-flex items-center rounded-lg bg-[#7B1212] px-4 py-2 text-sm font-medium text-white hover:bg-[#6a0f0f] transition-colors"
-          >
-            Add a job
-          </Link>
-        </div>
+        emptyMsg ? (
+          <EmptyWithAction
+            message={emptyMsg.body}
+            actionLabel={emptyMsg.actionLabel || "Add Job"}
+            onAction={() => { window.location.href = emptyMsg.nextAction || "/jobs" }}
+          />
+        ) : null
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {jobList.map((job) => (

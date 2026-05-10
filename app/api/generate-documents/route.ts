@@ -264,6 +264,11 @@ Return an error explaining why generation was blocked.`
 }
 
 export async function POST(request: NextRequest) {
+  const { validationError, authError, aiProviderError, documentGenerationError, supabaseError, unknownError } = await import("@/lib/errors/factory")
+  const { logError: logErr } = await import("@/lib/errors/logger")
+  const { toApiErrorResponse } = await import("@/lib/errors/response")
+  const { createCorrelationId } = await import("@/lib/errors/correlation")
+  const correlationId = createCorrelationId()
   try {
     const body = await request.json()
     const { selected_evidence_ids, _retry_count = 0 } = body
@@ -288,24 +293,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Auth with getSession() fallback for v0 sandbox
+    // Auth: require user, no fallback
     const userClient = await createClient()
-    let userId: string | undefined
     const { data: { user } } = await userClient.auth.getUser()
-    if (user) {
-      userId = user.id
-    } else {
-      const { data: { session } } = await userClient.auth.getSession()
-      if (session?.user) userId = session.user.id
-    }
-    if (!userId) {
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       )
     }
+    const userId = user.id
 
-    const supabase = createAdminClient()
+    // Use user-scoped client for all reads
+    const supabase = userClient
 
     // === PLAN ENFORCEMENT ===
     // Check user's plan and generation count this month
@@ -1056,11 +1056,9 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       .eq("user_id", userId)
 
     if (updateError) {
-      console.error("Error updating job:", updateError)
-      return NextResponse.json(
-        { success: false, error: "Failed to persist generated documents. Please try again." },
-        { status: 500 }
-      )
+      const err = supabaseError({ code: "JOB_UPDATE_FAILED", message: updateError.message, correlationId })
+      logErr(err, { route: "/api/generate-documents" })
+      return NextResponse.json(toApiErrorResponse(err), { status: 500 })
     }
 
     // Increment generations_this_month for usage tracking (only on successful generation)
@@ -1177,14 +1175,9 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         has_github: !!p.github,
         confidence: p.confidence,
       })),
+      correlationId,
     })
   } catch (error) {
-  console.error("Error in generate-documents:", error)
-
-    // Check for rate limit errors
-    const errorMessage = error instanceof Error ? error.message : "Generation failed"
-    const isRateLimit = errorMessage.includes("rate_limit") || errorMessage.includes("Rate limit") || errorMessage.includes("429")
-    
     // Try to update job status to failed (best effort, don't fail if this fails)
     try {
       const { job_id } = await request.clone().json()
@@ -1201,25 +1194,16 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
             .eq("user_id", user.id)
         }
       }
-    } catch {
-      // Ignore errors updating status
-    }
-    
+    } catch {}
+    const errorMessage = error instanceof Error ? error.message : "Generation failed"
+    const isRateLimit = errorMessage.includes("rate_limit") || errorMessage.includes("Rate limit") || errorMessage.includes("429")
     if (isRateLimit) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: "AI service is temporarily busy. Please wait 30 seconds and try again.",
-          retryAfter: 30,
-          isRateLimit: true
-        },
-        { status: 429 }
-      )
+      const err = aiProviderError({ code: "AI_RATE_LIMIT", message: errorMessage, correlationId, retryable: true })
+      logErr(err, { route: "/api/generate-documents" })
+      return NextResponse.json({ ...toApiErrorResponse(err), retryAfter: 30 }, { status: 429 })
     }
-    
-    return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
-    )
+    const errObj = documentGenerationError({ code: "GENERATION_FAILED", message: errorMessage, correlationId })
+    logErr(errObj, { route: "/api/generate-documents" })
+    return NextResponse.json(toApiErrorResponse(errObj), { status: 500 })
   }
 }

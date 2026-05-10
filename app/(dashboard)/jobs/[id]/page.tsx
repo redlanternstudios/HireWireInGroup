@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { GenerateButton } from "./GenerateButton"
+import { getWorkflowState } from "@/lib/job-workflow"
 
 export const dynamic = "force-dynamic"
 
@@ -24,15 +25,22 @@ export default async function JobDetailPage({
   } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
+
+  // Fetch evidence_map and other workflow fields for workflow state
   const { data: job, error: jobError } = await supabase
     .from("jobs")
     .select(
-      "id, role_title, company_name, job_url, status, fit, score, generated_resume, generated_cover_letter, created_at"
+      "id, role_title, company_name, job_url, status, fit, score, generated_resume, generated_cover_letter, created_at, evidence_map, quality_passed, generation_quality_issues, score_gaps"
     )
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .single()
+  // Derive workflow state for this job
+  const workflowState = getWorkflowState(job, job.id)
+  // Next step CTA logic
+  const nextAction = workflowState.nextAction
+  const blockers = workflowState.blockers
 
   if (jobError || !job) notFound()
 
@@ -74,6 +82,29 @@ export default async function JobDetailPage({
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Next step CTA card */}
+      {nextAction && (
+        <div className="rounded-xl border border-primary bg-card p-6 flex flex-col items-center text-center mb-2">
+          <p className="text-base font-semibold mb-2">Next step</p>
+          <a
+            href={nextAction.href}
+            className={`inline-flex items-center rounded-md px-4 py-2.5 text-sm font-medium transition-colors ${blockers.length > 0 ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary text-white hover:bg-primary/90'}`}
+            aria-disabled={blockers.length > 0}
+            tabIndex={blockers.length > 0 ? -1 : 0}
+            {...(blockers.length > 0 ? { onClick: (e) => e.preventDefault() } : {})}
+          >
+            {nextAction.label}
+          </a>
+          <p className="text-xs text-muted-foreground mt-2">{nextAction.description}</p>
+          {blockers.length > 0 && (
+            <ul className="mt-2 text-xs text-red-600 list-disc list-inside">
+              {blockers.map((b, i) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/jobs" className="hover:text-foreground transition-colors">
           Jobs

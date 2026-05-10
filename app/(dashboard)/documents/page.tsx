@@ -31,21 +31,32 @@ export default async function DocumentsPage() {
       </div>
 
       {jobList.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 flex flex-col items-center justify-center text-center gap-4">
-          <FileText className="h-10 w-10 text-muted-foreground/40" />
-          <div>
-            <p className="font-medium">No documents generated yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Add a job and run document generation to see your materials here.
-            </p>
-          </div>
-          <Link
-            href="/jobs"
-            className="inline-flex items-center rounded-lg bg-[#7B1212] px-4 py-2 text-sm font-medium text-white hover:bg-[#6a0f0f] transition-colors"
-          >
-            Add a job
-          </Link>
-        </div>
+        (() => {
+          const { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } = require("@/components/ui/empty")
+          const { Button } = require("@/components/ui/button")
+          const { getClientMessage } = require("@/lib/comms/client-messages")
+          const Link = require("next/link")
+          const { FileText } = require("lucide-react")
+          const msg = getClientMessage('documents.empty')
+          return (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FileText className="h-10 w-10 text-muted-foreground/40" />
+                </EmptyMedia>
+                <EmptyTitle>{msg?.subject}</EmptyTitle>
+                <EmptyDescription>{msg?.body}</EmptyDescription>
+              </EmptyHeader>
+              {msg?.actionLabel && msg?.nextAction && (
+                <EmptyContent>
+                  <Button asChild variant="default">
+                    <Link href={msg.nextAction}>{msg.actionLabel}</Link>
+                  </Button>
+                </EmptyContent>
+              )}
+            </Empty>
+          )
+        })()
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {jobList.map((job) => (

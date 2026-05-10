@@ -1,7 +1,15 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { JobInputForm } from "./JobInputForm"
+
+
+import { JobsPageHeader } from "./JobsPageHeader"
+import { JobIntakeCard } from "./JobIntakeCard"
+import { PipelineSummaryTiles } from "./PipelineSummaryTiles"
+import { PipelineFilters } from "./PipelineFilters"
+import { JobPipelineBoard } from "./JobPipelineBoard"
+import { JobIntelligencePanel } from "./JobIntelligencePanel"
+import { JobsPipelineClient } from "./JobsPipelineClient"
 
 export const dynamic = "force-dynamic"
 
@@ -39,15 +47,18 @@ export default async function JobsPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
+
   const { data: jobs } = await supabase
     .from("jobs")
     .select("id, role_title, company_name, status, generated_resume, created_at")
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
-    .limit(50)
+    .limit(100)
 
-  const jobList = jobs ?? []
+  const jobList = Array.isArray(jobs) ? jobs : []
+
+  // Move filter state to client component
 
   return (
     <div className="space-y-8">
@@ -69,48 +80,7 @@ export default async function JobsPage() {
             <h2 className="text-base font-medium">Your jobs</h2>
           </div>
           <ul className="divide-y divide-border">
-            {jobList.map((job) => {
-              const statusLabel = STATUS_LABELS[job.status] ?? job.status
-              const statusColor = STATUS_COLORS[job.status] ?? "bg-gray-100 text-gray-700"
-              const hasDocs = !!job.generated_resume
-
-              return (
-                <li
-                  key={job.id}
-                  className="flex items-center justify-between px-6 py-4 gap-4"
-                >
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="min-w-0 flex-1 hover:opacity-70 transition-opacity"
-                  >
-                    <p className="font-medium text-sm truncate">
-                      {job.role_title ?? "Untitled role"}
-                    </p>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {job.company_name ?? "—"}
-                    </p>
-                  </Link>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor}`}
-                    >
+            return (
+              <JobsPipelineClient jobs={jobList} />
+            )
                       {statusLabel}
-                    </span>
-                    {hasDocs && (
-                      <Link
-                        href={`/jobs/${job.id}/documents`}
-                        className="inline-flex items-center rounded bg-black px-3 py-1 text-xs text-white hover:bg-gray-800 transition-colors"
-                      >
-                        View documents
-                      </Link>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
-}

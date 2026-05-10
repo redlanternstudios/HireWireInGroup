@@ -319,9 +319,31 @@ export async function POST(request: NextRequest) {
       inserted = insertedData ?? []
     }
 
-    // ── 9. Return canonical summary ──────────────────────────────────────────
+    // ── 9. Insert candidate_resume_versions and return for integrity scoring ──
+    const { data: resumeVersion, error: versionError } = await supabase
+      .from("candidate_resume_versions")
+      .insert({
+        user_id: userId,
+        file_name: filename,
+        file_type: mimeType,
+        parsed_text: rawText,
+        upload_source: "upload"
+      })
+      .select("id")
+      .single()
+
+    if (versionError || !resumeVersion) {
+      return NextResponse.json({ error: "Failed to save resume version" }, { status: 500 })
+    }
+
+    // Extract bullets for integrity scoring
+    const bullets = (Array.isArray(parsed.work_experience) ? parsed.work_experience : [])
+      .flatMap(w => Array.isArray(w.responsibilities) ? w.responsibilities : [])
+
     return NextResponse.json({
       message: "Resume processed successfully",
+      resume_version_id: resumeVersion.id,
+      bullets,
       source_resume_id: sourceResumeId,
       inserted: inserted.length,
       updated: skillsToUpdate.length,
