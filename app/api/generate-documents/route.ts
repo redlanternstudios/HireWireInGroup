@@ -39,6 +39,11 @@ import {
   getTemplateGuidance,
 } from "@/lib/resume-templates"
 import { sanitizeInput } from "@/lib/safety"
+import {
+  validateAllClaims,
+  scoreDrift,
+  type GovernanceEvidence,
+} from "@/lib/coach"
 
 // Helper for retry with exponential backoff (handles 429 rate limits)
 async function withRetry<T>(
@@ -861,6 +866,118 @@ Sincerely,
 
 ${signatureBlock}`
 
+    // ── GOVERNANCE LAYER ──────────────────────────────────────────────────────
+    // Runs AFTER document text is finalized but BEFORE quality check and DB write.
+    // This is additive — it does not replace the existing quality checks.
+
+    // Build a GovernanceEvidence[] from the already-loaded evidence
+    const governanceEvidence: GovernanceEvidence[] = allEvidence.map((e: EvidenceRecord) => ({
+      id: e.id,
+      source_title: e.source_title,
+      source_type: e.source_type,
+      confidence_level: e.confidence_level,
+      outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
+      tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
+      team_size: e.team_size ?? null,
+      budget_scope: e.budget_scope ?? null,
+      user_impact_scale: e.user_impact_scale ?? null,
+      what_not_to_overstate: e.what_not_to_overstate ?? null,
+      approved_achievement_bullets: Array.isArray(e.approved_achievement_bullets)
+        ? e.approved_achievement_bullets
+        : [],
+    }))
+
+    // 1. Claim validation — every bullet and paragraph checked against its evidence
+    const bulletClaimInputs = enhancedBullets.map((b) => ({
+      text: b.bullet_text,
+      cited_evidence_id: (b as { bullet_text: string; source_evidence_id?: string }).source_evidence_id ?? null,
+    }))
+    const paragraphClaimInputs = coverLetterWithProvenance.paragraphs.map((p: {
+      paragraph_text: string
+      evidence_ids_used: string[]
+    }) => ({
+      text: p.paragraph_text,
+      cited_evidence_id: p.evidence_ids_used?.[0] ?? null,
+    }))
+
+    const claimValidation = validateAllClaims(
+      bulletClaimInputs,
+      paragraphClaimInputs,
+      governanceEvidence
+    )
+
+    // 2. Drift scoring — measures deviation of generated output from evidence
+    const driftResult = scoreDrift({
+      bulletTexts: bulletClaimInputs,
+      paragraphTexts: paragraphClaimInputs,
+      bulletVerdicts: claimValidation.bulletVerdicts,
+      paragraphVerdicts: claimValidation.paragraphVerdicts,
+      evidenceSet: governanceEvidence,
+    })
+
+    // 3. Governance hard block: fabricated claims or drift above threshold
+    const governancePassed =
+      !claimValidation.hasFabricated && !driftResult.is_blocking
+
+    if (!governancePassed) {
+      const blockReason = driftResult.is_blocking
+        ? `Generation blocked by drift score (${driftResult.score}/100): ${driftResult.summary}`
+        : `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`
+
+      await supabase
+        .from("jobs")
+        .update({
+          status: "error",
+          generation_status: "failed",
+          generation_error: blockReason,
+          governance_passed: false,
+          governance_drift_score: driftResult.score,
+          governance_version: "1.0.0",
+        })
+        .eq("id", job_id)
+        .eq("user_id", userId)
+
+      // Persist the governance run record for auditing
+      await supabase.from("generation_governance_runs").insert({
+        user_id: userId,
+        job_id,
+        strategy,
+        strategy_decision: {
+          strategy,
+          requirement_coverage: generatedEvidenceMap.requirement_coverage,
+          evidence_quality_pct: evidenceQuality,
+          reasoning: strategyReasoning,
+        },
+        bullet_verdicts: claimValidation.bulletVerdicts,
+        paragraph_verdicts: claimValidation.paragraphVerdicts,
+        fabricated_count: claimValidation.fabricatedCount,
+        low_confidence_count: claimValidation.lowConfidenceCount,
+        drift_score: driftResult.score,
+        drift_is_blocking: driftResult.is_blocking,
+        drift_flags: driftResult.flags,
+        drift_summary: driftResult.summary,
+        governance_passed: false,
+        failed_at_phase: driftResult.is_blocking ? "drift_scoring" : "claim_validation",
+        governance_version: "1.0.0",
+      }).throwOnError().catch(() => {
+        // Governance table may not exist yet — do not block the response
+      })
+
+      return NextResponse.json({
+        success: false,
+        error: blockReason,
+        governance: {
+          passed: false,
+          fabricated_count: claimValidation.fabricatedCount,
+          drift_score: driftResult.score,
+          drift_summary: driftResult.summary,
+          drift_flags: driftResult.flags.filter((f) => f.severity === "block"),
+        },
+      }, { status: 400 })
+    }
+
+    // ── END GOVERNANCE LAYER ──────────────────────────────────────────────────
+
     // Step 4: Detect banned phrases and vague patterns
     const resumeBannedPhrases = detectBannedPhrases(formattedResume)
     const coverLetterBannedPhrases = detectBannedPhrases(formattedCoverLetter)
@@ -1029,6 +1146,9 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         scored_at: new Date().toISOString(),
         generation_timestamp: new Date().toISOString(),
         generation_quality_score: qualityScore,
+        governance_passed: true,
+        governance_drift_score: driftResult.score,
+        governance_version: "1.0.0",
     generation_quality_issues: [
       ...allBannedPhrases.map(p => `Banned phrase: "${p}"`),
       ...vaguePatterns.map(p => `Vague pattern: "${p}"`),
@@ -1093,6 +1213,40 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
           ats_match_score: generatedEvidenceMap.fit_score,
         })
         .eq("id", jobAnalysis.id)
+        .eq("user_id", userId)
+    }
+
+    // Save governance run (additive — does not replace quality check)
+    const governanceRunInsert = await supabase.from("generation_governance_runs").insert({
+      user_id: userId,
+      job_id,
+      strategy,
+      strategy_decision: {
+        strategy,
+        requirement_coverage: generatedEvidenceMap.requirement_coverage,
+        evidence_quality_pct: evidenceQuality,
+        reasoning: strategyReasoning,
+      },
+      bullet_verdicts: claimValidation.bulletVerdicts,
+      paragraph_verdicts: claimValidation.paragraphVerdicts,
+      fabricated_count: claimValidation.fabricatedCount,
+      low_confidence_count: claimValidation.lowConfidenceCount,
+      drift_score: driftResult.score,
+      drift_is_blocking: false,
+      drift_flags: driftResult.flags,
+      drift_summary: driftResult.summary,
+      governance_passed: true,
+      governance_version: "1.0.0",
+    }).select("id").maybeSingle()
+
+    const governanceRunId = governanceRunInsert.data?.id ?? null
+
+    // Update job with governance run reference
+    if (governanceRunId) {
+      await supabase
+        .from("jobs")
+        .update({ last_governance_run_id: governanceRunId })
+        .eq("id", job_id)
         .eq("user_id", userId)
     }
 
@@ -1171,6 +1325,16 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         has_github: !!p.github,
         confidence: p.confidence,
       })),
+      governance: {
+        passed: true,
+        governance_version: "1.0.0",
+        run_id: governanceRunId,
+        drift_score: driftResult.score,
+        drift_summary: driftResult.summary,
+        drift_warnings: driftResult.flags.filter((f) => f.severity === "warning").length,
+        fabricated_count: claimValidation.fabricatedCount,
+        low_confidence_count: claimValidation.lowConfidenceCount,
+      },
     })
   } catch (error) {
   console.error("Error in generate-documents:", error)
