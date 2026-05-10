@@ -64,7 +64,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialMessageSent = useRef(false)
 
-  const { messages, input, handleInputChange, handleSubmit: submitMessage, isLoading, append, error } = useChat({
+  const { messages, input: rawInput, handleInputChange, handleSubmit: submitMessage, isLoading, append, error } = useChat({
     api: "/api/coach",
     body: {
       ...(jobContext ? {
@@ -83,7 +83,8 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
     },
   })
 
-
+  // Guard against undefined during SSR/hydration — useChat returns undefined before mount
+  const input = rawInput ?? ""
 
   // Send initial message on mount if provided
   useEffect(() => {
@@ -103,7 +104,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!(input ?? "").trim() || isLoading) return
+    if (!input.trim() || isLoading) return
     submitMessage(e)
   }
 
@@ -291,7 +292,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
           <Button 
             type="submit" 
             size="icon"
-            disabled={!(input ?? "").trim() || isLoading}
+            disabled={!input.trim() || isLoading}
             className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isLoading ? (
