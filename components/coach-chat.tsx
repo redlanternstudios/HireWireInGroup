@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
 import { useChat } from "@ai-sdk/react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -63,8 +63,9 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialMessageSent = useRef(false)
+  const [inputValue, setInputValue] = useState("")
 
-  const { messages, input: rawInput, handleInputChange, handleSubmit: submitMessage, isLoading, append, error } = useChat({
+  const { messages, isLoading, append, error } = useChat({
     api: "/api/coach",
     body: {
       ...(jobContext ? {
@@ -83,9 +84,6 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
     },
   })
 
-  // Guard against undefined during SSR/hydration — useChat returns undefined before mount
-  const input = rawInput ?? ""
-
   // Send initial message on mount if provided
   useEffect(() => {
     if (initialMessage && !initialMessageSent.current && messages.length === 0) {
@@ -101,24 +99,27 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
     }
   }, [messages])
 
-  // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isLoading) return
-    submitMessage(e)
+  const sendMessage = () => {
+    const text = inputValue.trim()
+    if (!text || isLoading) return
+    append({ role: "user", content: text })
+    setInputValue("")
   }
 
-  // Handle quick action click
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    sendMessage()
+  }
+
   const handleQuickAction = (prompt: string) => {
     if (isLoading) return
     append({ role: "user", content: prompt })
   }
 
-  // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit(e)
+      sendMessage()
     }
   }
 
@@ -278,8 +279,8 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
         <form onSubmit={handleSubmit} className="flex gap-2">
           <Textarea
             ref={textareaRef}
-            value={input}
-            onChange={handleInputChange}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything about your job search..."
             className={cn(
@@ -292,7 +293,7 @@ export function CoachChat({ className, conversationId, compact = false, onClose,
           <Button 
             type="submit" 
             size="icon"
-            disabled={!input.trim() || isLoading}
+            disabled={!inputValue.trim() || isLoading}
             className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isLoading ? (
