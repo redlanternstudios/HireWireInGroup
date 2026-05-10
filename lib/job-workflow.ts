@@ -290,7 +290,7 @@ export function getNextAction(stage: WorkflowStage, jobId?: string): WorkflowAct
     case "fit_scored":
       return {
         label: "Generate Materials",
-        href: baseHref,
+        href: `${baseHref}/documents`,
         variant: "default",
         description: "Generate tailored resume and cover letter",
       }

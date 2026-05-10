@@ -46,12 +46,12 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
   const [{ data: evidenceItems }, { data: analysis }] = await Promise.all([
     supabase
       .from("evidence_library")
-      .select("id, title, source_type, confidence_score, outcomes")
+      .select("id, source_title, source_type, confidence_level, outcomes")
       .eq("user_id", user.id)
-      .order("confidence_score", { ascending: false }),
+      .order("created_at", { ascending: false }),
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, requirements")
+      .select("matched_skills, known_gaps, qualifications_required")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -59,7 +59,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
 
   const requirements: string[] = [
     ...(Array.isArray(job.qualifications_required) ? job.qualifications_required : []),
-    ...(Array.isArray(analysis?.requirements) ? analysis.requirements : []),
+    ...(Array.isArray(analysis?.qualifications_required) ? analysis.qualifications_required : []),
   ].filter(Boolean)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
@@ -190,7 +190,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                 <div key={item.id} className="flex items-start gap-2 py-1.5 border-b border-border/50 last:border-0">
                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{item.title}</p>
+                    <p className="text-xs font-medium text-foreground truncate">{item.source_title}</p>
                     <p className="text-[10px] text-muted-foreground capitalize">{item.source_type?.replace(/_/g, " ")}</p>
                   </div>
                 </div>

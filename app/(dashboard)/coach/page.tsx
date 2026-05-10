@@ -39,7 +39,7 @@ async function getCoachContext() {
 
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
-    const readyIds = readyResult.readyJobIds ?? []
+    const readyIds = readyResult.ready ?? []
 
     const activeJobs = jobs.length
     const appliedJobs = jobs.filter(j => j.status === "applied").length
