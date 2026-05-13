@@ -18,17 +18,6 @@ export default function AppError({
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <div className="text-center space-y-4 max-w-md">
-<<<<<<< HEAD
-        <ErrorCard
-          title="Something went wrong"
-          message={error.message || 'An unexpected error occurred.'}
-          actionLabel="Try again"
-          onAction={reset}
-          severity="error"
-          correlationId={error.digest}
-          retryable
-        />
-=======
         <h2 className="text-xl font-semibold text-foreground">Something went wrong</h2>
         <p className="text-sm text-muted-foreground">
           HireWire ran into an unexpected issue. Your data is safe.
@@ -44,7 +33,6 @@ export default function AppError({
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         </div>
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
       </div>
     </div>
   )

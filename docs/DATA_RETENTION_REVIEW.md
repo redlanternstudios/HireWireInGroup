@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-# Data Retention Review
-
-This document reviews how long user and career data is retained, deletion/export options, and compliance with privacy policy.
-=======
 # DATA_RETENTION_REVIEW.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -42,4 +37,3 @@ How long data is retained. Soft delete behavior. Dead table data. User-initiated
 - **Status:** ROADMAP — not blocking for launch
 
 ## Overall: PASS — 0 blocking issues. Hard delete and account deletion are roadmap items.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

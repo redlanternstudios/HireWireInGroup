@@ -1,15 +1,3 @@
-<<<<<<< HEAD
-# Tenant Isolation and Data Security Validation
-
-This document reviews all user scoped queries and data access for tenant isolation and security.
-
-## Validation
-- .eq("user_id", user.id) on all queries
-- .is("deleted_at", null) for jobs
-- RLS policies
-- Server actions, API routes, RSC pages, exports, coach, analytics, logs, applications, documents, evidence, profile, billing
-- Special review: any query without user_id, admin/service role, export, coach, search, document route
-=======
 # TENANT_ISOLATION_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -60,4 +48,3 @@ Verified on all 51 query locations found by audit:
 - **Status:** PASS
 
 ## Overall: PASS — 0 critical issues. Both user_id and deleted_at filters verified on all jobs queries.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

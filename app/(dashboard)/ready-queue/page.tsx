@@ -1,8 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
-
-import { EmptyWithAction } from "@/components/error/empty-with-action"
-import { getClientMessage } from "@/lib/comms/client-messages"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -59,8 +56,6 @@ export default async function ReadyQueuePage() {
     { label: "Package approved", desc: "Ready for submission" },
   ]
 
-  const emptyMsg = getClientMessage('readyQueue.empty')
-
   return (
     <div className="hw-page">
       {/* ─── Header ─── */}
@@ -77,23 +72,6 @@ export default async function ReadyQueuePage() {
         </Link>
       </div>
 
-<<<<<<< HEAD
-      {jobList.length === 0 ? (
-        emptyMsg ? (
-          <EmptyWithAction
-            message={emptyMsg.body}
-            actionLabel={emptyMsg.actionLabel || "Add Job"}
-            onAction={() => { window.location.href = emptyMsg.nextAction || "/jobs" }}
-          />
-        ) : null
-      ) : (
-        <div className="rounded-xl border border-border bg-card divide-y divide-border">
-          {jobList.map((job) => (
-            <div key={job.id} className="flex items-center justify-between px-6 py-4 gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-sm truncate">{job.role_title ?? "Untitled role"}</p>
-                <p className="text-sm text-muted-foreground truncate">{job.company_name ?? "—"}</p>
-=======
       {/* ─── Metric Strip ─── */}
       <div className="hw-metrics">
         <div className="hw-stat">
@@ -122,7 +100,6 @@ export default async function ReadyQueuePage() {
             <div className="hw-empty">
               <div className="hw-empty-icon">
                 <Rocket className="h-5 w-5 text-muted-foreground" />
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
               </div>
               <div>
                 <p className="text-sm font-semibold">Nothing in the launch pad yet</p>

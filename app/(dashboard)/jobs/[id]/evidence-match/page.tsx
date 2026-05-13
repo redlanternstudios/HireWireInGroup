@@ -1,12 +1,4 @@
 import { createClient } from "@/lib/supabase/server"
-<<<<<<< HEAD
-import { redirect } from "next/navigation"
-
-export const dynamic = "force-dynamic"
-export const revalidate = 0
-
-export default async function EvidenceMatchPage({ params }: { params: { id: string } }) {
-=======
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -16,23 +8,10 @@ export const dynamic = "force-dynamic"
 
 export default async function EvidenceMatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-<<<<<<< HEAD
-  // Placeholder: Replace with actual evidence matching UI
-  return (
-    <div className="space-y-6 max-w-2xl mx-auto py-12">
-      <h1 className="text-2xl font-semibold tracking-tight">Match Evidence</h1>
-      <p className="text-muted-foreground text-sm mb-4">
-        Map your experience and achievements to the requirements of this job. This step helps generate a tailored resume and cover letter.
-      </p>
-      <div className="flex flex-col items-center justify-center py-16 text-center border rounded-xl bg-card">
-        <p className="text-muted-foreground text-sm">Evidence matching UI coming soon.</p>
-        <a href="/evidence" className="mt-2 text-sm text-primary underline">Go to Career Context</a>
-=======
   const { data: job, error } = await supabase
     .from("jobs")
     .select("id, role_title, company_name, qualifications_required, responsibilities")
@@ -224,7 +203,6 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
             </Link>
           </div>
         </div>
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
       </div>
     </div>
   )

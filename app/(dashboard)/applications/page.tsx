@@ -1,8 +1,3 @@
-Send, ArrowRight, CheckSquare, MessageSquare,
-  Trophy, XCircle, Clock, Target, Info,
-} from "lucide-react"
-
-import { sanitizeCoachContext, sanitizeRecommendations } from "@/lib/coach/context/sanitize"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import Link from "next/link"
@@ -12,11 +7,6 @@ import {
   Send, ArrowRight, CheckSquare, MessageSquare,
   Trophy, XCircle, Clock, Target, Info,
 } from "lucide-react"
-import { buildCoachContext } from "@/lib/coach/context/build-context"
-import { detectCoachSignals } from "@/lib/coach/signals/engine"
-import { generateRecommendations } from "@/lib/coach/recommendations"
-import { sortRecommendations } from "@/lib/coach/recommendations/priority"
-import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
 
 export const dynamic = "force-dynamic"
 
@@ -71,6 +61,7 @@ export default async function ApplicationsPage() {
     offered: jobList.filter(j => j.status === "offered").length,
     rejected: jobList.filter(j => j.status === "rejected").length,
   }
+
   const activeCount = counts.applied + counts.interviewing + counts.offered
   const conversionRate = jobList.length > 0
     ? Math.round(((counts.interviewing + counts.offered) / jobList.length) * 100)
@@ -82,29 +73,6 @@ export default async function ApplicationsPage() {
     acc[s] = jobList.filter(j => j.status === s)
     return acc
   }, {} as Record<string, typeof jobList>)
-
-  // ── Embedded Coach Panel logic (from HEAD) ──
-  const coachContext = buildCoachContext({
-    workflowStage: "applications",
-    blockers: [],
-    readiness: null,
-    evidenceCoverage: null,
-    fitScore: null,
-    generationHistory: [],
-    applicationHistory: jobList.map(j => ({ status: j.status, date: j.created_at })),
-    recentOutcomes: [],
-    userPreferences: {},
-    currentPage: "/applications",
-    currentAction: "applications",
-  })
-  const coachMemory = { priorRecommendations: [], acceptedRecommendations: [], ignoredRecommendations: [], generationOutcomes: [], applicationOutcomes: [], recurringWeakAreas: [] }
-  const coachSignals = detectCoachSignals(coachContext, coachMemory)
-  let coachRecommendations = generateRecommendations(coachContext, coachSignals)
-  coachRecommendations = coachRecommendations.filter((rec, idx, arr) => arr.findIndex(r => r.message === rec.message) === idx)
-  coachRecommendations = sortRecommendations(coachRecommendations)
-  const coachInsights: string[] = []
-  const coachMomentum = undefined
-  const showCoach = (coachRecommendations.length > 0 || coachInsights.length > 0)
 
   return (
     <div className="hw-page">
@@ -152,17 +120,6 @@ export default async function ApplicationsPage() {
       <div className="hw-workspace">
         {/* Main */}
         <div className="hw-workspace-main">
-          {/* Embedded Coach Panel (always at top of main column) */}
-          {showCoach && (
-            <div className="mb-4">
-              <WorkflowCoachPanelClient
-                recommendations={sanitizeRecommendations(coachRecommendations)}
-                blockers={[]}
-                insights={Array.isArray(coachInsights) ? coachInsights.map(String) : []}
-                momentum={coachMomentum ? String(coachMomentum) : undefined}
-              />
-            </div>
-          )}
           {jobList.length === 0 ? (
             <div className="hw-empty">
               <div className="hw-empty-icon">
@@ -235,6 +192,7 @@ export default async function ApplicationsPage() {
             </div>
           )}
         </div>
+
         {/* Right Rail */}
         <div className="hw-workspace-rail">
           {/* How it works */}

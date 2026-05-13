@@ -1,34 +1,3 @@
-<<<<<<< HEAD
-# User Facing Communications Validation
-
-This document validates that every user facing communication in HireWire is justified, branded, and has a defined reason.
-
-
-## Allowed Reasons
-
-- ACCOUNT_ACCESS
-- ONBOARDING_GUIDANCE
-- JOB_PIPELINE_STATUS
-- APPLICATION_PACKAGE_STATUS
-- READINESS_AND_BLOCKERS
-- COACH_GUIDANCE
-- APPLICATION_ACTIONS
-- DOCUMENT_AND_EXPORT
-- BILLING_AND_PLAN
-- ERROR_AND_RECOVERY
-- SUPPORT_AND_FEEDBACK
-- SYSTEM_AND_PRODUCT_UPDATES
-- REMINDERS_AND_DIGESTS
-- EXTERNAL_DRAFTS_FOR_USER_APPROVAL
-
-## Validation
-
-- Every communication has reason, tone, audience, channel, priority, next action
-- External comms require user approval
-- No invented achievements in external comms
-- No readiness claims unless proven
-- No random copy outside registry
-=======
 # USER_FACING_COMMS_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -70,4 +39,3 @@ All user-facing strings, empty states, error messages, and notification copy. No
 - **Status:** PENDING — requires Supabase dashboard action (not code)
 
 ## Overall: PASS — 0 code issues. Supabase email templates pending dashboard action.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

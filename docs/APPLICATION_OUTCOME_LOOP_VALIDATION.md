@@ -1,23 +1,3 @@
-<<<<<<< HEAD
-# Application Action and Outcome Loop Validation
-
-This document reviews application actions, outcome tracking, and analytics for quality over volume.
-
-## Validation
-- Apply action
-- applications table usage
-- applied_at, status transitions
-- application record/audit event creation
-- already applied block
-- follow up due logic
-- interview/offer/rejection tracking
-- analytics tied to outcomes
-- coach uses outcome context
-- No fake application submission
-- No marking applied without user action/verified flow
-- No fake analytics
-- Events first, charts second
-=======
 # APPLICATION_OUTCOME_LOOP_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -56,4 +36,3 @@ Application tracking, outcome recording, feedback loop back into evidence/coachi
 - **Status:** PASS
 
 ## Overall: PASS — 0 blocking issues. Evidence auto-promotion is a v2 roadmap item.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

@@ -1,18 +1,3 @@
-<<<<<<< HEAD
-# Analytics and Observability Validation
-
-This document reviews analytics, event capture, and dashboard safety.
-
-## Validation
-- Vercel Analytics only
-- No PostHog
-- No fake dashboards
-- No charts without real data
-- Events for: job analyzed, package generated, quality passed, application submitted, follow up due, interview/offer/rejection, error, export
-- No intelligence layer before outcome data
-- Events first, charts second
-- No vanity metrics
-=======
 # ANALYTICS_AND_OBSERVABILITY_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -56,4 +41,3 @@ Analytics provider, event tracking, observability, no dead analytics, no duplica
 - **Status:** FLAGGED — not blocking for launch. Roadmap item.
 
 ## Overall: PASS — 0 blocking issues. Structured logging is a roadmap item.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
