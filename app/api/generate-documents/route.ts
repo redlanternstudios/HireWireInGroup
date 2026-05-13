@@ -316,21 +316,20 @@ export async function POST(request: NextRequest) {
     
     const plan = userData?.plan_type || "free"
     
-    // Free users: 5 generations per month
+    // Free users: 5 generations per month.
+    // Use the canonical users.generations_this_month + users.usage_reset_at counter —
+    // NOT a jobs-table count — so both the gate and the incrementer share one source of truth.
     if (plan === "free") {
-      const monthStart = new Date()
-      monthStart.setDate(1)
-      monthStart.setHours(0, 0, 0, 0)
-      
-      const { count: generationsThisMonth } = await supabase
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .not("generated_resume", "is", null)
-        .gte("generation_timestamp", monthStart.toISOString())
-      
-      if ((generationsThisMonth || 0) >= 5) {
+      const firstOfMonth = new Date()
+      firstOfMonth.setDate(1)
+      firstOfMonth.setHours(0, 0, 0, 0)
+
+      const monthNeedsReset = !userData?.usage_reset_at ||
+        new Date(userData.usage_reset_at) < firstOfMonth
+
+      const generationsThisMonth = monthNeedsReset ? 0 : (userData?.generations_this_month || 0)
+
+      if (generationsThisMonth >= 5) {
         return NextResponse.json(
           { 
             success: false, 
@@ -1135,6 +1134,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
         score_gaps: generatedEvidenceMap.gaps,
         resume_strategy: strategy,
         evidence_map: {
+          matching_complete: true, // Set by generate-documents so stage derivation advances past evidence_mapped
           selected_evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
           bullet_provenance: bulletProvenance,
           paragraph_provenance: paragraphProvenance,

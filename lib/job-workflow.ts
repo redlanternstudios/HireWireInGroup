@@ -245,8 +245,7 @@ export function hasQualityPass(job: Job | null): boolean {
   // Explicit quality pass
   if (job.quality_passed === true) return true
   
-  // No quality issues means pass
-  if (job.generation_quality_issues && job.generation_quality_issues.length === 0) return true
+  // No quality issues also counts as pass
   if (job.generation_quality_issues && job.generation_quality_issues.length === 0) return true
   
   return false
@@ -281,10 +280,10 @@ export function getNextAction(stage: WorkflowStage, jobId?: string): WorkflowAct
     
     case "evidence_mapped":
       return {
-        label: "Review Scoring",
-        href: `${baseHref}/scoring`,
+        label: "Generate Materials",
+        href: `${baseHref}/documents`,
         variant: "default",
-        description: "Review your fit score and gaps",
+        description: "Generate tailored resume and cover letter",
       }
     
     case "fit_scored":
@@ -298,7 +297,7 @@ export function getNextAction(stage: WorkflowStage, jobId?: string): WorkflowAct
     case "materials_generated":
       return {
         label: "Review & Export",
-        href: baseHref,
+        href: `${baseHref}/documents`,
         variant: "default",
         description: "Review materials and export for application",
       }
@@ -375,6 +374,8 @@ export function canAccessSection(stage: WorkflowStage, section: JobDetailSection
       return stageIndex >= WORKFLOW_STAGES.indexOf("fit_scored")
     
     case "generation":
+      // Requires matching_complete, which is what advances the stage to "evidence_mapped".
+      // Gate at evidence_mapped (same as can_generate in readiness.ts).
       return stageIndex >= WORKFLOW_STAGES.indexOf("evidence_mapped")
     
     case "materials_preview":

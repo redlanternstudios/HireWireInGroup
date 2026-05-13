@@ -29,6 +29,7 @@ export interface ReadinessResult {
   has_cover_letter: boolean
   quality_passed: boolean
   is_applied: boolean
+  is_archived: boolean
   
   // Derived counts
   evidence_count: number
@@ -223,6 +224,7 @@ export async function evaluateJobReadiness(
     has_cover_letter,
     quality_passed,
     is_applied,
+    is_archived,
     evidence_count: evidenceCount || 0,
     requirement_count: requirementCount,
     gap_count: gapCount,

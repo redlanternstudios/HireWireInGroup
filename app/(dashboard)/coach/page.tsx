@@ -43,7 +43,7 @@ async function getCoachContext() {
 
     const activeJobs = jobs.length
     const appliedJobs = jobs.filter(j => j.status === "applied").length
-    const withMaterials = jobs.filter(j => j.generation_status === "complete").length
+    const withMaterials = jobs.filter(j => j.generation_status === "ready").length
     const evidenceCount = evidence.length
     const approvedEvidence = evidence.filter(e => e.is_user_approved).length
 
