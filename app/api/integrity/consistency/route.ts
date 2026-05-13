@@ -4,8 +4,8 @@ import { checkResumeLinkedInConsistency } from "@/lib/integrity/consistency-chec
 
 export async function POST(req: NextRequest) {
   try {
-    const result = await requireUser()
-    if (!result.ok) return result.response
+    const auth = await requireUser()
+    if (!auth.ok) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
     const { resume, linkedin } = await req.json()
     if (!resume || !linkedin) {
       return NextResponse.json({ success: false, error: "Missing resume or LinkedIn data" }, { status: 400 })

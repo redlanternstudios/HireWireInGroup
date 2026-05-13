@@ -69,22 +69,26 @@ export default async function ApplicationsPage() {
     applied_at: string
     status: string
     method: string | null
-    // Supabase returns the FK join as an array even for many-to-one; we take [0]
-    job: JobRef[] | JobRef | null
+    job: JobRef | null
   }
 
-  function resolveJob(app: ApplicationRow): JobRef | null {
-    if (!app.job) return null
-    return Array.isArray(app.job) ? (app.job[0] ?? null) : app.job
-  }
-
-  // Filter out applications whose jobs have been soft-deleted
-  const applications = (rawApplications ?? []).map(a => a as unknown as ApplicationRow)
-    .filter(a => { const j = resolveJob(a); return j && !j.deleted_at })
+  // Supabase always returns FK joins as arrays even for many-to-one.
+  // Cast the raw result to reflect that, then collapse job to the first element.
+  type RawApp = { id: string; applied_at: string; status: string; method: string | null; job: JobRef[] | null }
+  const rawCast = (rawApplications as unknown as RawApp[]) ?? []
+  const applications = rawCast
+    .map((a): ApplicationRow => ({
+      id: a.id,
+      applied_at: a.applied_at,
+      status: a.status,
+      method: a.method,
+      job: a.job?.[0] ?? null,
+    }))
+    .filter((a): a is ApplicationRow & { job: JobRef } => !!a.job && !a.job.deleted_at)
 
   // Derive display status from jobs.status (canonical outcome field)
   const displayStatus = (app: ApplicationRow): string => {
-    const jobStatus = resolveJob(app)?.status ?? "applied"
+    const jobStatus = app.job?.status ?? "applied"
     if (jobStatus === "interviewing" || jobStatus === "offered" || jobStatus === "rejected") return jobStatus
     return "applied"
   }
@@ -185,7 +189,8 @@ export default async function ApplicationsPage() {
                     <h2 className="hw-section-label mb-2">{groupLabels[status]}</h2>
                     <div className="space-y-2">
                       {group.map(app => {
-                        const job = resolveJob(app)!
+                        const job = app.job
+                        if (!job) return null
                         const ds = displayStatus(app)
                         return (
                           <Link key={app.id} href={`/jobs/${job.id}`} className="block group">

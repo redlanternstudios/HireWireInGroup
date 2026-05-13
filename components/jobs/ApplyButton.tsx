@@ -1,0 +1,61 @@
+"use client"
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { applyToJob } from "@/lib/actions/apply"
+import { Send, Loader2 } from "lucide-react"
+
+interface ApplyButtonProps {
+  jobId: string
+  disabled?: boolean
+}
+
+export function ApplyButton({ jobId, disabled = false }: ApplyButtonProps) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleApply() {
+    setPending(true)
+    setError(null)
+    try {
+      const result = await applyToJob(jobId)
+      if (result.success) {
+        router.push("/applications")
+      } else {
+        setError(result.error ?? "Could not submit application.")
+        setPending(false)
+      }
+    } catch {
+      setError("Something went wrong. Please try again.")
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Button
+        onClick={handleApply}
+        disabled={disabled || pending}
+        className="w-full hw-btn-primary gap-2"
+        size="sm"
+      >
+        {pending ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Submitting…
+          </>
+        ) : (
+          <>
+            <Send className="h-3.5 w-3.5" />
+            Mark as Applied
+          </>
+        )}
+      </Button>
+      {error && (
+        <p className="text-[11px] text-destructive text-center">{error}</p>
+      )}
+    </div>
+  )
+}

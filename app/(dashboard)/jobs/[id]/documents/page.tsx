@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import DocumentsEditor from './DocumentsEditor'
 import ApplicationPackagePreview from '@/components/documents/ApplicationPackagePreview'
+import { ApplyButton } from '@/components/jobs/ApplyButton'
 import {
   normalizeResumeFont,
   normalizeResumeFormat,
@@ -113,8 +114,9 @@ export default async function DocumentsPage({
         <div className="flex-1 min-w-0">
           <DocumentsEditor job={jobWithFormat} />
         </div>
-        <aside className="w-full md:w-96 shrink-0">
+        <aside className="w-full md:w-96 shrink-0 space-y-4">
           <ApplicationPackagePreview job={jobWithFormat} readiness={readiness} userId={user.id} />
+          <ApplyButton jobId={id} disabled={!readiness.canApply} />
         </aside>
       </div>
     </div>
