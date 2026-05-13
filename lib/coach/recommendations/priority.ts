@@ -1,5 +1,5 @@
 // Workflow-aware recommendation priority system
-import { CoachRecommendation } from "./index"
+import type { CoachRecommendation } from "./index"
 
 export enum RecommendationPriority {
   Blocker = 1,

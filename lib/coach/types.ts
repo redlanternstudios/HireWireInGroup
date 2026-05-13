@@ -34,6 +34,48 @@ export type ClaimVerdict = {
   failure_reason?: string
 }
 
+export type Claim = {
+  claim_id: string
+  type?: string
+  text: string
+  claim_text?: string
+  cited_evidence_id?: string | null
+  evidence_ids: string[]
+  truth_state: "VERIFIED" | "USER_CONFIRMED" | "DERIVED" | "UNSUPPORTED"
+  confidence: number
+  skills?: string[]
+  job_requirements_matched?: string[]
+  source?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export type DriftReport = {
+  drift_score: number
+  changed_claims: string[]
+  added_claims: string[]
+  removed_claims: string[]
+  notes: string[]
+}
+
+export type EvidenceItem = {
+  id: string
+  user_id?: string
+  source_type?: string
+  source_id?: string
+  title?: string
+  content: string
+  skills?: string[]
+  confidence: number
+  created_at?: string
+}
+
+export type QualityGateResult = {
+  passed: boolean
+  hardFails: string[]
+  warnings: string[]
+}
+
 // ── Drift Scoring ─────────────────────────────────────────────────────────────
 
 export type DriftCategory =
@@ -165,4 +207,29 @@ export type GovernanceEvidence = {
   user_impact_scale?: string | null
   what_not_to_overstate?: string | null
   approved_achievement_bullets: string[]
+}
+
+export type GenerationIntent =
+  | "ATS_OPTIMIZED"
+  | "MORE_CONCISE"
+  | "MORE_EXECUTIVE"
+  | "MORE_TECHNICAL"
+  | "MORE_LEADERSHIP"
+  | "MORE_RECRUITER_READABLE"
+  | "MORE_HIRING_MANAGER_READABLE"
+  | "MORE_METRICS_FOCUSED"
+  | "SECTION_REWRITE"
+  | "FULL_REWRITE"
+
+export type StrategyProfile = {
+  id: string
+  name: string
+  description: string
+  allowedIntents: GenerationIntent[]
+  constraints: {
+    maxResumeLength: number
+    maxBulletsPerSection: number
+    maxSectionLength: number
+    atsSafe: boolean
+  }
 }

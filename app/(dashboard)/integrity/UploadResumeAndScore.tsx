@@ -1,3 +1,4 @@
+"use client"
 // UploadResumeAndScore.tsx
 import React, { useRef, useState } from "react"
 

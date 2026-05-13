@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
+import ReadinessChecklist from "@/components/ReadinessChecklist"
 import {
   ChevronLeft,
   ExternalLink,
@@ -22,6 +23,7 @@ import {
   WORKFLOW_STAGES,
   type WorkflowStage,
 } from "@/lib/job-workflow"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import type { Job } from "@/lib/types"
 
 export const dynamic = "force-dynamic"
@@ -53,7 +55,6 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 /** Horizontal stage progress strip */
 function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
   const currentIndex = WORKFLOW_STAGES.indexOf(stage)
-  // Only show the 5 main stages (exclude applied for the strip)
   const visibleStages: WorkflowStage[] = [
     "job_ingested", "job_parsed", "evidence_mapped", "fit_scored", "materials_generated", "ready",
   ]
@@ -97,7 +98,6 @@ function NextStepBanner({ workflow, jobId, hasDocs }: {
 }) {
   const { stage, nextAction, blockers } = workflow
 
-  // Terminal: applied
   if (stage === "applied") {
     return (
       <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-emerald-500">
@@ -115,7 +115,6 @@ function NextStepBanner({ workflow, jobId, hasDocs }: {
     )
   }
 
-  // Has docs: primary CTA is view documents
   if (hasDocs) {
     return (
       <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
@@ -135,7 +134,6 @@ function NextStepBanner({ workflow, jobId, hasDocs }: {
 
   if (!nextAction) return null
 
-  // job_ingested stage: the CTA is to analyze — render the interactive button inline
   if (stage === "job_ingested") {
     return (
       <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
@@ -213,8 +211,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   ])
 
   // Merge analysis fields into job so workflow functions can read them.
-  // Priority: jobs row (backfilled by analyzeJobCore) > job_analyses join.
-  // Never use matched_skills as a proxy for qualifications_required.
   const jobWithAnalysis: Job = {
     ...job,
     title: job.role_title ?? job.title ?? analysis?.title ?? "Untitled role",
@@ -235,12 +231,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   }
 
   const workflow = getWorkflowState(jobWithAnalysis, id)
+  const readiness = evaluateReadiness(job)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const hasUrl = !!(job.job_url)
-  // isAnalyzed is true if the job has requirements extracted (either on the row or in job_analyses)
   const isAnalyzed = !!(
     analysis ||
     scores ||
@@ -312,7 +308,24 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       {/* NEXT STEP CTA — always visible, never a dead end */}
       {!stillProcessing && (
-        <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} />
+        <>
+          <div className="space-y-2">
+            <ReadinessChecklist checklist={readiness.checklist} />
+            {!readiness.isReady && (
+              <div className="text-sm text-rose-600">
+                {readiness.blockedReasons.join(", ")}
+              </div>
+            )}
+          </div>
+          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} />
+          {hasDocs && readiness.outcome === "active" && (
+            <div className="mt-4 flex justify-end">
+              <Link href="/ready-to-apply">
+                <Button className="hw-btn-primary">Check Apply Gate</Button>
+              </Link>
+            </div>
+          )}
+        </>
       )}
 
       {/* Processing state */}
@@ -337,7 +350,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* Analysis results */}
       {!stillProcessing && isAnalyzed && (
         <>
-          {/* Fit scores */}
           {(overallScore !== null || scores?.skills_match || scores?.experience_relevance) && (
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-4">
@@ -363,7 +375,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          {/* Summary */}
           {analysis?.summary && (
             <div className="hw-card px-6 py-5">
               <h2 className="hw-section-label mb-3">Summary</h2>
@@ -371,7 +382,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          {/* Strengths + Gaps */}
           {(matchedSkills.length > 0 || knownGaps.length > 0) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {matchedSkills.length > 0 && (
@@ -403,7 +413,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          {/* Documents section — only shown when no docs yet (has docs = CTA banner above) */}
           {!hasDocs && (
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-1">

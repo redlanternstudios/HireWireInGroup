@@ -1,6 +1,6 @@
 // External communication templates (recruiter, referral, follow up, etc.)
 
-import { CommunicationMessage } from './types'
+import type { CommunicationMessage } from './types'
 
 export const externalTemplates: Record<string, CommunicationMessage> = {
   RECRUITER_INTRO: {

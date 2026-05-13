@@ -1,4 +1,6 @@
 // CoachRecommendations: Generate contextual, workflow-aware, actionable recommendations
+import { deduplicateRecommendations, filterByCooldown } from "./deduplicate"
+import { sortRecommendations } from "./priority"
 
 export interface CoachRecommendation {
   id: string
@@ -13,6 +15,7 @@ export function generateRecommendations(context: any, signals: any[]): CoachReco
   // Implement recommendation logic using context and signals
   // Example: priorRecommendations = [{ id, lastShown }]
   let recs: CoachRecommendation[] = []
+  const priorRecommendations = Array.isArray(context.priorRecommendations) ? context.priorRecommendations : []
 
   // Blockers first
   if (Array.isArray(context.blockers) && context.blockers.length > 0) {

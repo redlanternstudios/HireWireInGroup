@@ -16,6 +16,7 @@ const STATUS_COLUMNS = [
   { key: "archived", label: "Archived" },
 ]
 
+export function JobPipelineBoard({ jobs }: { jobs: any[] }) {
   // Group jobs by status
   const jobsByStatus: Record<string, any[]> = {}
   for (const col of STATUS_COLUMNS) jobsByStatus[col.key] = []

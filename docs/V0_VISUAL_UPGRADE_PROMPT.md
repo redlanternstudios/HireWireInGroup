@@ -75,7 +75,7 @@ Use this prompt in v0 or any external design/AI agent to drive a full visual and
 >
 > 1. Dashboard / Home: daily command center, "Today's Focus", Pipeline Health, Recent Jobs, Quick Actions, Setup/Import Profile only when relevant, Next Best Action.
 > 2. All Jobs: pipeline hub, summary tiles, analyze job card, search, filter chips, sort, rich opportunity cards, readiness stage, next action, blockers, fit score, pipeline intelligence side panel.
-> 3. Ready to Apply: launch pad, Ready Now, Almost Ready, Pending Quality Review, Needs Evidence, Needs Materials, Application Confidence panel, Readiness Rules panel, Next Best Actions, show why nothing is ready and which job is closest.
+> 3. Ready to Apply: readiness gate, Ready, Blocked, explicit checklist, override modal, Application Confidence panel, Readiness Rules panel, Next Best Actions, show why nothing is ready and route every apply action through `/ready-to-apply`.
 > 4. Applications: outcome tracker, applied/follow up/interviewing/offered/rejected, submitted list, follow up guidance, how applications get here, draft follow up CTA, explain empty state.
 > 5. Career Context: proof vault, context health panel, core vs extended, search, category accordions, experience grouped by company, used in resume indicators, missing proof suggestions, add evidence actions.
 > 6. Analytics: intelligence, free snapshot, pipeline breakdown, useful explanation for limited data, premium preview, outcome quality framing, upgrade card.

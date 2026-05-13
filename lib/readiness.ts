@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 // WorkflowStage is the single canonical type — always import from job-workflow.
 // readiness.ts never re-declares it.
 import type { WorkflowStage } from "@/lib/job-workflow"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 export type { WorkflowStage }
 
 /**
@@ -106,6 +107,7 @@ export async function evaluateJobReadiness(
   const quality_passed = job.quality_passed === true
   const is_applied = job.applied_at !== null || job.status === "applied"
   const is_archived = job.status === "archived"
+  const canonicalReadiness = evaluateReadiness(job)
   
   // Derive requirement count from analysis
   const requirementCount = analyses[0]?.qualifications_required?.length || 0
@@ -127,7 +129,7 @@ export async function evaluateJobReadiness(
   let stage: WorkflowStage = "job_ingested"
   if (is_applied) {
     stage = "applied"
-  } else if (quality_passed) {
+  } else if (canonicalReadiness.isReady) {
     stage = "ready"
   } else if (has_resume && has_cover_letter) {
     stage = "materials_generated"
@@ -146,7 +148,7 @@ export async function evaluateJobReadiness(
   const can_score = has_job_analysis && (evidenceCount || 0) > 0
   const can_generate = (matching_complete || requirementCount === 0) && (evidenceCount || 0) > 0 && has_job_analysis
   const can_interview_prep = has_resume && has_cover_letter
-  const can_apply = has_resume && has_cover_letter && quality_passed && !is_applied && !is_archived
+  const can_apply = canonicalReadiness.isReady && !is_applied && !is_archived
   const is_ready = can_apply
   
   // Build reasons list
@@ -166,6 +168,9 @@ export async function evaluateJobReadiness(
   }
   if (!has_cover_letter) {
     reasons_not_ready.push("Cover letter not generated")
+  }
+  if (!canonicalReadiness.checklist.evidence) {
+    reasons_not_ready.push("Insufficient evidence match")
   }
   if (!quality_passed && has_resume && has_cover_letter) {
     reasons_not_ready.push("Quality review not passed (Red Team)")
@@ -207,7 +212,7 @@ export async function evaluateJobReadiness(
   } else if (!is_applied) {
     next_action = {
       label: "Apply Now",
-      href: `/jobs/${jobId}`,
+      href: `/ready-to-apply`,
       description: "Submit your application",
     }
   }
@@ -248,33 +253,24 @@ export async function getReadyJobIds(userId: string): Promise<{
   pending_quality: string[]
 }> {
   const supabase = await createClient()
-  
-  // Ready: has materials AND quality_passed = true AND not applied/archived
-  const { data: readyJobs } = await supabase
+
+  const { data: jobs } = await supabase
     .from("jobs")
-    .select("id")
+    .select("id, status, generated_resume, generated_cover_letter, evidence_map, quality_passed")
     .eq("user_id", userId)
     .is("deleted_at", null)
-    .eq("quality_passed", true)
-    .not("generated_resume", "is", null)
-    .not("generated_cover_letter", "is", null)
-    .not("status", "in", "(applied,archived)")
-  
-  // Pending quality: has materials BUT quality_passed = false
-  const { data: pendingJobs } = await supabase
-    .from("jobs")
-    .select("id")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .or("quality_passed.is.null,quality_passed.eq.false")
-    .not("generated_resume", "is", null)
-    .not("generated_cover_letter", "is", null)
-    .not("status", "in", "(applied,archived)")
-  
+    .not("status", "in", "(applied,interviewing,offered,rejected,archived)")
+
+  const evaluatedJobs = (jobs ?? []).map(job => ({
+    id: job.id,
+    readiness: evaluateReadiness(job),
+  }))
+
   return {
-    ready: (readyJobs || []).map(j => j.id),
-    pending_quality: (pendingJobs || []).map(j => j.id),
+    ready: evaluatedJobs.filter(job => job.readiness.isReady).map(job => job.id),
+    pending_quality: evaluatedJobs
+      .filter(job => job.readiness.checklist.resume && job.readiness.checklist.coverLetter && !job.readiness.isReady)
+      .map(job => job.id),
   }
 }
-
 

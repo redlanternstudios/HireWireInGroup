@@ -1,13 +1,15 @@
 // PipelineSummaryTiles.tsx
 import React from "react"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 
 export function PipelineSummaryTiles({ jobs }: { jobs: any[] }) {
   // Compute counts
   const total = jobs.length
   const highFit = jobs.filter(j => j.score >= 80).length // assuming score field
-  const needsEvidence = jobs.filter(j => j.status === "queued" || j.status === "draft").length
-  const ready = jobs.filter(j => j.status === "ready").length
-  const applied = jobs.filter(j => j.status === "applied").length
+  const evaluated = jobs.map(job => evaluateReadiness(job))
+  const needsEvidence = evaluated.filter(r => r.outcome === "active" && r.stage === "evidence_blocked").length
+  const ready = evaluated.filter(r => r.stage === "ready").length
+  const applied = evaluated.filter(r => r.outcome === "applied").length
   const tiles = [
     { label: "Total Jobs", count: total, helper: "All tracked" },
     { label: "High Fit", count: highFit, helper: "Strong matches" },

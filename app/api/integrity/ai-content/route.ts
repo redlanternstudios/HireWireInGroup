@@ -4,7 +4,8 @@ import { detectAIContent } from "@/lib/integrity/ai-content-detector"
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireUser()
+    const result = await requireUser()
+    if (!result.ok) return result.response
     const { resumeText } = await req.json()
     if (!resumeText) {
       return NextResponse.json({ success: false, error: "Missing resumeText" }, { status: 400 })

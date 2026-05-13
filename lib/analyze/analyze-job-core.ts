@@ -473,6 +473,7 @@ Extract the job details following the schema.`,
       responsibilities: validatedAnalysis.responsibilities,
       score: fitResult.score,
       fit: fitResult.fit,
+      // Ensure fit and score are always written
       score_gaps: gaps,
       score_strengths: strengths,
       seniority_level: normalizedSeniority,

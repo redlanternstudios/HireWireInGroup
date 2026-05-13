@@ -8,6 +8,7 @@ import { PipelineFilters } from "./PipelineFilters"
 import { JobPipelineBoard } from "./JobPipelineBoard"
 import { JobIntelligencePanel } from "./JobIntelligencePanel"
 
+export function JobsPipelineClientLocal({ jobs }: { jobs: any[] }) {
   const [selectedFilter, setSelectedFilter] = useState("all")
   const [jobList, setJobList] = useState(jobs)
   const filteredJobs = selectedFilter === "all"

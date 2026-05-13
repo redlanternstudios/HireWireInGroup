@@ -2,14 +2,14 @@
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
 ## Scope
-Verify the generation spine is unbroken: Generate → Review → Approve → Ready to Apply → Apply. Verify readiness authority lives only in `lib/readiness.ts`.
+Verify the generation spine is unbroken: Generate → Review → Approve → Ready to Apply → Apply. Verify readiness authority lives in `lib/readiness/evaluator.ts`, with legacy readiness callers delegated to it.
 
 ## Findings
 
 ### Readiness Authority
-- **`lib/readiness.ts`:** Contains `evaluateJobReadiness()` and `getReadyJobIds()` — sole gate functions
-- **Ready Queue page:** `app/(dashboard)/ready-queue/page.tsx` calls `getReadyJobIds()` — CORRECT
-- **Job detail page:** Uses `evaluateJobReadiness()` result — CORRECT
+- **`lib/readiness/evaluator.ts`:** Contains `evaluateReadiness()` — canonical checklist and gate
+- **Ready to Apply page:** `app/(dashboard)/ready-to-apply/page.tsx` filters jobs with `evaluateReadiness()` and owns apply entry
+- **Job detail page:** Uses `evaluateReadiness()` result and routes apply attempts to `/ready-to-apply`
 - **Status:** PASS
 
 ### Inline Readiness Checks (Accepted)

@@ -13,8 +13,8 @@ export default async function VerificationPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Employer Verification Simulator</h1>
-        <p className="text-sm text-muted-foreground">See what an employer's background check might flag in your resume.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Employer Verification Simulator</h1>
+          <p className="text-sm text-muted-foreground">See what an employer&apos;s background check might flag in your resume.</p>
       </div>
       <VerificationSimulator />
     </div>

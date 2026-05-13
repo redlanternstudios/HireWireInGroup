@@ -131,8 +131,6 @@ import {
 } from "@/lib/scoring-weights"
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
 import type { User } from "@supabase/supabase-js"
-import type { createClient } from "@/lib/supabase/server"
-
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
 const ROLE_FAMILIES = [
@@ -327,7 +325,7 @@ async function reAnalyzeExistingJob(
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: jobId,
     overall_score: explainableFit.score,
-    confidence_score: explainableFit.confidence === "HIGH" ? 0.9 : explainableFit.confidence === "MEDIUM" ? 0.7 : 0.5,
+    confidence_score: explainableFit.confidence === "high" ? 0.9 : explainableFit.confidence === "medium" ? 0.7 : 0.5,
     skills_match: dimensionScores.skills,
     experience_relevance: dimensionScores.experience,
     evidence_quality: dimensionScores.evidence,

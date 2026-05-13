@@ -3,10 +3,12 @@
  *
  * Derives a user-facing pipeline stage label from persisted job fields.
  * This is for UI organization ONLY.
- * It must not replace lib/readiness.ts.
+ * It consumes lib/readiness/evaluator.ts for readiness authority.
  * It must not set readiness.
  * It must not write job status.
  */
+
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 
 export type DisplayStage =
   | "inbox"
@@ -75,25 +77,25 @@ export interface JobFields {
  * Uses evidence of persisted artifacts, not computed readiness.
  */
 export function deriveDisplayStage(job: JobFields, isStale: boolean): DisplayStage {
-  const status = job.status ?? ""
+  const readiness = evaluateReadiness(job)
 
-  if (status === "archived") return "archived"
-  if (status === "offered") return "offered"
-  if (status === "rejected") return "rejected"
-  if (status === "interviewing") return "interviewing"
-
-  if (status === "applied" || !!job.applied_at) return "applied"
+  if (readiness.outcome === "archived") return "archived"
+  if (readiness.outcome === "offered") return "offered"
+  if (readiness.outcome === "rejected") return "rejected"
+  if (readiness.outcome === "interviewing") return "interviewing"
+  if (readiness.outcome === "applied") return "applied"
 
   const hasResume = !!job.generated_resume
   const hasCoverLetter = !!job.generated_cover_letter
-  const qualityPassed = job.quality_passed === true
   const hasScore = job.score !== null && job.score !== undefined
   const evidenceMap = job.evidence_map
   const matchingComplete = evidenceMap?.matching_complete === true
+  const status = job.status ?? ""
   const hasAnalysis = ["analyzed", "generating", "ready", "needs_review"].includes(status) || hasScore || !!evidenceMap
 
-  if (hasResume && hasCoverLetter && qualityPassed) return "ready_to_apply"
-  if (hasResume && hasCoverLetter && !qualityPassed) return "needs_review"
+  if (readiness.stage === "ready") return "ready_to_apply"
+  if (readiness.stage === "quality_review") return "needs_review"
+  if (readiness.stage === "evidence_blocked" && hasResume && hasCoverLetter) return "needs_evidence"
   if (hasResume || hasCoverLetter) return "package_drafted"
 
   if (hasAnalysis && matchingComplete) return "ready_to_generate"
