@@ -24,7 +24,7 @@ export default async function DocumentsPage({
       `id, role_title, company_name, job_url, status,
        generated_resume, generated_cover_letter,
        edited_resume, edited_cover_letter, last_edited_at,
-       generation_timestamp`
+       generation_timestamp, quality_passed, generation_status`
     )
     .eq('id', id)
     .eq('user_id', user.id)
@@ -72,7 +72,11 @@ export default async function DocumentsPage({
           )}
         </div>
       </div>
-      <DocumentsEditor job={job} />
+      <DocumentsEditor
+        job={job}
+        qualityPassed={job.quality_passed ?? false}
+        generationStatus={job.generation_status ?? "needs_review"}
+      />
     </div>
   )
 }

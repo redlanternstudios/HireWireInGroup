@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateText, Output } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { handleDomainEvent } from "@/lib/events"
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
@@ -1263,6 +1264,18 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       passed: qualityPassed,
       issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length,
     })
+
+    // Emit domain event — best effort, never blocks the response
+    await handleDomainEvent(supabase, {
+      type: "job.generation_complete",
+      jobId: job_id,
+      userId,
+      payload: {
+        generationTimestamp: new Date().toISOString(),
+        qualityScore: qualityCheck ? (100 - qualityCheck.invented_claims.length * 20) : null,
+        qualityPassed,
+      },
+    }).catch(() => {})
 
     return NextResponse.json({
       success: true,
