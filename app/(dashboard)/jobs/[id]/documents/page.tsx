@@ -25,6 +25,12 @@ export default async function DocumentsPage({
 
   const { data: job, error } = await supabase
     .from('jobs')
+    .select(
+      `id, role_title, company_name, job_url, status,
+       generated_resume, generated_cover_letter,
+       edited_resume, edited_cover_letter, last_edited_at,
+       generation_timestamp, quality_passed, generation_status`
+    )
     .select(`
       id, role_title, company_name, job_url,
       generated_resume, generated_cover_letter,
@@ -98,6 +104,11 @@ export default async function DocumentsPage({
           )}
         </div>
       </div>
+      <DocumentsEditor
+        job={job}
+        qualityPassed={job.quality_passed ?? false}
+        generationStatus={job.generation_status ?? "needs_review"}
+      />
       <div className="flex flex-col md:flex-row gap-8">
         <div className="flex-1 min-w-0">
           <DocumentsEditor job={jobWithFormat} />

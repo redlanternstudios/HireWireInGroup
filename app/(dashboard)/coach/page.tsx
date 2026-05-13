@@ -44,6 +44,8 @@ async function getCoachContext() {
     const evaluatedJobs = jobs.map(job => ({ job, readiness: evaluateReadiness(job) }))
 
     const activeJobs = jobs.length
+    const appliedJobs = jobs.filter(j => j.status === "applied").length
+    const withMaterials = jobs.filter(j => j.generation_status === "ready").length
     const appliedJobs = evaluatedJobs.filter(({ readiness }) => readiness.outcome === "applied").length
     const withMaterials = evaluatedJobs.filter(({ readiness }) => readiness.checklist.resume || readiness.checklist.coverLetter).length
     const evidenceCount = evidence.length

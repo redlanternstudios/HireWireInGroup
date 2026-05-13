@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateText, Output } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { handleDomainEvent } from "@/lib/events"
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
@@ -359,21 +360,20 @@ export async function POST(request: NextRequest) {
     
     const plan = userData?.plan_type || "free"
     
-    // Free users: 5 generations per month
+    // Free users: 5 generations per month.
+    // Use the canonical users.generations_this_month + users.usage_reset_at counter —
+    // NOT a jobs-table count — so both the gate and the incrementer share one source of truth.
     if (plan === "free") {
-      const monthStart = new Date()
-      monthStart.setDate(1)
-      monthStart.setHours(0, 0, 0, 0)
-      
-      const { count: generationsThisMonth } = await supabase
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .not("generated_resume", "is", null)
-        .gte("generation_timestamp", monthStart.toISOString())
-      
-      if ((generationsThisMonth || 0) >= 5) {
+      const firstOfMonth = new Date()
+      firstOfMonth.setDate(1)
+      firstOfMonth.setHours(0, 0, 0, 0)
+
+      const monthNeedsReset = !userData?.usage_reset_at ||
+        new Date(userData.usage_reset_at) < firstOfMonth
+
+      const generationsThisMonth = monthNeedsReset ? 0 : (userData?.generations_this_month || 0)
+
+      if (generationsThisMonth >= 5) {
         return NextResponse.json(
           { 
             success: false, 
@@ -1202,6 +1202,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
         score_gaps: generatedEvidenceMap.gaps,
         resume_strategy: strategy,
         evidence_map: {
+          matching_complete: true, // Set by generate-documents so stage derivation advances past evidence_mapped
           selected_evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
           bullet_provenance: bulletProvenance,
           paragraph_provenance: paragraphProvenance,
@@ -1414,6 +1415,18 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       passed: qualityPassed,
       issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length,
     })
+
+    // Emit domain event — best effort, never blocks the response
+    await handleDomainEvent(supabase, {
+      type: "job.generation_complete",
+      jobId: job_id,
+      userId,
+      payload: {
+        generationTimestamp: new Date().toISOString(),
+        qualityScore: qualityCheck ? (100 - qualityCheck.invented_claims.length * 20) : null,
+        qualityPassed,
+      },
+    }).catch(() => {})
 
     return NextResponse.json({
       success: true,

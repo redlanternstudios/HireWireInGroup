@@ -198,8 +198,13 @@ export interface Job {
   id: string
   
   // Core identification
-  title: string
-  company: string
+  // DB columns are role_title / company_name.
+  // title / company are legacy aliases populated by query mappers (loadJobAnalysis, etc.)
+  // — do not read them from raw DB rows.
+  role_title?: string | null
+  company_name?: string | null
+  title: string        // alias populated by query mappers
+  company: string      // alias populated by query mappers
   source: JobSource
   job_url: string | null
   
