@@ -1,17 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { saveDocumentEdits, resetDocumentEdits } from '@/lib/actions/documents'
-import {
-  acceptApplicationPackage,
-  markPackageNeedsReview,
-  resetPackageReviewStatus,
-} from '@/lib/actions/package'
-import {
-  saveDocumentEdits,
-  resetDocumentEdits,
-  saveDocumentFormatSettings,
-} from '@/lib/actions/documents'
+import { saveDocumentEdits, resetDocumentEdits, saveDocumentFormatSettings } from '@/lib/actions/documents'
+import { acceptApplicationPackage, markPackageNeedsReview, resetPackageReviewStatus } from '@/lib/actions/package'
 import {
   RESUME_FONTS,
   RESUME_FORMATS,
@@ -35,19 +26,15 @@ type Job = {
   recommended_resume_format: ResumeFormatId
   recommended_resume_font: ResumeFontId
   recommended_resume_reason: string
+  quality_passed?: boolean | null
+  package_review_status?: string | null
 }
 
 interface DocumentsEditorProps {
   job: Job
-  qualityPassed: boolean
-  generationStatus: string
 }
 
-export default function DocumentsEditor({
-  job,
-  qualityPassed,
-  generationStatus,
-}: DocumentsEditorProps) {
+export default function DocumentsEditor({ job }: DocumentsEditorProps) {
   const originalResume = job.generated_resume ?? ''
   const originalCover = job.generated_cover_letter ?? ''
 
@@ -56,8 +43,8 @@ export default function DocumentsEditor({
   const [resumeFormat, setResumeFormat] = useState<ResumeFormatId>(job.resume_format)
   const [resumeFont, setResumeFont] = useState<ResumeFontId>(job.resume_font)
   const [status, setStatus] = useState<string | null>(null)
-  const [isAccepted, setIsAccepted] = useState(qualityPassed)
-  const [packageStatus, setPackageStatus] = useState(generationStatus)
+  const [isAccepted, setIsAccepted] = useState(job.quality_passed === true)
+  const [packageStatus, setPackageStatus] = useState(job.package_review_status ?? 'needs_review')
   const [isPending, startTransition] = useTransition()
   const formatWarning = getFormatSafetyWarning(resumeFormat, job.job_url)
 
@@ -66,6 +53,12 @@ export default function DocumentsEditor({
     setTimeout(() => setStatus(null), ms)
   }
 
+  const isDirty =
+    resume !== (job.edited_resume ?? originalResume) ||
+    cover !== (job.edited_cover_letter ?? originalCover) ||
+    resumeFormat !== job.resume_format ||
+    resumeFont !== job.resume_font
+
   const handleSave = () => {
     startTransition(async () => {
       const recommendationReason =
@@ -73,29 +66,25 @@ export default function DocumentsEditor({
           ? job.recommended_resume_reason
           : job.format_recommendation_reason ?? job.recommended_resume_reason
 
-      const result = await saveDocumentEdits(
-        job.id,
-        resume === originalResume ? null : resume,
-        cover === originalCover ? null : cover
-      )
-      if (result.error) {
-        flash(`Error: ${result.error}`)
+      const [result, formatResult] = await Promise.all([
+        saveDocumentEdits(
+          job.id,
+          resume === originalResume ? null : resume,
+          cover === originalCover ? null : cover
+        ),
+        saveDocumentFormatSettings(job.id, resumeFormat, resumeFont, recommendationReason),
+      ])
+
+      if (result.error || formatResult.error) {
+        flash(`Error: ${result.error ?? formatResult.error}`)
       } else {
         flash('Saved')
-        // Editing after acceptance resets package status — require re-review
         if (isAccepted) {
           setIsAccepted(false)
           setPackageStatus('needs_review')
           await resetPackageReviewStatus(job.id).catch(() => {})
         }
       }
-      const formatResult = await saveDocumentFormatSettings(
-        job.id,
-        resumeFormat,
-        resumeFont,
-        recommendationReason
-      )
-      flash(result.error || formatResult.error ? `Error: ${result.error ?? formatResult.error}` : 'Saved')
     })
   }
 
@@ -118,7 +107,6 @@ export default function DocumentsEditor({
 
   const handleAccept = () => {
     startTransition(async () => {
-      // Save any pending edits first
       if (isDirty) {
         const saveResult = await saveDocumentEdits(
           job.id,
@@ -143,10 +131,7 @@ export default function DocumentsEditor({
 
   const handleFlagReview = () => {
     startTransition(async () => {
-      const result = await markPackageNeedsReview(
-        job.id,
-        'Manually flagged by user for review'
-      )
+      const result = await markPackageNeedsReview(job.id, 'Manually flagged by user for review')
       if (result.success) {
         setIsAccepted(false)
         setPackageStatus('needs_review')
@@ -173,10 +158,7 @@ export default function DocumentsEditor({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, filename, resumeFormat, resumeFont, job_id: job.id }),
       })
-      if (!res.ok) {
-        flash('Export failed')
-        return
-      }
+      if (!res.ok) { flash('Export failed'); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -192,13 +174,8 @@ export default function DocumentsEditor({
     }
   }
 
-  const isDirty =
-    resume !== (job.edited_resume ?? originalResume) ||
-    cover !== (job.edited_cover_letter ?? originalCover)
-
   return (
     <div className="space-y-6">
-      {/* Package acceptance gate */}
       <PackageGate
         isAccepted={isAccepted}
         packageStatus={packageStatus}
@@ -206,18 +183,12 @@ export default function DocumentsEditor({
         onAccept={handleAccept}
         onFlagReview={handleFlagReview}
       />
-  const isDirty = resume !== (job.edited_resume ?? originalResume)
-    || cover !== (job.edited_cover_letter ?? originalCover)
-    || resumeFormat !== job.resume_format
-    || resumeFont !== job.resume_font
 
-  return (
-    <div className="space-y-8">
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="mb-4">
           <p className="text-sm font-semibold">Resume Format</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Recommended for this job: {RESUME_FORMATS[job.recommended_resume_format].label} + {RESUME_FONTS[job.recommended_resume_font].label}
+            Recommended: {RESUME_FORMATS[job.recommended_resume_format].label} + {RESUME_FONTS[job.recommended_resume_font].label}
           </p>
           <p className="text-xs text-muted-foreground mt-1">{job.recommended_resume_reason}</p>
         </div>
@@ -230,10 +201,7 @@ export default function DocumentsEditor({
               <button
                 key={formatId}
                 type="button"
-                onClick={() => {
-                  setResumeFormat(formatId)
-                  setResumeFont(format.defaultFont)
-                }}
+                onClick={() => { setResumeFormat(formatId); setResumeFont(format.defaultFont) }}
                 className={[
                   'rounded-md border p-3 text-left transition-colors',
                   selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/40',
@@ -262,7 +230,7 @@ export default function DocumentsEditor({
                     selected ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:bg-muted/40',
                   ].join(' ')}
                 >
-                  {RESUME_FONTS[fontId].label}{recommended ? ' Recommended' : ''}
+                  {RESUME_FONTS[fontId].label}{recommended ? ' ★' : ''}
                 </button>
               )
             })}
@@ -276,25 +244,16 @@ export default function DocumentsEditor({
         )}
       </section>
 
-      <Section
-        title="Resume"
-        onCopy={() => handleCopy(resume, 'Resume')}
-        onExport={() => handleExportDocx(resume, 'resume')}
-      >
+      <Section title="Resume" onCopy={() => handleCopy(resume, 'Resume')} onExport={() => handleExportDocx(resume, 'resume')}>
         <textarea
           value={resume}
           onChange={e => setResume(e.target.value)}
           className="h-[28rem] w-full rounded border border-border bg-background p-3 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          className="h-112 w-full rounded border p-3 font-mono text-sm"
           spellCheck
         />
       </Section>
 
-      <Section
-        title="Cover Letter"
-        onCopy={() => handleCopy(cover, 'Cover letter')}
-        onExport={() => handleExportDocx(cover, 'cover-letter')}
-      >
+      <Section title="Cover Letter" onCopy={() => handleCopy(cover, 'Cover letter')} onExport={() => handleExportDocx(cover, 'cover-letter')}>
         <textarea
           value={cover}
           onChange={e => setCover(e.target.value)}
@@ -309,7 +268,7 @@ export default function DocumentsEditor({
           disabled={isPending || !isDirty}
           className="rounded bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-40"
         >
-          {isPending ? 'Saving...' : isDirty ? 'Save edits' : 'Saved'}
+          {isPending ? 'Saving…' : isDirty ? 'Save edits' : 'Saved'}
         </button>
         <button
           onClick={handleReset}
@@ -318,9 +277,7 @@ export default function DocumentsEditor({
         >
           Reset to original
         </button>
-        {status && (
-          <span className="text-sm text-muted-foreground">{status}</span>
-        )}
+        {status && <span className="text-sm text-muted-foreground">{status}</span>}
       </div>
     </div>
   )
@@ -338,13 +295,7 @@ interface PackageGateProps {
   onFlagReview: () => void
 }
 
-function PackageGate({
-  isAccepted,
-  packageStatus,
-  isPending,
-  onAccept,
-  onFlagReview,
-}: PackageGateProps) {
+function PackageGate({ isAccepted, packageStatus, isPending, onAccept, onFlagReview }: PackageGateProps) {
   if (isAccepted && packageStatus === 'ready') {
     return (
       <div className="flex items-center justify-between rounded border border-border bg-background px-5 py-4">
@@ -352,9 +303,7 @@ function PackageGate({
           <span className="inline-flex h-2 w-2 rounded-full bg-green-500" aria-hidden />
           <div>
             <p className="text-sm font-semibold text-foreground">Package accepted</p>
-            <p className="text-xs text-muted-foreground">
-              Apply button is now unlocked. Edit documents to re-review.
-            </p>
+            <p className="text-xs text-muted-foreground">Apply button is now unlocked. Edit documents to re-review.</p>
           </div>
         </div>
         <button
@@ -375,9 +324,7 @@ function PackageGate({
           <span className="inline-flex h-2 w-2 rounded-full bg-amber-500" aria-hidden />
           <div>
             <p className="text-sm font-semibold text-foreground">Review before applying</p>
-            <p className="text-xs text-muted-foreground">
-              Read through both documents, then accept to unlock the Apply button.
-            </p>
+            <p className="text-xs text-muted-foreground">Read through both documents, then accept to unlock the Apply button.</p>
           </div>
         </div>
         <button
@@ -385,13 +332,12 @@ function PackageGate({
           disabled={isPending}
           className="rounded bg-foreground px-4 py-2 text-xs font-semibold text-background disabled:opacity-40"
         >
-          {isPending ? 'Accepting...' : 'Accept package'}
+          {isPending ? 'Accepting…' : 'Accept package'}
         </button>
       </div>
     )
   }
 
-  // Fallback for any other status (generating, failed, etc.)
   return (
     <div className="flex items-center gap-3 rounded border border-border bg-background px-5 py-4">
       <span className="inline-flex h-2 w-2 rounded-full bg-muted-foreground" aria-hidden />
@@ -422,16 +368,10 @@ function Section({
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-base font-semibold text-foreground">{title}</h2>
         <div className="flex gap-2">
-          <button
-            onClick={onCopy}
-            className="rounded border border-border px-3 py-1 text-xs hover:bg-muted"
-          >
+          <button onClick={onCopy} className="rounded border border-border px-3 py-1 text-xs hover:bg-muted">
             Copy
           </button>
-          <button
-            onClick={onExport}
-            className="rounded border border-border px-3 py-1 text-xs hover:bg-muted"
-          >
+          <button onClick={onExport} className="rounded border border-border px-3 py-1 text-xs hover:bg-muted">
             Download .docx
           </button>
         </div>

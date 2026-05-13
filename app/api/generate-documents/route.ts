@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateText, Output } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
-import { handleDomainEvent } from "@/lib/events"
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
@@ -354,7 +353,7 @@ export async function POST(request: NextRequest) {
     // Check user's plan and generation count this month
     const { data: userData } = await supabase
       .from("users")
-      .select("plan_type")
+      .select("plan_type, usage_reset_at, generations_this_month")
       .eq("id", userId)
       .single()
     
@@ -1416,17 +1415,18 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length,
     })
 
-    // Emit domain event — best effort, never blocks the response
-    await handleDomainEvent(supabase, {
-      type: "job.generation_complete",
-      jobId: job_id,
-      userId,
+    void handleDomainEvent({
+      supabase,
+      event_type: "documents_generated",
+      job_id,
+      user_id: userId,
+      source: "generate_documents_route",
       payload: {
-        generationTimestamp: new Date().toISOString(),
-        qualityScore: qualityCheck ? (100 - qualityCheck.invented_claims.length * 20) : null,
-        qualityPassed,
+        generation_timestamp: new Date().toISOString(),
+        quality_score: qualityCheck ? (100 - qualityCheck.invented_claims.length * 20) : null,
+        quality_passed: qualityPassed,
       },
-    }).catch(() => {})
+    })
 
     return NextResponse.json({
       success: true,
