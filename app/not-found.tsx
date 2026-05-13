@@ -18,16 +18,3 @@ export default function NotFound() {
     </div>
   )
 }
-import { ErrorCard } from '@/components/error/error-card'
-
-export default function NotFound() {
-  return (
-  <ErrorCard
-    title="Not found"
-    message="We couldn't find that page or resource."
-    actionLabel="Go to dashboard"
-    onAction={() => (window.location.href = '/dashboard')}
-    severity="info"
-  />
-  )
-}

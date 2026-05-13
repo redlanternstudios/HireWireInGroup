@@ -28,8 +28,6 @@ Takes a user's real resume and verified evidence, matches against job requiremen
 | Billing | Stripe |
 | Deployment | Vercel — auto-deploys from `v0/rsemeah-*` branches |
 | Analytics | Vercel Analytics (`@vercel/analytics/next`) — sole provider |
-<<<<<<< HEAD
-=======
 # Autonomous build instructions for Claude Code
 # Last updated: 2026-05-09
 # This file is the single source of truth. It supersedes all other prompt files.
@@ -69,7 +67,6 @@ Truth is enforced at the data model level, not just the prompt level.
 | Billing | Stripe |
 | Deployment | Vercel — auto-deploys from `v0/rsemeah-*` branches |
 | Analytics | Vercel Analytics only |
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 | UI | shadcn/ui + Tailwind |
 
 ---
@@ -92,8 +89,6 @@ Truth is enforced at the data model level, not just the prompt level.
 
 ```typescript
 // CORRECT — always use this pattern
-<<<<<<< HEAD
-=======
 ## DEAD SYSTEMS — NEVER REFERENCE OR RESURRECT
 
 | System | Status |
@@ -113,23 +108,16 @@ Truth is enforced at the data model level, not just the prompt level.
 ## AI MODEL USAGE — CORRECT PATTERN
 
 ```typescript
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 import { generateText, Output } from "ai"
 import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 
 const result = await generateText({
-<<<<<<< HEAD
-  model: CLAUDE_MODELS.SONNET,   // primary generation
-  // CLAUDE_MODELS.OPUS           // complex reasoning only
-  // CLAUDE_MODELS.HAIKU          // fast/lightweight tasks
-=======
   model: CLAUDE_MODELS.SONNET,  // primary generation
   // CLAUDE_MODELS.OPUS          // complex reasoning only
   // CLAUDE_MODELS.HAIKU         // fast/lightweight tasks
   model: CLAUDE_MODELS.SONNET,   // primary generation
   // CLAUDE_MODELS.OPUS           // complex reasoning only
   // CLAUDE_MODELS.HAIKU          // fast/cheap tasks only
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   output: Output.object({ schema: MyZodSchema }),
   prompt: "...",
 })
@@ -151,8 +139,6 @@ import { requireUser } from "@/lib/supabase/require-user"
 const { user, supabase } = await requireUser()
 
 // Paid-only routes only
-<<<<<<< HEAD
-=======
 ```
 
 Never use raw model strings. Never use `generateObject()`. Never import Groq.
@@ -167,17 +153,11 @@ import { requireUser } from "@/lib/supabase/require-user"
 const { user, supabase } = await requireUser()
 
 // Paid-only routes
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 import { requirePaidUser } from "@/lib/supabase/require-user"
 const { user, supabase } = await requirePaidUser()
 ```
 
-<<<<<<< HEAD
-Do NOT implement custom auth checks inline in routes or pages.
-New dashboard RSC pages that don't use requireUser must use this pattern instead:
-=======
 Do NOT implement custom auth checks inline in routes or pages. New dashboard RSC pages that don't use requireUser must use this pattern instead:
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 ```typescript
 const supabase = await createClient()
@@ -188,14 +168,11 @@ if (!user) redirect('/login')
 ---
 
 ## 6. Tenant Isolation — Mandatory on Every Query
-<<<<<<< HEAD
-=======
 Never implement custom auth checks inline. Always use `requireUser()`.
 
 ---
 
 ## TENANT ISOLATION — MANDATORY ON EVERY QUERY
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 Every query touching user data must include BOTH filters:
 
@@ -222,14 +199,7 @@ const links = data.links || []
 profile.links.map(...)
 ```
 
-<<<<<<< HEAD
-Columns always requiring `Array.isArray()` guards:
-`user_profile.links`, `user_profile.education`, `user_profile.experience`,
-`evidence_library.tools_used`, `evidence_library.industries`, `evidence_library.outcomes`,
-any JSONB column expected to be an array.
-=======
 Columns always requiring `Array.isArray()` guards: `user_profile.links`, `user_profile.education`, `user_profile.experience`, `evidence_library.tools_used`, `evidence_library.industries`, `evidence_library.outcomes`, any JSONB column expected to be an array.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 ---
 
@@ -285,12 +255,7 @@ evaluateJobReadiness(jobId, userId)  // per-job detail views
 getReadyJobIds(userId)               // list views
 ```
 
-<<<<<<< HEAD
-No page, component, or API route may compute its own readiness logic.
-Do NOT write `status: "ready"` directly — status is derived from artifacts.
-=======
 No page, component, or API route may compute its own readiness logic. Do NOT write `status: "ready"` directly — status is derived from artifacts.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 ---
 
@@ -329,8 +294,6 @@ Every new page under `app/(dashboard)/` follows this exact pattern:
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 
-<<<<<<< HEAD
-=======
 .eq("user_id", user.id)    // tenant isolation
 .is("deleted_at", null)    // soft delete (jobs table only)
 ```
@@ -515,7 +478,6 @@ Free users capped at 5 generations/month via `generation_limit_reached` error.
 ```typescript
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
@@ -547,8 +509,6 @@ export default async function PageName() {
 ```
 
 ### New API Route (protected)
-<<<<<<< HEAD
-=======
   // queries here with .eq("user_id", user.id)
 
   return <div>...</div>
@@ -556,7 +516,6 @@ export default async function PageName() {
 ```
 
 ### New API route
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 ```typescript
 import { requireUser } from "@/lib/supabase/require-user"
 import { NextRequest, NextResponse } from "next/server"
@@ -579,24 +538,6 @@ export async function POST(req: NextRequest) {
 
 | Route | Status | File |
 |---|---|---|
-<<<<<<< HEAD
-| `/dashboard` | ✅ Working | `app/(dashboard)/dashboard/page.tsx` |
-| `/coach` | ✅ Working | `app/(dashboard)/coach/page.tsx` |
-| `/jobs` | ✅ Working | `app/(dashboard)/jobs/page.tsx` |
-| `/jobs/new` | ✅ Working | `app/(dashboard)/jobs/new/page.tsx` |
-| `/jobs/[id]` | ✅ Working | `app/(dashboard)/jobs/[id]/page.tsx` |
-| `/jobs/[id]/documents` | ✅ Working | `app/(dashboard)/jobs/[id]/documents/page.tsx` |
-| `/jobs/[id]/evidence-match` | ✅ Working | `app/(dashboard)/jobs/[id]/evidence-match/page.tsx` |
-| `/evidence` | ✅ Working | `app/(dashboard)/evidence/page.tsx` — display name: "Career Context" |
-| `/ready-queue` | ✅ Working | `app/(dashboard)/ready-queue/page.tsx` |
-| `/applications` | ✅ Working | `app/(dashboard)/applications/page.tsx` |
-| `/documents` | ✅ Working | `app/(dashboard)/documents/page.tsx` |
-| `/analytics` | ✅ Working | `app/(dashboard)/analytics/page.tsx` |
-| `/logs` | ✅ Working | `app/(dashboard)/logs/page.tsx` |
-| `/settings` | ✅ Working | `app/(dashboard)/settings/page.tsx` |
-| `/profile` | ✅ Working | `app/(dashboard)/profile/page.tsx` |
-| `/billing` | ✅ Working | `app/(dashboard)/billing/page.tsx` |
-=======
 | `/dashboard` | Working | `app/(dashboard)/dashboard/page.tsx` |
 | `/coach` | Working | `app/(dashboard)/coach/page.tsx` |
 | `/jobs` | Working | `app/(dashboard)/jobs/page.tsx` |
@@ -613,7 +554,6 @@ export async function POST(req: NextRequest) {
 | `/settings` | Working | `app/(dashboard)/settings/page.tsx` |
 | `/profile` | Working | `app/(dashboard)/profile/page.tsx` |
 | `/billing` | Working | `app/(dashboard)/billing/page.tsx` |
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 **Score and gap data flow:**
 - After `/api/analyze`: scores → `job_scores` table, gaps → `job_analyses.known_gaps`
@@ -651,42 +591,6 @@ All values derived from `evidence_library` rows. Zero new tables required.
 + (is_user_approved rate) × 0.20
 ```
 
-<<<<<<< HEAD
-### Core vs Extended Memory Split
-- **Core:** `confidence_score >= 0.8` AND (appears in any `jobs.evidence_map`) → proven generation signal
-- **Extended:** everything else
-- **Override:** `is_user_approved = true` manually promotes any item to Core
-- Computed from existing columns — zero schema changes needed
-
-### Duplicate Detection
-- Trigger: immediately after LinkedIn PDF or resume import completes
-- Mechanism: compare incoming items against existing `evidence_library` rows on `(source_title, source_type, company_name)` similarity
-- UX: one-time deduplication review modal before items enter the library
-- Logic lives in: `lib/duplicate-detection.ts` (already exists — wire to upload flow)
-- After user confirms once: auto-merge is acceptable
-
-### Tab Taxonomy (replaces All/Work Experience/Education/Skill/Certification)
-| New Tab | Maps to source_type |
-|---|---|
-| Experience | work_experience |
-| Skills | skill |
-| Projects | project, shipped_product, portfolio_entry |
-| Education & Learning | education |
-| Certifications | certification |
-| Achievements | achievement |
-| Documents | source_resumes (uploaded files) |
-
-### Visual Direction
-- Cards not flat rows
-- Company-grouped sections under Experience tab
-- Collapsible accordions per company
-- Confidence indicator on each item (High/Medium/Low badge)
-- Source file visible on each item
-- Actions per item: Pin to Core, Hide, Edit, Use in resume
-- No flat dumps — progressive disclosure throughout
-
-=======
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 ---
 
 ## 17. Autonomous Audible Rules
@@ -730,12 +634,7 @@ These rules tell Claude Code what to do when it hits an ambiguous situation duri
 - Use `text-muted-foreground` for secondary text, `text-foreground` for primary
 
 ### When Something Would Break the Spine
-<<<<<<< HEAD
-The generation spine must stay unbroken:
-`Generate → Review → Approve → Ready to Apply → Apply`
-=======
 The generation spine must stay unbroken: `Generate → Review → Approve → Ready to Apply → Apply`
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 If a change would break any link in this chain → stop and log a comment explaining why, then skip that change and continue with everything else.
 
@@ -816,8 +715,6 @@ Every decision should compound toward this:
 ---
 
 *This is the constitution. It is read before every session. When in doubt, this wins.*
-<<<<<<< HEAD
-=======
 export async function POST(request: NextRequest) {
   const { user, supabase } = await requireUser()
   // ...
@@ -967,4 +864,3 @@ Never celebrate application volume — only outcome quality matters.
 
 *This file is the constitution. When in doubt, this wins.*
 *Rory's build philosophy: correctness before elegance, truth before speed, spine unbroken.*
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

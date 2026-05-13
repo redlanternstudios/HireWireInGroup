@@ -11,17 +11,6 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   return (
     <html lang="en">
       <body>
-<<<<<<< HEAD
-          <ErrorCard
-            title="Something went wrong"
-            message={error.message || 'An unexpected error occurred.'}
-            actionLabel="Try again"
-            onAction={reset}
-            severity="critical"
-            correlationId={error.digest}
-            retryable
-          />
-=======
         <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem", fontFamily: "system-ui, sans-serif", background: "#f0ede8", textAlign: "center", gap: "1rem" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/hirewire-logo.png" alt="HireWire" style={{ height: "40px", marginBottom: "0.5rem" }} />
@@ -41,7 +30,6 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             Try again
           </button>
         </div>
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
       </body>
     </html>
   )

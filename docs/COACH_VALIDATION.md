@@ -1,20 +1,3 @@
-<<<<<<< HEAD
-# Coach Validation
-
-This document reviews the Coach as Career Strategist for safe, truthful, and context-aware guidance.
-
-## Validation
-- Answers quick questions briefly
-- Guides step by step
-- Audits pipeline
-- Reviews documents
-- Drafts follow ups safely
-- Interview prep
-- Package builder
-- Explains blockers
-- Avoids hallucinated app state
-- Avoids inventing career claims
-=======
 # COACH_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -62,4 +45,3 @@ Career Coach AI: model usage, prompt injection safety, input handling, response 
 - **Status:** PASS
 
 ## Overall: PASS — 1 critical fix applied (model string). 0 remaining issues.
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

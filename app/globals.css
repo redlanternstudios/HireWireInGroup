@@ -3,9 +3,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* HireWire Premium Design System
+/* HireWire Design System — v2
    Warm off-white canvas with Supreme red accents
-   Virgil Abloh / Off-White inspired industrial aesthetic
    Editorial, high-density, trust-first */
 
 :root {
@@ -179,11 +178,6 @@
 }
 
 @layer components {
-<<<<<<< HEAD
-  /* Premium card shadow system - deeper, more intentional */
-  
-  /* Primary CTA button - DOMINANT presence */
-=======
   /* ─── CARD ─── true white surface, strong shadow */
   .hw-card {
     background: hsl(var(--card));
@@ -213,7 +207,6 @@
   }
 
   /* ─── PRIMARY BUTTON ─── */
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   .hw-btn-primary {
     @apply bg-primary text-primary-foreground font-semibold;
     box-shadow:

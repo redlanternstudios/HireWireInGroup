@@ -1,14 +1,8 @@
 "use client"
 
-<<<<<<< HEAD
-import { useState, useMemo, useRef, useEffect } from "react"
-import { useChat } from "@ai-sdk/react"
-import { TextStreamChatTransport, UIMessage, isTextUIPart } from "ai"
-=======
 import { useRef, useEffect, useState } from "react"
 import { useChat, Chat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -90,48 +84,10 @@ const promptClusters = [
   },
 ]
 
-<<<<<<< HEAD
-function getMessageText(message: UIMessage): string {
-  return (message.parts ?? []).filter(isTextUIPart).map(p => p.text).join('')
-}
-
-export function CoachChat({ className, conversationId, compact = false, onClose, jobContext, gapContext, initialMessage }: CoachChatProps) {
-=======
 export function CoachChat({ className, compact = false, jobContext, gapContext, initialMessage }: CoachChatProps) {
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialMessageSent = useRef(false)
-<<<<<<< HEAD
-  const [input, setInput] = useState('')
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const transport = useMemo(() => new TextStreamChatTransport({
-    api: '/api/coach',
-    body: {
-      ...(jobContext ? { jobContext } : {}),
-      ...(gapContext ? { gapContext } : {}),
-    },
-  }), [])
-
-  const { messages, sendMessage, status, error } = useChat({
-    transport,
-    onError: (err) => {
-      console.error("[v0] Coach useChat error:", err)
-    },
-  })
-
-  const isLoading = status === 'submitted' || status === 'streaming'
-
-  // Debug logging
-  useEffect(() => {
-    console.log("[v0] CoachChat mounted", {
-      hasJobContext: !!jobContext,
-      hasGapContext: !!gapContext,
-      hasInitialMessage: !!initialMessage
-    })
-  }, [])
-=======
   const [input, setInput] = useState("")
 
   // AI SDK v6: Chat requires a transport instance for custom api/body.
@@ -150,7 +106,6 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
   })).current
 
   const { messages, status, sendMessage } = useChat({ chat })
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
   const isLoading = status === "streaming" || status === "submitted"
 
@@ -158,46 +113,26 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
   useEffect(() => {
     if (initialMessage && !initialMessageSent.current && messages.length === 0) {
       initialMessageSent.current = true
-<<<<<<< HEAD
-      sendMessage({ text: initialMessage })
-    }
-  }, [initialMessage, messages.length, sendMessage])
-=======
       sendMessage({ role: "user", parts: [{ type: "text", text: initialMessage }] })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
   // Auto-scroll to bottom on new messages / streaming updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, status])
 
-<<<<<<< HEAD
-  // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isLoading) return
-    console.log("[v0] CoachChat submitting message:", input.substring(0, 50))
-    sendMessage({ text: input })
-    setInput('')
-=======
   const submit = () => {
     const text = input.trim()
     if (!text || isLoading) return
     setInput("")
     sendMessage({ role: "user", parts: [{ type: "text", text }] })
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   }
 
   const handleQuickAction = (prompt: string) => {
     if (isLoading) return
-<<<<<<< HEAD
-    sendMessage({ text: prompt })
-=======
     sendMessage({ role: "user", parts: [{ type: "text", text: prompt }] })
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -210,106 +145,6 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
   const canSend = input.trim().length > 0 && !isLoading
 
   return (
-<<<<<<< HEAD
-    <div className={cn("flex flex-col h-full", className)}>
-      {/* Messages area */}
-      <ScrollArea
-        ref={scrollRef as React.RefObject<HTMLDivElement>}
-        className={cn("flex-1 px-4", compact ? "py-2" : "py-4")}
-      >
-        {/* Welcome message if no messages */}
-        {messages.length === 0 && (
-          <div className={cn("space-y-4", compact ? "py-2" : "py-6")}>
-            <div className="flex items-start gap-3">
-              <Avatar className="h-8 w-8 bg-primary/10">
-                <AvatarFallback className="bg-primary text-white">
-                  <Sparkles className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium">HireWire Coach</p>
-                <p className="text-sm text-muted-foreground">
-                  Hey! I&apos;m your personal career coach. I can help you with job search strategy,
-                  interview prep, building your evidence library, and improving your application materials.
-                </p>
-                {jobContext ? (
-                  <div className="p-2 bg-muted rounded-md border text-sm">
-                    <p className="font-medium">Currently focused on:</p>
-                    <p className="text-muted-foreground">
-                      {jobContext.title} at {jobContext.company}
-                      {jobContext.score !== null && jobContext.score !== undefined && ` (Fit: ${jobContext.score}%)`}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    What would you like to work on today?
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Quick actions grid */}
-            <div className={cn(
-              "grid gap-2",
-              compact ? "grid-cols-1" : "grid-cols-2"
-            )}>
-              {quickActions.map((action) => (
-                <Button
-                  key={action.label}
-                  variant="outline"
-                  className="justify-start gap-2 h-auto py-2 px-3 text-left"
-                  onClick={() => handleQuickAction(action.prompt)}
-                  disabled={isLoading}
-                >
-                  <action.icon className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-xs">{action.label}</span>
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Message list */}
-        <div className="space-y-4">
-          {messages.map((message) => {
-            const isUser = message.role === "user"
-            const text = getMessageText(message)
-
-            if (!text) return null
-
-            return (
-              <div
-                key={message.id}
-                className={cn(
-                  "flex items-start gap-3",
-                  isUser && "flex-row-reverse"
-                )}
-              >
-                <Avatar className={cn(
-                  "h-8 w-8",
-                  isUser ? "bg-muted" : "bg-primary/10"
-                )}>
-                  <AvatarFallback className={cn(
-                    isUser ? "bg-muted text-muted-foreground" : "bg-primary text-white"
-                  )}>
-                    {isUser ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-                  </AvatarFallback>
-                </Avatar>
-                <div className={cn(
-                  "flex-1 space-y-1",
-                  isUser && "text-right"
-                )}>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {isUser ? "You" : "HireWire Coach"}
-                  </p>
-                  <div className={cn(
-                    "prose prose-sm max-w-none",
-                    isUser ? "text-right" : "text-left",
-                    "[&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2"
-                  )}>
-                    {isUser ? (
-                      <p className="text-sm">{text}</p>
-=======
     <div className={cn("flex flex-col h-full bg-background", className)}>
 
       {/* Scrollable message area */}
@@ -347,7 +182,6 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                           )}
                         </p>
                       </div>
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
                     ) : (
                       <p className="text-sm text-muted-foreground mt-1">What would you like to work on today?</p>
                     )}
@@ -388,14 +222,6 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             </div>
           )}
 
-<<<<<<< HEAD
-          {/* Error display */}
-          {error && (
-            <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg mt-4">
-              <div className="text-sm text-red-700">
-                <p className="font-medium">Coach Error</p>
-                <p className="text-red-600">{error.message || "Failed to get response. Please try again."}</p>
-=======
           {/* Conversation messages */}
           <div className="space-y-4 pt-2">
             {messages.map((message) => {
@@ -468,7 +294,6 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
                   </div>
                 </div>
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
               </div>
             )}
 
@@ -496,14 +321,9 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             onKeyDown={handleKeyDown}
             placeholder="Ask me anything about your job search..."
             className={cn(
-<<<<<<< HEAD
-              "min-h-10 max-h-30 resize-none",
-              compact && "text-sm"
-=======
               "flex-1 min-h-[40px] max-h-[120px] resize-none bg-background border-border",
               "focus-visible:ring-1 focus-visible:ring-primary/50 text-sm",
               compact && "text-xs"
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
             )}
             rows={1}
             disabled={isLoading}

@@ -1,15 +1,3 @@
-<<<<<<< HEAD
-# Auth and Account Safety Validation
-
-This document reviews all auth and account flows for safety, branding, and tenant isolation.
-
-## Validation
-- Signup, login, logout, magic link, password reset, callback, protected routes, unauthorized/session expired, email templates, redirect URLs, account deletion/export if present
-- No protected page leaks data
-- Only requireUser for auth checks
-- No cross-user data access
-- Auth emails branded
-=======
 # AUTH_AND_ACCOUNT_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -51,4 +39,3 @@ Auth flows, session handling, protected route enforcement, magic link, signup co
 - **Status:** PASS
 
 ## Overall: PASS — 0 critical issues
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

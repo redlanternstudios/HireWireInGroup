@@ -1,32 +1,3 @@
-<<<<<<< HEAD
-# Readiness and Workflow State Validation
-
-This document validates that HireWire never fakes workflow state and readiness is always derived from canonical logic.
-
-
-## Canonical Readiness
-
-- has job analysis
-- has evidence mapping
-- has score
-- has resume
-- has cover letter
-- quality passed
-- is applied
-- is archived
-- can generate
-- can apply
-- reasons not ready
-- next action
-
-## Rules
-
-- No inline readiness computation
-- No writing status ready to fake approval
-- No Apply Now unless gates satisfied
-- No Ready Now unless readiness proves it
-- No duplicate apply paths
-=======
 # READINESS_AND_WORKFLOW_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -67,4 +38,3 @@ Verify the generation spine is unbroken: Generate → Review → Approve → Rea
 - **Status:** PASS — spine unbroken
 
 ## Overall: PASS — 0 critical issues
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991

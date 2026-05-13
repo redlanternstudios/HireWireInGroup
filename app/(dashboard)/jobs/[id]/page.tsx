@@ -1,29 +1,9 @@
-import { sanitizeCoachContext, sanitizeRecommendations } from "@/lib/coach/context/sanitize"
-// NOTE: Coach Governance: Analyze missing state bug
-// If you see 'Analysis not available' after Analyze, it means either:
-// - job.analysis_status is not 'analyzed' or equivalent
-// - job_analyses row is missing
-// - requirement graph is missing
-// - evidence match is below threshold
-// - generation is being attempted before analysis is valid
-// Generation must be blocked in these cases. See COACH_CONSTITUTION.md.
 import { createClient } from "@/lib/supabase/server"
 import { redirect, notFound } from "next/navigation"
-
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
-<<<<<<< HEAD
-import { getWorkflowState } from "@/lib/job-workflow"
-import { evaluateJobReadiness } from "@/lib/readiness"
-import { buildCoachContext } from "@/lib/coach/context/build-context"
-import { detectCoachSignals } from "@/lib/coach/signals/engine"
-import { generateRecommendations } from "@/lib/coach/recommendations"
-import { sortRecommendations, RecommendationPriority } from "@/lib/coach/recommendations/priority"
-import { getCoachMessage } from "@/lib/coach/messaging"
-import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
-=======
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
 import {
   ChevronLeft,
@@ -43,7 +23,6 @@ import {
   type WorkflowStage,
 } from "@/lib/job-workflow"
 import type { Job } from "@/lib/types"
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
 
 export const dynamic = "force-dynamic"
 
@@ -203,69 +182,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-<<<<<<< HEAD
-
-  // Fetch evidence_map and other workflow fields for workflow state
-  const { data: job, error: jobError } = await supabase
-    .from("jobs")
-    .select(
-      "id, role_title, company_name, job_url, status, fit, score, generated_resume, generated_cover_letter, created_at, evidence_map, quality_passed, generation_quality_issues, score_gaps"
-    )
-=======
   // Fetch full job row so job-workflow.ts has all required fields
   const { data: job, error: jobError } = await supabase
     .from("jobs")
     .select("*")
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .single()
-  // Derive workflow state for this job
-
-  // Canonical workflow state
-  const workflowState = getWorkflowState(job, job.id)
-  const nextAction = workflowState.nextAction
-  const blockers = workflowState.blockers
-
-  // Readiness (canonical)
-  const readiness = await evaluateJobReadiness(job.id, user.id)
-
-  // Build CoachContext from real data
-  const coachContext = buildCoachContext({
-    workflowStage: workflowState.stage,
-    blockers,
-    readiness: readiness?.is_ready ?? false,
-    evidenceCoverage: readiness?.evidence_count ? (readiness.evidence_count / (readiness.requirement_count || 1)) : 0,
-    fitScore: job.score ?? 0,
-    generationHistory: [], // TODO: wire real generation history if available
-    applicationHistory: [], // TODO: wire real application history if available
-    recentOutcomes: [], // TODO: wire real outcomes if available
-    userPreferences: {}, // TODO: wire real preferences if available
-    currentPage: `/jobs/${job.id}`,
-    currentAction: nextAction?.label || "",
-  })
-
-  // Coach memory (stub for now)
-  const coachMemory = { priorRecommendations: [], acceptedRecommendations: [], ignoredRecommendations: [], generationOutcomes: [], applicationOutcomes: [], recurringWeakAreas: [] }
-
-  // Detect signals
-  const coachSignals = detectCoachSignals(coachContext, coachMemory)
-
-  // Generate recommendations (real logic should deduplicate, cooldown, and prioritize)
-  let coachRecommendations = generateRecommendations(coachContext, coachSignals)
-  // Deduplicate by message
-  coachRecommendations = coachRecommendations.filter((rec, idx, arr) => arr.findIndex(r => r.message === rec.message) === idx)
-  // TODO: implement cooldown logic (skip for now)
-  // Sort by priority
-  coachRecommendations = sortRecommendations(coachRecommendations)
-
-  // Insights and momentum (stub for now)
-  const coachInsights: string[] = []
-  const coachMomentum = undefined
-
-  // Coach visibility logic
-  const showCoach = (coachRecommendations.length > 0 || blockers.length > 0 || coachInsights.length > 0)
 
   if (jobError || !job) notFound()
 
@@ -328,52 +252,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
 
   return (
-<<<<<<< HEAD
-    <div className="space-y-6 max-w-3xl">
-      {/* Embedded Coach Panel (client boundary) */}
-      {showCoach && (
-        <div className="mb-4">
-          <WorkflowCoachPanelClient
-            recommendations={sanitizeRecommendations(coachRecommendations)}
-            blockers={Array.isArray(blockers) ? blockers.map(String) : []}
-            insights={Array.isArray(coachInsights) ? coachInsights.map(String) : []}
-            momentum={coachMomentum ? String(coachMomentum) : undefined}
-          />
-        </div>
-      )}
-      {/* Next step CTA card */}
-      {nextAction && (
-        <div className="rounded-xl border border-primary bg-card p-6 flex flex-col items-center text-center mb-2">
-          <p className="text-base font-semibold mb-2">Next step</p>
-          <a
-            href={nextAction.href}
-            className={`inline-flex items-center rounded-md px-4 py-2.5 text-sm font-medium transition-colors ${blockers.length > 0 ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary text-white hover:bg-primary/90'}`}
-            aria-disabled={blockers.length > 0}
-            tabIndex={blockers.length > 0 ? -1 : 0}
-            {...(blockers.length > 0 ? { onClick: (e) => e.preventDefault() } : {})}
-          >
-            {nextAction.label}
-          </a>
-          <p className="text-xs text-muted-foreground mt-2">{nextAction.description}</p>
-          {blockers.length > 0 && (
-            <ul className="mt-2 text-xs text-red-600 list-disc list-inside">
-              {blockers.map((b, i) => (
-                <li key={i}>{b}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/jobs" className="hover:text-foreground transition-colors">
-          Jobs
-=======
     <div className="hw-page max-w-3xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link href="/jobs" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
           <ChevronLeft className="h-3.5 w-3.5" /> All Jobs
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
         </Link>
       </div>
 

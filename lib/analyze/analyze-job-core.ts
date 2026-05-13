@@ -166,13 +166,6 @@ function normalizeSeniority(level: string | null): string {
  * @param requestLike - Object satisfying RequestLike for cookie/origin forwarding in runJobFlow
  */
 export async function analyzeJobCore(
-    // COACH: Block generation if analysis is missing or job status is invalid
-    // TODO: Integrate coach validators before allowing generation. See COACH_CONSTITUTION.md.
-    // Example:
-    // if (!hasJobAnalysis(existingJob) || existingJob.status !== 'analyzed') {
-    //   console.error('COACH: Generation blocked - analysis missing or job status invalid')
-    //   return { success: false, error: 'Generation blocked: analysis missing or job status invalid' }
-    // }
   job_url: string,
   supabase: ServerSupabase,
   user: User,
@@ -184,36 +177,6 @@ export async function analyzeJobCore(
   const { data: existingJob } = await findJobByUrl(supabase, user.id, job_url) as { data: Job | null; error: unknown }
 
   if (existingJob) {
-    // Check if job_analyses row exists for this job
-    const { data: existingAnalysis } = await supabase
-      .from("job_analyses")
-      .select("id")
-      .eq("job_id", existingJob.id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    // If missing, insert a minimal analysis row
-    if (!existingAnalysis) {
-      await supabase.from("job_analyses").insert({
-        user_id: user.id,
-        job_id: existingJob.id,
-        title: existingJob.title || "Unknown Title",
-        company: existingJob.company || "Unknown Company",
-        location: existingJob.location ?? null,
-        employment_type: existingJob.employment_type ?? null,
-        salary_text: existingJob.salary_range ?? null,
-        description_raw: existingJob.job_description ?? null,
-        responsibilities: existingJob.responsibilities || [],
-        qualifications_required: existingJob.qualifications_required || [],
-        qualifications_preferred: existingJob.qualifications_preferred || [],
-        keywords: existingJob.ats_keywords || existingJob.keywords_extracted || [],
-        ats_phrases: [],
-        matched_skills: [],
-        known_gaps: [],
-        analysis_version: "duplicate-fix-1.0",
-        analysis_model: null,
-      });
-    }
     return {
       success: true,
       job_id: existingJob.id,
@@ -483,11 +446,9 @@ Extract the job details following the schema.`,
   // Insert scores record
   const confidenceMap: Record<string, number> = { HIGH: 0.9, MEDIUM: 0.7, LOW: 0.5 }
   const confidenceScore = confidenceMap[explainableFit.confidence] || 0.7
-  // Round fitResult.score to integer for overall_score
-  const roundedScore = Math.round(fitResult.score)
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: job.id,
-    overall_score: roundedScore,
+    overall_score: fitResult.score,
     confidence_score: confidenceScore,
     skills_match: dimensionScores.skills,
     experience_relevance: dimensionScores.experience,

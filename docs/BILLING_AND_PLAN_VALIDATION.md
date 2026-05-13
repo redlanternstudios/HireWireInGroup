@@ -1,21 +1,3 @@
-<<<<<<< HEAD
-# Billing and Plan Validation
-
-This document reviews plan types, limits, Stripe integration, and billing honesty.
-
-## Validation
-- Plan types: free, pro, enterprise only
-- Free user caps
-- Generation limit errors
-- Stripe keys not exposed
-- Checkout/portal branded
-- Success/cancel pages work
-- Billing page branded
-- Plan copy honest
-- No fake premium claims
-- No plan names outside contract
-- No disabled paid feature pretends active
-=======
 # BILLING_AND_PLAN_VALIDATION.md
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
@@ -56,4 +38,3 @@ Plan types, Stripe integration, billing routes, subscription state.
 - **Status:** PASS
 
 ## Overall: PASS — 0 critical issues
->>>>>>> 7e1a8af916b56410048e0bfccadd90f00d881991
