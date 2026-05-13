@@ -10,9 +10,46 @@ import {
   ArrowRight,
   Plus,
   Zap,
+  Activity,
+  Send,
+  Star,
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+
+type RecentEvent = {
+  id: number
+  event_type: string
+  job_id: string | null
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  application_submitted:  "Application submitted",
+  documents_generated:    "Documents generated",
+  quality_passed:         "Quality check passed",
+  quality_failed:         "Quality check failed",
+  evidence_added:         "Evidence added",
+  evidence_updated:       "Evidence updated",
+  evidence_deleted:       "Evidence removed",
+  resume_uploaded:        "Resume uploaded",
+  job_analyzed:           "Job analyzed",
+  readiness_changed:      "Readiness updated",
+  package_reviewed:       "Package accepted",
+  package_invalidated:    "Package flagged for review",
+  export_generated:       "Document exported",
+}
+
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1)  return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)  return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
 
 export const metadata = {
   title: "Coach | HireWire",
@@ -25,7 +62,9 @@ async function getCoachContext() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
-    const [jobsResult, evidenceResult, readyResult] = await Promise.all([
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+
+    const [jobsResult, evidenceResult, readyResult, eventsResult] = await Promise.all([
       supabase
         .from("jobs")
         .select("id, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed")
@@ -36,11 +75,19 @@ async function getCoachContext() {
         .select("id, is_user_approved")
         .eq("user_id", user.id),
       getReadyJobIds(user.id),
+      supabase
+        .from("domain_events")
+        .select("id, event_type, job_id, payload, created_at")
+        .eq("user_id", user.id)
+        .gte("created_at", cutoff)
+        .order("created_at", { ascending: false })
+        .limit(8),
     ])
 
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
     const readyIds = readyResult.ready ?? []
+    const recentEvents = (eventsResult.data ?? []) as RecentEvent[]
     const evaluatedJobs = jobs.map(job => ({ job, readiness: evaluateReadiness(job) }))
 
     const activeJobs = jobs.length
@@ -49,6 +96,11 @@ async function getCoachContext() {
     const evidenceCount = evidence.length
     const approvedEvidence = evidence.filter(e => e.is_user_approved).length
 
+    // Surface the most recent readiness_changed event where a job became apply-ready
+    const urgentReady = recentEvents.find(
+      e => e.event_type === "readiness_changed" && e.payload?.can_apply === true
+    ) ?? null
+
     return {
       activeJobs,
       appliedJobs,
@@ -56,6 +108,8 @@ async function getCoachContext() {
       withMaterials,
       evidenceCount,
       approvedEvidence,
+      recentEvents,
+      urgentReady,
     }
   } catch {
     return null
@@ -211,6 +265,24 @@ export default async function CoachPage() {
             )}
           </div>
 
+          {/* Urgent CTA — job just became ready */}
+          {ctx?.urgentReady && (
+            <div className="p-4 border-b border-border">
+              <Link href={ctx.urgentReady.job_id ? `/jobs/${ctx.urgentReady.job_id}` : "/ready-to-apply"}>
+                <div className="rounded-lg bg-primary/8 border border-primary/20 px-3 py-3 flex items-start gap-2.5 hover:bg-primary/12 transition-colors">
+                  <Star className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-primary">Job ready to apply</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      A job just cleared all readiness checks. Review and submit.
+                    </p>
+                  </div>
+                  <ArrowRight className="h-3 w-3 text-primary/60 shrink-0 mt-1 ml-auto" />
+                </div>
+              </Link>
+            </div>
+          )}
+
           {/* Next Best Actions */}
           <div className="p-4 border-b border-border">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
@@ -224,6 +296,42 @@ export default async function CoachPage() {
               <ActionItem label="View materials" href="/documents" icon={FileText} />
             </div>
           </div>
+
+          {/* Recent Activity */}
+          {ctx?.recentEvents && ctx.recentEvents.length > 0 && (
+            <div className="p-4 border-b border-border">
+              <div className="flex items-center gap-1.5 mb-3">
+                <Activity className="h-3 w-3 text-muted-foreground" />
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Recent Activity
+                </p>
+              </div>
+              <div className="space-y-2.5">
+                {ctx.recentEvents.slice(0, 5).map(event => (
+                  <div key={event.id} className="flex items-start justify-between gap-2">
+                    {event.job_id ? (
+                      <Link
+                        href={`/jobs/${event.job_id}`}
+                        className="text-xs text-foreground hover:text-primary transition-colors leading-snug flex-1 min-w-0 truncate"
+                      >
+                        {EVENT_LABEL[event.event_type] ?? event.event_type}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-foreground leading-snug flex-1 min-w-0 truncate">
+                        {EVENT_LABEL[event.event_type] ?? event.event_type}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+                      {timeAgo(event.created_at)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <Link href="/logs" className="mt-3 block text-[11px] text-primary hover:underline">
+                View full activity log →
+              </Link>
+            </div>
+          )}
 
           {/* Quick context note */}
           <div className="p-4 mt-auto">
