@@ -82,7 +82,7 @@ export default async function DashboardPage() {
 
   const [{ data: profile }, { data: jobs }] = await Promise.all([
     supabase.from("user_profile")
-      .select("full_name, onboarding_complete, headline")
+      .select("full_name, headline")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase.from("jobs")
@@ -90,13 +90,11 @@ export default async function DashboardPage() {
       .eq("user_id", user.id)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
-      .limit(10),
+      .limit(200),
   ])
 
-  if (!profile || profile.onboarding_complete === false) redirect("/onboarding")
-
   const jobList = jobs ?? []
-  const firstName = profile.full_name?.split(" ")[0] ?? "there"
+  const firstName = profile?.full_name?.split(" ")[0] ?? "there"
 
   // Pipeline counts — derived from actual fields only
   const needsActionJobs = jobList.filter(j => urgencyTier(j) === "action")

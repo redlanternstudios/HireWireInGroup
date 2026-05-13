@@ -42,13 +42,13 @@ const pipelineNav = [
   { name: "Home", href: "/dashboard", icon: Grid2X2 },
   { name: "Coach", href: "/coach", icon: Sparkles, premium: true },
   { name: "All Jobs", href: "/jobs", icon: Briefcase },
-  { name: "Ready to Apply", href: "/ready-queue", icon: CheckSquare },
+  { name: "Ready to Apply", href: "/ready-to-apply", icon: CheckSquare },
   { name: "Applied", href: "/applications", icon: Send },
   { name: "Materials", href: "/documents", icon: FileText },
   { name: "Career Context", href: "/evidence", icon: Library },
   { name: "Analytics", href: "/analytics", icon: BarChart3, premium: true },
   { name: "Activity Log", href: "/logs", icon: History },
-  { name: "Add Job", href: "/jobs/new", icon: PlusCircle },
+  { name: "Add Job", href: "/jobs", icon: PlusCircle },
 ]
 
 // Bottom navigation - settings/profile

@@ -97,6 +97,40 @@ export async function resetDocumentEdits(
   return { success: true }
 }
 
+export async function approveQualityManually(
+  jobId: string
+): Promise<{ success?: true; error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('jobs')
+    .update({ quality_passed: true })
+    .eq('id', jobId)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/jobs/${jobId}/documents`)
+  revalidatePath(`/ready-to-apply`)
+  revalidatePath(`/dashboard`)
+
+  void handleDomainEvent({
+    supabase,
+    event_type: 'override_logged',
+    job_id: jobId,
+    user_id: user.id,
+    source: 'document_action',
+    payload: { override_type: 'quality_manual_approval' },
+  })
+
+  return { success: true }
+}
+
 export async function saveDocumentFormatSettings(
   jobId: string,
   resumeFormat: ResumeFormatId,

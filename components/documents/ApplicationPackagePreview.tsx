@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { acceptApplicationPackage, markPackageNeedsReview } from "@/lib/actions/package-review"
+import { approveQualityManually } from "@/lib/actions/documents"
 import { useRouter } from "next/navigation"
 
 export default function ApplicationPackagePreview({
@@ -17,6 +18,21 @@ export default function ApplicationPackagePreview({
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<string | null>(null)
   const [accepting, setAccepting] = useState(false)
+  const [approvingQuality, setApprovingQuality] = useState(false)
+
+  const handleApproveQuality = () => {
+    if (!confirm("Manually approve quality? This overrides the AI quality check and will be logged.")) return
+    setApprovingQuality(true)
+    startTransition(async () => {
+      const result = await approveQualityManually(job.id)
+      setApprovingQuality(false)
+      if (result.error) {
+        setStatus(`Error: ${result.error}`)
+      } else {
+        router.refresh()
+      }
+    })
+  }
 
   const handleAccept = () => {
     setAccepting(true)
@@ -61,10 +77,20 @@ export default function ApplicationPackagePreview({
               {readiness.checklist.evidence ? "✔" : "✗"} Evidence coverage
             </span>
           </li>
-          <li>
+          <li className="flex items-center gap-2 flex-wrap">
             <span className={readiness.checklist.quality ? "text-emerald-600" : "text-rose-600"}>
               {readiness.checklist.quality ? "✔" : "✗"} Quality check
             </span>
+            {job.quality_passed === false && (
+              <button
+                className="text-[10px] text-muted-foreground underline hover:text-foreground transition-colors disabled:opacity-50"
+                onClick={handleApproveQuality}
+                disabled={approvingQuality || isPending}
+                type="button"
+              >
+                {approvingQuality ? "Approving…" : "Approve manually"}
+              </button>
+            )}
           </li>
           {readiness.checklist.voiceIntegrity !== undefined && (
             <li>
