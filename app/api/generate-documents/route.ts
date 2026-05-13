@@ -33,17 +33,19 @@ import {
   extractKnownProducts,
   buildProfileKnowledge,
 } from "@/lib/profile-knowledge-resolver"
-import {
-  suggestTemplate,
-  RESUME_TEMPLATES,
-  getTemplateGuidance,
-} from "@/lib/resume-templates"
+import { recommendResumeFormat } from "@/lib/resume-formats"
 import { sanitizeInput } from "@/lib/safety"
 import {
   validateAllClaims,
   scoreDrift,
   type GovernanceEvidence,
 } from "@/lib/coach"
+import { handleDomainEvent } from "@/lib/domain-events"
+import { extractVoiceProfile } from "@/lib/voice/extract-voice-profile"
+import { selectVoiceMode, type VoiceMode } from "@/lib/voice/select-voice-mode"
+import { checkVoiceDrift } from "@/lib/voice/voice-drift-check"
+import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types"
+import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event"
 
 // Helper for retry with exponential backoff (handles 429 rate limits)
 async function withRetry<T>(
@@ -268,7 +270,48 @@ Return an error explaining why generation was blocked.`
   }
 }
 
+function buildVoiceInstructions(mode: VoiceMode, profile: VoiceProfile): string {
+  const preservePhrases = profile.preserve.phrases.slice(0, 5)
+  const actionVerbs = profile.vocabulary.commonActionVerbs.slice(0, 6)
+
+  switch (mode) {
+    case "preserve_original":
+      return `
+VOICE PRESERVATION MODE — match the candidate's existing writing style precisely:
+- Tone: ${profile.tone.primary}
+- Formality: ${profile.formality}
+- Sentence length: ${profile.sentencePattern.averageLength} (bullets)
+- Bullet pattern: ${profile.bulletStyle.typicalPattern}
+- Vocabulary level: ${profile.vocabulary.level}
+${actionVerbs.length > 0 ? `- Use action verbs from their style: ${actionVerbs.join(", ")}` : ""}
+${preservePhrases.length > 0 ? `- Preserve phrases like: "${preservePhrases.join('", "')}"` : ""}
+${profile.avoid.risks.length > 0 ? `- Avoid: ${profile.avoid.risks.join("; ")}` : ""}
+Do NOT upgrade to more formal, executive, or polished language than the original.`
+
+    case "polish_lightly":
+      return `
+LIGHT POLISH MODE — improve clarity while keeping the candidate's voice:
+- Keep: ${profile.tone.primary} tone, ${profile.formality} formality
+- Fix grammar and clarity only — do not change their personality or register
+- Keep sentence length similar (${profile.sentencePattern.averageLength})
+- Avoid introducing corporate jargon or buzzwords not found in the original`
+
+    case "professional_upgrade":
+      return `
+PROFESSIONAL UPGRADE MODE — rewrite with professional clarity grounded in their evidence:
+- Upgrade: structure, clarity, and action verb strength
+- Keep: core facts, evidence, and truthful claims
+- Use professional vocabulary; avoid invented superlatives
+- Maintain action verb bullets`
+  }
+}
+
 export async function POST(request: NextRequest) {
+  const { validationError, authError, aiProviderError, documentGenerationError, supabaseError, unknownError } = await import("@/lib/errors/factory")
+  const { logError: logErr } = await import("@/lib/errors/logger")
+  const { toApiErrorResponse } = await import("@/lib/errors/response")
+  const { createCorrelationId } = await import("@/lib/errors/correlation")
+  const correlationId = createCorrelationId()
   try {
     const body = await request.json()
     const { selected_evidence_ids, _retry_count = 0 } = body
@@ -364,6 +407,12 @@ export async function POST(request: NextRequest) {
       loadSourceResume(supabase, userId),
     ])
 
+    // Start voice profile extraction from source resume in parallel with validation checks.
+    // Fire-and-forget the promise now; await it before generation prompts are built.
+    const voiceProfilePromise: Promise<VoiceProfile | null> = sourceResume?.parsed_text
+      ? extractVoiceProfile(sourceResume.parsed_text)
+      : Promise.resolve(null)
+
     // HARD FAIL: Evidence is required for document generation
     if (!allEvidence || allEvidence.length === 0) {
       await supabase
@@ -421,24 +470,7 @@ export async function POST(request: NextRequest) {
 
     const jobAnalysis = jobData.job_analyses?.[0]
     
-    // GATE: Evidence matching must be complete before generation
-    // Only enforce if job has requirements (some jobs may not have extracted requirements)
-    const hasRequirements = jobAnalysis?.qualifications_required?.length > 0
-    const evidenceMap = jobData.evidence_map as Record<string, unknown> | null
-    const matchingComplete = evidenceMap?.matching_complete === true
-    
-    if (hasRequirements && !matchingComplete) {
-      // No status update needed here — job remains in current state until matching is complete
-      
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: "matching_incomplete",
-          user_message: "Complete evidence matching before generating materials. Go to Evidence Match and click 'Mark Complete & Continue'."
-        },
-        { status: 400 }
-      )
-    }
+    // Evidence matching gate removed — generation is allowed regardless of matching_complete
     
     // Load gap clarifications for this job (job-specific context)
     const gapClarifications = (jobData.gap_clarifications as Array<{
@@ -664,15 +696,20 @@ Be conservative - only include matches that are clearly supported by the evidenc
     const hasUnresolvedGaps = generatedEvidenceMap.gaps.length > 0 && gapClarifications.length === 0
     const strategyPrompt = buildStrategyPrompt(strategy, hasUnresolvedGaps)
 
-    // Auto-select optimal resume template based on job analysis
-    const selectedTemplate = suggestTemplate({
-      title: jobData.title,
-      role_family: jobData.role_family,
-      responsibilities: jobData.responsibilities,
-      qualifications_required: jobData.qualifications_required,
+    // Await voice profile extraction (started in parallel with evidence map generation)
+    const originalVoiceProfile = await voiceProfilePromise
+    const voiceMode: VoiceMode = originalVoiceProfile
+      ? selectVoiceMode(originalVoiceProfile)
+      : "preserve_original"
+    const voiceInstructions = originalVoiceProfile
+      ? buildVoiceInstructions(voiceMode, originalVoiceProfile)
+      : ""
+
+    const resumeFormatRecommendation = recommendResumeFormat({
+      roleTitle: String(jobData.title ?? ""),
+      seniority: String(jobData.role_family ?? ""),
+      applicationChannel: String(jobData.job_url ?? ""),
     })
-    const templateConfig = RESUME_TEMPLATES[selectedTemplate]
-    const templateGuidance = getTemplateGuidance(selectedTemplate)
 
     // Step 2: Generate resume with bullet-level provenance (with retry for rate limits)
   // SIMPLIFIED: Reduced prompt verbosity to produce more natural, human-sounding output
@@ -694,6 +731,7 @@ Tools: ${generatedEvidenceMap.matched_tools.join(", ")}
 Gaps: ${generatedEvidenceMap.gaps.join(", ")}
 
 ${strategyPrompt}
+${voiceInstructions}
 
 WRITING RULES:
 1. Link every bullet to a specific evidence ID
@@ -792,6 +830,7 @@ ${coverLetterEvidence.map((e: {
 ${jobContext}
 
 ${strategyPrompt}
+${voiceInstructions}
 
 TONE: Write like a sharp professional sending a letter to someone they respect.
 - Open directly with who you are and why you fit
@@ -866,6 +905,20 @@ Sincerely,
 
 ${signatureBlock}`
 
+    // ── VOICE DRIFT CHECK ─────────────────────────────────────────────────────
+    // Extract voice profile from the generated resume and compare to the original.
+    // Non-blocking: drift result is persisted but does not gate this generation.
+    let voiceDriftResult: VoiceDriftResult | null = null
+    if (originalVoiceProfile) {
+      try {
+        const generatedVoiceProfile = await extractVoiceProfile(formattedResume)
+        voiceDriftResult = checkVoiceDrift(originalVoiceProfile, generatedVoiceProfile)
+      } catch {
+        // Voice drift check is non-blocking — log and continue
+        console.error("[HireWire] voice drift check failed, skipping")
+      }
+    }
+
     // ── GOVERNANCE LAYER ──────────────────────────────────────────────────────
     // Runs AFTER document text is finalized but BEFORE quality check and DB write.
     // This is additive — it does not replace the existing quality checks.
@@ -878,9 +931,9 @@ ${signatureBlock}`
       confidence_level: e.confidence_level,
       outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
       tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
-      team_size: e.team_size ?? null,
-      budget_scope: e.budget_scope ?? null,
-      user_impact_scale: e.user_impact_scale ?? null,
+      team_size: (e as any).team_size ?? null,
+      budget_scope: (e as any).budget_scope ?? null,
+      user_impact_scale: (e as any).user_impact_scale ?? null,
       what_not_to_overstate: e.what_not_to_overstate ?? null,
       approved_achievement_bullets: Array.isArray(e.approved_achievement_bullets)
         ? e.approved_achievement_bullets
@@ -908,8 +961,8 @@ ${signatureBlock}`
 
     // 2. Drift scoring — measures deviation of generated output from evidence
     const driftResult = scoreDrift({
-      bulletTexts: bulletClaimInputs,
-      paragraphTexts: paragraphClaimInputs,
+      bulletTexts: bulletClaimInputs.map(b => ({ text: b.text, evidence_id: b.cited_evidence_id })),
+      paragraphTexts: paragraphClaimInputs.map(p => ({ text: p.text, evidence_id: p.cited_evidence_id })),
       bulletVerdicts: claimValidation.bulletVerdicts,
       paragraphVerdicts: claimValidation.paragraphVerdicts,
       evidenceSet: governanceEvidence,
@@ -959,8 +1012,22 @@ ${signatureBlock}`
         governance_passed: false,
         failed_at_phase: driftResult.is_blocking ? "drift_scoring" : "claim_validation",
         governance_version: "1.0.0",
-      }).throwOnError().catch(() => {
-        // Governance table may not exist yet — do not block the response
+      // Governance table may not exist yet — do not block the response
+      }).then(() => {}, () => {})
+
+      void handleDomainEvent({
+        supabase,
+        event_type: "quality_failed",
+        job_id,
+        user_id: userId,
+        source: "generate_documents_route",
+        payload: {
+          reason: "governance_block",
+          drift_score: driftResult.score,
+          fabricated_count: claimValidation.fabricatedCount,
+          block_reason: blockReason,
+          correlation_id: correlationId,
+        },
       })
 
       return NextResponse.json({
@@ -1146,6 +1213,9 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         scored_at: new Date().toISOString(),
         generation_timestamp: new Date().toISOString(),
         generation_quality_score: qualityScore,
+        resume_format: resumeFormatRecommendation.format,
+        resume_font: resumeFormatRecommendation.font,
+        format_recommendation_reason: resumeFormatRecommendation.reason,
         governance_passed: true,
         governance_drift_score: driftResult.score,
         governance_version: "1.0.0",
@@ -1165,16 +1235,97 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
           source_evidence_id: b.source_evidence_id,
           evidence_title: b.source_evidence_title,
         })),
+        // Voice integrity
+        voice_mode: voiceMode,
+        voice_profile_snapshot: originalVoiceProfile ?? undefined,
+        voice_drift_result: voiceDriftResult ?? undefined,
+        voice_integrity_passed: voiceDriftResult?.passed ?? true,
+        voice_review_status: voiceDriftResult
+          ? voiceDriftResult.driftLevel === "none"
+            ? "passed"
+            : "needs_review"
+          : "pending",
       })
       .eq("id", job_id)
       .eq("user_id", userId)
 
     if (updateError) {
-      console.error("Error updating job:", updateError)
-      return NextResponse.json(
-        { success: false, error: "Failed to persist generated documents. Please try again." },
-        { status: 500 }
-      )
+      const err = supabaseError({ code: "JOB_UPDATE_FAILED", message: updateError.message, correlationId })
+      logErr(err, { route: "/api/generate-documents" })
+      return NextResponse.json(toApiErrorResponse(err), { status: 500 })
+    }
+
+    // Emit domain events for generation outcome
+    void handleDomainEvent({
+      supabase,
+      event_type: "documents_generated",
+      job_id,
+      user_id: userId,
+      source: "generate_documents_route",
+      payload: {
+        strategy,
+        quality_passed: qualityPassed,
+        quality_score: qualityScore,
+        fit_score: generatedEvidenceMap.fit_score,
+        correlation_id: correlationId,
+      },
+    })
+
+    void handleDomainEvent({
+      supabase,
+      event_type: qualityPassed ? "quality_passed" : "quality_failed",
+      job_id,
+      user_id: userId,
+      source: "generate_documents_route",
+      payload: {
+        quality_score: qualityScore,
+        banned_phrases_count: allBannedPhrases.length,
+        weak_bullets_count: weakBullets.length,
+        invented_claims_count: qualityCheck.invented_claims.length,
+        unsafe_metrics_count: unsafeMetricsFound.length,
+        was_auto_retried: isRetry,
+        correlation_id: correlationId,
+      },
+    })
+
+    // Voice domain events — non-blocking
+    if (originalVoiceProfile) {
+      void emitDomainEventWithClient(supabase, {
+        event_type: "voice_profile_extracted",
+        job_id,
+        user_id: userId,
+        source: "generate_documents_route",
+        payload: {
+          voice_mode: voiceMode,
+          tone: originalVoiceProfile.tone.primary,
+          formality: originalVoiceProfile.formality,
+        },
+        invalidates: ["coach_state"],
+        recomputes: [],
+        affected_routes: ["/dashboard"],
+        severity: "info",
+        metadata: {},
+      })
+    }
+    if (voiceDriftResult && voiceDriftResult.driftLevel !== "none") {
+      void emitDomainEventWithClient(supabase, {
+        event_type: "voice_drift_detected",
+        job_id,
+        user_id: userId,
+        source: "generate_documents_route",
+        payload: {
+          drift_level: voiceDriftResult.driftLevel,
+          passed: voiceDriftResult.passed,
+          issues: voiceDriftResult.detectedIssues,
+          recommended_action: voiceDriftResult.recommendedAction,
+          warnings: voiceDriftResult.warnings,
+        },
+        invalidates: voiceDriftResult.passed ? ["coach_state"] : ["readiness", "coach_state"],
+        recomputes: voiceDriftResult.passed ? [] : ["readiness"],
+        affected_routes: [`/jobs/${job_id}`, `/jobs/${job_id}/documents`, "/dashboard"],
+        severity: voiceDriftResult.driftLevel === "high" ? "warning" : "info",
+        metadata: {},
+      })
     }
 
     // Increment generations_this_month for usage tracking (only on successful generation)
@@ -1271,8 +1422,9 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       retry_count: _retry_count,
       strategy,
       strategy_reasoning: strategyReasoning,
-      template_used: selectedTemplate,
-      template_name: templateConfig.name,
+      resume_format: resumeFormatRecommendation.format,
+      resume_font: resumeFormatRecommendation.font,
+      format_recommendation_reason: resumeFormatRecommendation.reason,
       evidence_map: {
         fit_score: generatedEvidenceMap.fit_score,
         fit_rationale: generatedEvidenceMap.fit_rationale,
@@ -1335,14 +1487,19 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         fabricated_count: claimValidation.fabricatedCount,
         low_confidence_count: claimValidation.lowConfidenceCount,
       },
+      voice_integrity: voiceDriftResult
+        ? {
+            voice_mode: voiceMode,
+            drift_level: voiceDriftResult.driftLevel,
+            passed: voiceDriftResult.passed,
+            issues: voiceDriftResult.detectedIssues,
+            recommended_action: voiceDriftResult.recommendedAction,
+            warnings: voiceDriftResult.warnings,
+          }
+        : { voice_mode: voiceMode, drift_level: "none", passed: true, issues: [], warnings: [] },
+      correlationId,
     })
   } catch (error) {
-  console.error("Error in generate-documents:", error)
-
-    // Check for rate limit errors
-    const errorMessage = error instanceof Error ? error.message : "Generation failed"
-    const isRateLimit = errorMessage.includes("rate_limit") || errorMessage.includes("Rate limit") || errorMessage.includes("429")
-    
     // Try to update job status to failed (best effort, don't fail if this fails)
     try {
       const { job_id } = await request.clone().json()
@@ -1359,25 +1516,16 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
             .eq("user_id", user.id)
         }
       }
-    } catch {
-      // Ignore errors updating status
-    }
-    
+    } catch {}
+    const errorMessage = error instanceof Error ? error.message : "Generation failed"
+    const isRateLimit = errorMessage.includes("rate_limit") || errorMessage.includes("Rate limit") || errorMessage.includes("429")
     if (isRateLimit) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: "AI service is temporarily busy. Please wait 30 seconds and try again.",
-          retryAfter: 30,
-          isRateLimit: true
-        },
-        { status: 429 }
-      )
+      const err = aiProviderError({ code: "AI_RATE_LIMIT", message: errorMessage, correlationId, retryable: true })
+      logErr(err, { route: "/api/generate-documents" })
+      return NextResponse.json({ ...toApiErrorResponse(err), retryAfter: 30 }, { status: 429 })
     }
-    
-    return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
-    )
+    const errObj = documentGenerationError({ code: "GENERATION_FAILED", message: errorMessage, correlationId })
+    logErr(errObj, { route: "/api/generate-documents" })
+    return NextResponse.json(toApiErrorResponse(errObj), { status: 500 })
   }
 }

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { getReadyJobIds } from "@/lib/readiness"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { CoachChat } from "@/components/coach-chat"
 import {
   Briefcase,
@@ -27,7 +28,7 @@ async function getCoachContext() {
     const [jobsResult, evidenceResult, readyResult] = await Promise.all([
       supabase
         .from("jobs")
-        .select("id, status, generation_status, quality_passed")
+        .select("id, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed")
         .eq("user_id", user.id)
         .is("deleted_at", null),
       supabase
@@ -40,10 +41,11 @@ async function getCoachContext() {
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
     const readyIds = readyResult.ready ?? []
+    const evaluatedJobs = jobs.map(job => ({ job, readiness: evaluateReadiness(job) }))
 
     const activeJobs = jobs.length
-    const appliedJobs = jobs.filter(j => j.status === "applied").length
-    const withMaterials = jobs.filter(j => j.generation_status === "complete").length
+    const appliedJobs = evaluatedJobs.filter(({ readiness }) => readiness.outcome === "applied").length
+    const withMaterials = evaluatedJobs.filter(({ readiness }) => readiness.checklist.resume || readiness.checklist.coverLetter).length
     const evidenceCount = evidence.length
     const approvedEvidence = evidence.filter(e => e.is_user_approved).length
 
@@ -74,7 +76,7 @@ function StatRow({
   const content = (
     <div className={cn(
       "flex items-center justify-between py-2.5 px-3 rounded-lg transition-colors",
-      href && "hover:bg-black/[0.03] cursor-pointer",
+      href && "hover:bg-black/3 cursor-pointer",
     )}>
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className={cn(
@@ -100,7 +102,7 @@ function ActionItem({
   return (
     <Link
       href={href}
-      className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-black/[0.04] transition-colors group"
+      className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-black/4 transition-colors group"
     >
       <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
         <Icon className="h-3.5 w-3.5 text-primary" />
@@ -168,7 +170,7 @@ export default async function CoachPage() {
               <StatRow
                 label="Ready to apply"
                 value={ctx?.readyCount ?? "—"}
-                href="/ready-queue"
+                href="/ready-to-apply"
                 accent={(ctx?.readyCount ?? 0) > 0}
               />
               <StatRow
@@ -218,14 +220,14 @@ export default async function CoachPage() {
               <ActionItem label="Add a job" href="/jobs" icon={Plus} />
               <ActionItem label="Build Career Context" href="/evidence" icon={BookOpen} />
               <ActionItem label="Review pipeline" href="/jobs" icon={Briefcase} />
-              <ActionItem label="Ready to Apply queue" href="/ready-queue" icon={CheckCircle2} />
+              <ActionItem label="Ready to Apply queue" href="/ready-to-apply" icon={CheckCircle2} />
               <ActionItem label="View materials" href="/documents" icon={FileText} />
             </div>
           </div>
 
           {/* Quick context note */}
           <div className="p-4 mt-auto">
-            <div className="rounded-lg bg-foreground/[0.04] border border-border px-3 py-3">
+            <div className="rounded-lg bg-foreground/4 border border-border px-3 py-3">
               <div className="flex items-start gap-2">
                 <Zap className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                 <p className="text-xs text-muted-foreground leading-relaxed">

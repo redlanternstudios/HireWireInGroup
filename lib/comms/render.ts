@@ -1,6 +1,6 @@
 // Render and resolve communication messages for display or sending
 
-import { CommunicationMessage } from './types'
+import type { CommunicationMessage } from './types'
 
 export function renderMessage(message: CommunicationMessage, variables?: Record<string, string | number>): CommunicationMessage {
   // Simple variable interpolation for subject/body

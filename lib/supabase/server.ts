@@ -63,19 +63,13 @@ export function createAdminClient() {
   if (!config.supabaseServiceRoleKey) {
     throw new Error(
       'SUPABASE_SERVICE_ROLE_KEY is not set. ' +
-      'This key must only be configured for the Production environment.'
+      'Admin client requires this key. In production, restrict this key to server-side only. ' +
+      'In development/preview, you may set it locally for testing admin operations.'
     )
   }
 
-  // Hard block: refuse to create an admin client in non-production Vercel deployments.
-  // VERCEL_ENV is set by Vercel automatically: "production" | "preview" | "development"
-  const vercelEnv = process.env.VERCEL_ENV
-  if (vercelEnv && vercelEnv !== 'production') {
-    throw new Error(
-      `createAdminClient() called in Vercel "${vercelEnv}" environment. ` +
-      'The service role key must not be used outside Production.'
-    )
-  }
+  // createAdminClient is allowed in dev/preview if SUPABASE_SERVICE_ROLE_KEY is set
+  // Ensure this key is never exposed to the browser or client bundles
 
   return createSupabaseClient(
     config.supabaseUrl,

@@ -18,15 +18,15 @@ export interface UpdateCareerContextInput {
 }
 
 export async function addCareerContext(input: NewCareerContextInput): Promise<{ success: boolean; error?: string }> {
-	const error = null; // Placeholder for error handling
-	if (error) return { success: false, error: error.message }
+	let error: Error | null = null
+	if (error) return { success: false, error: (error as Error).message }
 	revalidatePath('/career-context')
 	return { success: true }
 }
 
 export async function updateCareerContext(id: string, input: UpdateCareerContextInput): Promise<{ success: boolean; error?: string }> {
-	const error = null; // Placeholder for error handling
-	if (error) return { success: false, error: error.message }
+	let error: Error | null = null
+	if (error) return { success: false, error: (error as Error).message }
 	return { success: true }
 }
 // Placeholder: Will copy and rebrand actions.ts here next.

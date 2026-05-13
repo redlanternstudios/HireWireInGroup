@@ -1,11 +1,13 @@
 // JobIntelligencePanel.tsx
 import React from "react"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 
 export function JobIntelligencePanel({ jobs }: { jobs: any[] }) {
   // Compute stats
   const fitScores = jobs.map(j => j.score).filter(Boolean)
   const avgFit = fitScores.length ? Math.round(fitScores.reduce((a, b) => a + b, 0) / fitScores.length) : "—"
-  const readyCount = jobs.filter(j => j.status === "ready").length
+  const readiness = jobs.map(job => evaluateReadiness(job))
+  const readyCount = readiness.filter(r => r.stage === "ready").length
   const atsReady = jobs.filter(j => j.ats_readiness === "strong").length
   const profileStrength = jobs.length ? Math.round((readyCount / jobs.length) * 100) : "—"
   const topGaps = (() => {

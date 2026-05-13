@@ -1,6 +1,6 @@
 // Tone helpers for communication messages
 
-import { Tone } from './types'
+import type { Tone } from './types'
 
 export function getToneDescription(tone: Tone): string {
   switch (tone) {

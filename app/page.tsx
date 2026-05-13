@@ -95,7 +95,7 @@ export default function HomePage() {
               <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary text-primary-foreground font-semibold text-sm">
                 2
               </div>
-              <h3 className="text-lg font-semibold">Understand what's asked</h3>
+              <h3 className="text-lg font-semibold">Understand what&apos;s asked</h3>
               <p className="text-muted-foreground text-sm leading-relaxed">
                 See what the role expects. No hidden layers. No false signals. Just clarity about the real requirements.
               </p>
@@ -143,7 +143,7 @@ export default function HomePage() {
           <div className="space-y-3">
             <h3 className="font-semibold">Guided clarity over generic advice</h3>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              We help you see what matters for this role. Not every job is the same. Your approach shouldn't be either.
+              We help you see what matters for this role. Not every job is the same. Your approach shouldn&apos;t be either.
             </p>
           </div>
 

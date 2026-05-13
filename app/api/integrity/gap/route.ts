@@ -4,7 +4,8 @@ import { analyzeJobProfileGap } from "@/lib/integrity/gap-analyzer"
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireUser()
+    const result = await requireUser()
+    if (!result.ok) return result.response
     const { jobDescription, resume } = await req.json()
     if (!jobDescription || !resume) {
       return NextResponse.json({ success: false, error: "Missing jobDescription or resume" }, { status: 400 })

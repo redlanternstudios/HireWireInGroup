@@ -45,7 +45,8 @@ app/
     coach/         — AI coaching chat
     evidence/      — evidence library CRUD
     analytics/     — pipeline analytics
-    ready-queue/   — launch pad (Ready to Apply)
+    ready-to-apply/ — canonical apply gate
+    ready-queue/   — compatibility redirect to Ready to Apply
   api/             — all API route handlers
     analyze/       — analyze a job by URL
     re-analyze/    — re-analyze an existing job by job_id
@@ -53,8 +54,9 @@ app/
     coach/         — coaching chat stream
 lib/
   types.ts         — canonical Job, EvidenceRecord, UserProfile types
-  job-workflow.ts  — workflow stage derivation (SINGLE SOURCE OF TRUTH)
-  readiness.ts     — readiness evaluation with DB joins (SINGLE SOURCE OF TRUTH)
+  readiness/evaluator.ts — readiness authority (SINGLE SOURCE OF TRUTH)
+  readiness.ts     — DB-backed readiness helpers that delegate to evaluator
+  job-workflow.ts  — visual progress helper only; never gates actions
   analyze/         — job analysis core logic
   coach/           — governance layer (types, validator, drift-scorer, renderer)
   jobs/            — display-stage, priority, staleness helpers
@@ -80,14 +82,17 @@ Jobs move through exactly these stages in order:
 job_ingested → job_parsed → evidence_mapped → fit_scored → materials_generated → ready → applied
 ```
 
-### Stage derivation rules
+### Readiness authority rules
 
-`lib/job-workflow.ts::deriveWorkflowStage()` is the **only** function that may
-derive a job's current stage. No component, page, or action may compute this
-locally. Always import and call `getWorkflowState(job, jobId)`.
+`lib/readiness/evaluator.ts::evaluateReadiness()` is the **only** pure function
+that may determine whether a job is ready, blocked, applyable, or next-action
+eligible. No component, page, action, or API route may compute readiness locally.
 
-`lib/readiness.ts::evaluateJobReadiness()` is the **only** function that may
-determine whether gates (`can_generate`, `can_apply`, `is_ready`) are open.
+`lib/readiness.ts::evaluateJobReadiness()` is the DB-backed helper for per-job
+readiness. It must delegate readiness truth to `evaluateReadiness()`.
+
+`lib/job-workflow.ts` may be used for visual progress only. It must never gate
+generate/apply actions or override readiness.
 
 ### What makes each stage true
 
@@ -364,11 +369,11 @@ Never silently swallow Supabase errors. Always log with `console.error("[HireWir
 
 ## Things You Must Never Do
 
-1. **Never compute workflow stage locally.** Always use `getWorkflowState()` from `lib/job-workflow.ts`.
+1. **Never compute readiness locally.** Always use `evaluateReadiness()` or the DB-backed readiness helper.
 2. **Never use `job.job_description` as an analysis gate.** It is raw scraped text, not an analysis result.
 3. **Never query without `.eq("user_id", userId)`.** Every query must be tenant-scoped.
 4. **Never write `qualifications_required` or `responsibilities` only to `job_analyses`** — always backfill the `jobs` row too.
-5. **Never generate documents without checking `can_generate` from `evaluateJobReadiness()`.**
+5. **Never generate documents without checking readiness through the canonical evaluator/helper.**
 6. **Never use `localStorage` for persistence.** All state lives in Supabase.
 7. **Never use `useEffect` for data fetching.** Use RSC data flow or SWR.
 8. **Never `@apply` a custom class inside another custom class in globals.css** (Tailwind v4 restriction — only real utility classes in `@apply`).
@@ -383,8 +388,8 @@ Never silently swallow Supabase errors. Always log with `console.error("[HireWir
 2. Await `params` and `searchParams` in Server Components (Next.js 16).
 3. Add `"use client"` to any component that uses hooks, browser APIs, or event handlers.
 4. Use `hw-*` design system classes instead of re-implementing card/button/layout styles.
-5. Use `getWorkflowState()` for any UI that shows workflow progress.
-6. Use `evaluateJobReadiness()` for any UI that gates actions (generate, apply, etc.).
+5. Use `getWorkflowState()` only for visual workflow progress.
+6. Use `evaluateReadiness()` or `evaluateJobReadiness()` for any UI that gates actions (generate, apply, next action, etc.).
 7. Import types from `lib/types.ts` — do not define local duplicates of `Job` or `EvidenceRecord`.
 8. Use semantic Tailwind tokens (`bg-background`, `text-foreground`, `text-muted-foreground`) — never hardcoded colors.
 9. Use `gap-*` for spacing between elements — never `space-x-*` / `space-y-*`.

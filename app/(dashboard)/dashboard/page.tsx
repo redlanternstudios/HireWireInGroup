@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
-import { getReadyJobIds } from "@/lib/readiness"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import {
   Plus, Briefcase, ArrowRight, Target, AlertTriangle,
   CheckCircle2, Clock, Send, Zap, Sparkles, BarChart2, Bell,
@@ -56,18 +56,22 @@ function greeting() {
 // Derive a simple urgency tier from job state — no inline readiness logic
 type UrgencyTier = "action" | "review" | "ready" | "submitted" | "other"
 function urgencyTier(job: {
+  id?: string | null
   status: string
   quality_passed?: boolean | null
   generated_resume?: string | null
+  generated_cover_letter?: string | null
+  evidence_map?: unknown
   applied_at?: string | null
   score?: number | null
 }): UrgencyTier {
-  if (job.applied_at || job.status === "applied" || job.status === "interviewing" || job.status === "offered") return "submitted"
-  if (job.quality_passed === true) return "ready"
-  if (job.status === "needs_review" || job.status === "quality_review") return "review"
-  if (job.status === "needs_evidence" || job.status === "error") return "action"
+  const readiness = evaluateReadiness(job)
+  if (readiness.outcome !== "active") return "submitted"
+  if (readiness.stage === "ready") return "ready"
+  if (readiness.stage === "quality_review") return "review"
+  if (readiness.stage === "evidence_blocked" || job.status === "error") return "action"
   if (job.status === "analyzing" || job.status === "generating") return "other"
-  if (!job.generated_resume) return "action"
+  if (readiness.stage === "materials_missing") return "action"
   return "other"
 }
 
@@ -76,18 +80,17 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-  const [{ data: profile }, { data: jobs }, readyResult] = await Promise.all([
+  const [{ data: profile }, { data: jobs }] = await Promise.all([
     supabase.from("user_profile")
       .select("full_name, onboarding_complete, headline")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase.from("jobs")
-      .select("id, role_title, company_name, status, score, quality_passed, generated_resume, generated_cover_letter, applied_at, created_at, updated_at, score_gaps")
+      .select("id, role_title, company_name, status, score, quality_passed, generated_resume, generated_cover_letter, evidence_map, applied_at, created_at, updated_at, score_gaps")
       .eq("user_id", user.id)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .limit(10),
-    getReadyJobIds(user.id),
   ])
 
   if (!profile || profile.onboarding_complete === false) redirect("/onboarding")
@@ -100,7 +103,7 @@ export default async function DashboardPage() {
   const needsReviewJobs = jobList.filter(j => urgencyTier(j) === "review")
   const readyJobs       = jobList.filter(j => urgencyTier(j) === "ready")
   const submittedJobs   = jobList.filter(j => urgencyTier(j) === "submitted")
-  const activeJobs      = jobList.filter(j => !["applied","interviewing","offered","rejected","archived"].includes(j.status))
+  const activeJobs      = jobList.filter(j => evaluateReadiness(j).outcome === "active")
   const needAttention   = needsActionJobs.length + needsReviewJobs.length
 
   // "Your Next Move" — highest-urgency job
@@ -111,18 +114,22 @@ export default async function DashboardPage() {
     if (!job || !tier) return { label: "Add a job", desc: "Paste a job description to start your pipeline.", href: "/jobs/new", cta: "Add job", timeEst: null }
     const base = `/jobs/${job.id}`
     if (tier === "action") {
+      const readiness = evaluateReadiness(job)
       const gaps = (job.score_gaps as string[] | null) ?? []
       const gapCount = gaps.length
+      const evidenceBlocked = readiness.stage === "evidence_blocked"
       return {
-        label: gapCount > 0 ? `Match ${gapCount} missing proof point${gapCount !== 1 ? "s" : ""}` : "Add missing evidence",
-        desc: "Add evidence from your experience or projects.",
-        href: `${base}/evidence-match`,
-        cta: "Fix now",
+        label: evidenceBlocked
+          ? gapCount > 0 ? `Match ${gapCount} missing proof point${gapCount !== 1 ? "s" : ""}` : "Add missing evidence"
+          : "Generate your package",
+        desc: readiness.blockedReasons[0] ?? "Complete the next readiness requirement.",
+        href: readiness.nextAction?.href ?? `${base}/evidence-match`,
+        cta: evidenceBlocked ? "Fix now" : "Continue",
         timeEst: gapCount > 0 ? `Est. ${gapCount * 5}–${gapCount * 8} min` : null,
       }
     }
     if (tier === "review") return { label: "Review your package", desc: "Your application package is ready for a final check.", href: `${base}/documents`, cta: "Review now", timeEst: "Est. 5–10 min" }
-    if (tier === "ready")  return { label: "Submit your application", desc: "Package is quality-approved and ready to go.", href: `${base}`, cta: "Apply now", timeEst: null }
+    if (tier === "ready")  return { label: "Submit your application", desc: "Package is quality-approved and ready to go.", href: "/ready-to-apply", cta: "Apply now", timeEst: null }
     return { label: "View job details", desc: "Check the latest status of this role.", href: base, cta: "Open", timeEst: null }
   }
 
@@ -130,11 +137,12 @@ export default async function DashboardPage() {
 
   const heroWarning = heroJob && heroTier === "action"
     ? (() => {
+        const readiness = evaluateReadiness(heroJob)
         const gaps = (heroJob.score_gaps as string[] | null) ?? []
         const gapCount = gaps.length
-        return gapCount > 0
+        return readiness.stage === "evidence_blocked" && gapCount > 0
           ? `Needs evidence to support ${gapCount} key requirement${gapCount !== 1 ? "s" : ""}`
-          : "Needs evidence to continue"
+          : readiness.blockedReasons[0] ?? "Needs readiness work before applying"
       })()
     : heroJob && heroTier === "review"
     ? "Awaiting your review before submission"
@@ -232,7 +240,7 @@ export default async function DashboardPage() {
                   </div>
 
                   {/* Right: next step */}
-                  <div className="shrink-0 text-right hidden sm:block min-w-[180px]">
+                  <div className="shrink-0 text-right hidden sm:block min-w-45">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">Next Step</p>
                     <p className="text-base font-bold text-foreground leading-snug">{heroAction.label}</p>
                     <p className="text-xs text-muted-foreground mt-1">{heroAction.desc}</p>
@@ -317,7 +325,7 @@ export default async function DashboardPage() {
                   color: "text-emerald-600",
                   iconBg: "bg-emerald-50",
                   ringColor: "border-emerald-200",
-                  href: "/ready-queue",
+                  href: "/ready-to-apply",
                 },
               ].map((q) => (
                 <Link key={q.label} href={q.href}>
@@ -452,7 +460,7 @@ export default async function DashboardPage() {
                             <p className="text-[10px] text-muted-foreground">Confidence</p>
                           </div>
                         )}
-                        <div className="text-right min-w-[48px]">
+                        <div className="text-right min-w-12">
                           <p className="text-xs text-muted-foreground">{timeAgo(job.updated_at ?? job.created_at)}</p>
                         </div>
                       </div>
@@ -474,7 +482,7 @@ export default async function DashboardPage() {
                           </Link>
                         )}
                         {tier === "ready" && (
-                          <Link href={`/jobs/${job.id}`}>
+                          <Link href="/ready-to-apply">
                             <Button size="sm" variant="outline" className="text-[11px] h-7 px-2 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
                               Apply
                             </Button>
@@ -617,7 +625,7 @@ export default async function DashboardPage() {
             {submittedJobs.length === 0 ? (
               <>
                 <p className="text-xs font-semibold text-rose-600">{"You're behind pace."}</p>
-                <Link href="/ready-queue" className="text-xs font-medium text-primary flex items-center gap-1 mt-1 hover:gap-1.5 transition-all">
+                <Link href="/ready-to-apply" className="text-xs font-medium text-primary flex items-center gap-1 mt-1 hover:gap-1.5 transition-all">
                   View analytics <ArrowRight className="h-3 w-3" />
                 </Link>
               </>

@@ -1,0 +1,105 @@
+"use client"
+
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { applyToJob } from "@/lib/actions/apply"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+
+export function MarkAsAppliedButton({ jobId, disabled }: { jobId: string, disabled?: boolean }) {
+  const [isPending, startTransition] = useTransition()
+  const [blockedReasons, setBlockedReasons] = useState<string[]>([])
+  const [overrideReason, setOverrideReason] = useState("")
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const router = useRouter()
+
+  async function handleApply() {
+    startTransition(async () => {
+      const result = await applyToJob(jobId)
+      if (result.error === "APPLICATION_BLOCKED") {
+        setBlockedReasons(result.reasons ?? [])
+        setIsDialogOpen(true)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  async function handleOverride() {
+    startTransition(async () => {
+      const result = await applyToJob(jobId, true, overrideReason)
+      if (result.success) {
+        setIsDialogOpen(false)
+        router.refresh()
+      }
+    })
+  }
+
+  return (
+    <>
+      <Button
+        className="hw-btn-primary"
+        disabled={isPending || disabled}
+        onClick={handleApply}
+        type="button"
+      >
+        {isPending ? "Marking..." : "Mark as Applied"}
+      </Button>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Application blocked</DialogTitle>
+            <DialogDescription>
+              HireWire found readiness issues. You can fix them or log an explicit override.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+              <p className="text-xs font-semibold text-rose-700">Blocked because</p>
+              <ul className="mt-2 space-y-1 text-sm text-rose-700">
+                {blockedReasons.map(reason => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+
+            <Textarea
+              value={overrideReason}
+              onChange={event => setOverrideReason(event.target.value)}
+              placeholder="Optional override reason"
+            />
+
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                checked={acknowledged}
+                onCheckedChange={checked => setAcknowledged(checked === true)}
+              />
+              <span>I understand this application is not ready and want to log an override.</span>
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" disabled={!acknowledged || isPending} onClick={handleOverride}>
+              Override and Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

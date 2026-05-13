@@ -1,5 +1,5 @@
 // Deduplicate recommendations by message
-import { CoachRecommendation } from "./index"
+import type { CoachRecommendation } from "./index"
 
 export function deduplicateRecommendations(recs: CoachRecommendation[]): CoachRecommendation[] {
   return recs.filter((rec, idx, arr) => arr.findIndex(r => r.message === rec.message) === idx)

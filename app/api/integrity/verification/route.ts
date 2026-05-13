@@ -4,7 +4,8 @@ import { simulateEmployerVerification } from "@/lib/integrity/verification-simul
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireUser()
+    const result = await requireUser()
+    if (!result.ok) return result.response
     const { claims } = await req.json()
     if (!Array.isArray(claims)) {
       return NextResponse.json({ success: false, error: "Missing claims array" }, { status: 400 })

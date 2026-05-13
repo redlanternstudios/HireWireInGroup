@@ -22,7 +22,7 @@ export default async function IntegrityPage() {
     .limit(1)
     .single()
 
-  let flags = []
+  let flags: Array<{ bullet: string; risk_score: number; risk_level: "high" | "medium" | "low"; flag_reason: string; suggested_rewrite: string }> = []
   if (resume) {
     const { data: flagRows } = await supabase
       .from("career_integrity_scores")
@@ -33,7 +33,7 @@ export default async function IntegrityPage() {
     flags = (flagRows || []).map(f => ({
       bullet: f.bullet_text,
       risk_score: f.risk_score,
-      risk_level: f.risk_level,
+      risk_level: (f.risk_level ?? "low") as "high" | "medium" | "low",
       flag_reason: f.flag_reason,
       suggested_rewrite: f.suggested_rewrite,
     }))

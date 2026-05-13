@@ -124,9 +124,9 @@ function nextActionFor(job: EnrichedJob): { label: string; desc: string; href: s
       return { label: "Generate package", desc: "Build resume & cover letter", href: `/jobs/${job.id}` }
     case "package_drafted":
     case "needs_review":
-      return { label: "Review application", desc: "Package needs review", href: `/jobs/${job.id}/red-team` }
+      return { label: "Review application", desc: "Package needs review", href: `/jobs/${job.id}/documents` }
     case "ready_to_apply":
-      return { label: "Apply now", desc: "Package ready to submit", href: `/jobs/${job.id}` }
+      return { label: "Apply now", desc: "Package ready to submit", href: "/ready-to-apply" }
     case "applied":
     case "follow_up_due":
       return { label: "View application", desc: "Track status", href: `/jobs/${job.id}` }
@@ -267,7 +267,7 @@ function IntelligencePanel({ jobs, onAddJob }: { jobs: EnrichedJob[]; onAddJob: 
   const evidenceJob = jobs.find(j => j.displayStage === "needs_evidence")
   if (evidenceJob) todayQueue.push({ num: 1, label: `Add missing evidence for ${evidenceJob.role_title ?? "role"}`, time: "~15 min", href: `/jobs/${evidenceJob.id}/evidence-match` })
   const reviewJob = jobs.find(j => j.displayStage === "needs_review" && evidenceJob?.id !== j.id)
-  if (reviewJob) todayQueue.push({ num: todayQueue.length + 1, label: `Review application for ${reviewJob.role_title ?? "role"}`, time: "~10 min", href: `/jobs/${reviewJob.id}/red-team` })
+  if (reviewJob) todayQueue.push({ num: todayQueue.length + 1, label: `Review application for ${reviewJob.role_title ?? "role"}`, time: "~10 min", href: `/jobs/${reviewJob.id}/documents` })
   const materialJob = jobs.find(j => j.displayStage === "ready_to_generate" && evidenceJob?.id !== j.id && reviewJob?.id !== j.id)
   if (materialJob) todayQueue.push({ num: todayQueue.length + 1, label: `Upload materials for ${materialJob.role_title ?? "role"}`, time: "~10 min", href: `/jobs/${materialJob.id}` })
 
@@ -558,7 +558,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
                 <ChevronDown className="h-3 w-3" />
               </button>
               {showSort && (
-                <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-xl shadow-lg z-20 py-1 min-w-[190px]">
+                <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-xl shadow-lg z-20 py-1 min-w-47.5">
                   {(Object.keys(SORT_LABELS) as SortKey[]).map(key => (
                     <button
                       key={key}

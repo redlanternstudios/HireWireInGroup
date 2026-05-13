@@ -5,6 +5,7 @@
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { handleDomainEvent } from "@/lib/domain-events"
 
 export async function POST(
   request: NextRequest,
@@ -62,6 +63,20 @@ export async function POST(
     await supabase.from("coach_evidence_drafts")
       .update({ status: "confirmed", confirmed_row_id: evidenceRow.id, proof_snippet: finalSnippet })
       .eq("id", draftId).eq("user_id", userId)
+
+    void handleDomainEvent({
+      supabase,
+      event_type: "evidence_added",
+      job_id: null,
+      user_id: userId,
+      source: "coach_route",
+      payload: {
+        evidence_id: evidenceRow.id,
+        source_type: draft.source_type,
+        source_title: draft.source_title,
+        via: "coach_draft_confirm",
+      },
+    })
 
     return NextResponse.json({ success: true, evidenceId: evidenceRow.id })
   } catch (error) {
