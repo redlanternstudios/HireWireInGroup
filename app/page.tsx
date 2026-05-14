@@ -67,20 +67,25 @@ export default function SplashPage() {
 
           {/* center nav */}
           <nav className="hidden md:flex items-center flex-1" style={{ gap: 28 }}>
-            {["HOW IT WORKS", "WHY HIREWIRE", "PRICING"].map((label) => (
-              <span
+            {[
+              { label: "HOW IT WORKS", href: "#how-it-works" },
+              { label: "WHY HIREWIRE", href: "#why-hirewire" },
+              { label: "PRICING", href: "/billing" },
+            ].map(({ label, href }) => (
+              <Link
                 key={label}
+                href={href}
                 style={{
                   fontSize: 12,
                   fontWeight: 700,
                   letterSpacing: "0.08em",
                   color: "#3A3835",
-                  cursor: "pointer",
                   whiteSpace: "nowrap",
+                  textDecoration: "none",
                 }}
               >
                 {label}
-              </span>
+              </Link>
             ))}
             <span
               style={{
@@ -342,10 +347,91 @@ export default function SplashPage() {
       <CtaBand />
 
       {/* ─── FOOTER ─── */}
-      <footer style={{ backgroundColor: "#F5F2EE", borderTop: "1px solid #DDD6CE", padding: "20px 72px" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto" }}>
-          <p style={{ fontSize: 11, color: "#3A3835", lineHeight: 1.6 }}>
-            Built by RedLantern Studios™<br />By Red, LLC
+      <footer style={{ backgroundColor: "#F5F2EE", borderTop: "1px solid #DDD6CE", padding: "40px 72px 24px" }}>
+        <div
+          className="flex flex-col md:flex-row md:items-start justify-between gap-10"
+          style={{ maxWidth: 1440, margin: "0 auto" }}
+        >
+          {/* brand */}
+          <div style={{ maxWidth: 220 }}>
+            <div style={{ filter: "drop-shadow(0 0 12px rgba(216,0,0,0.07))", marginBottom: 12 }}>
+              <Logo desktop={140} mobile={120} />
+            </div>
+            <p style={{ fontSize: 11, color: "#3A3835", lineHeight: 1.6 }}>
+              Built by RedLantern Studios™<br />By Red, LLC
+            </p>
+          </div>
+
+          {/* nav columns */}
+          <div className="flex flex-wrap gap-10">
+            {[
+              {
+                heading: "PRODUCT",
+                links: [
+                  { label: "How it works", href: "#how-it-works" },
+                  { label: "Why HireWire", href: "#why-hirewire" },
+                  { label: "Pricing", href: "/billing" },
+                ],
+              },
+              {
+                heading: "ACCOUNT",
+                links: [
+                  { label: "Sign in", href: "/login" },
+                  { label: "Get started", href: "/signup" },
+                  { label: "Dashboard", href: "/dashboard" },
+                ],
+              },
+              {
+                heading: "COMPANY",
+                links: [
+                  { label: "Privacy", href: "/privacy" },
+                  { label: "Terms", href: "/terms" },
+                ],
+              },
+            ].map(({ heading, links }) => (
+              <div key={heading}>
+                <p
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: "0.1em",
+                    color: "#090909",
+                    textTransform: "uppercase",
+                    marginBottom: 12,
+                  }}
+                >
+                  {heading}
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {links.map(({ label, href }) => (
+                    <Link
+                      key={label}
+                      href={href}
+                      style={{ fontSize: 13, color: "#3A3835", textDecoration: "none" }}
+                    >
+                      {label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* bottom bar */}
+        <div
+          style={{
+            maxWidth: 1440,
+            margin: "28px auto 0",
+            paddingTop: 16,
+            borderTop: "1px solid #DDD6CE",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <p style={{ fontSize: 11, color: "#999" }}>
+            &copy; {new Date().getFullYear()} RedLantern Studios™. All rights reserved.
           </p>
         </div>
       </footer>
@@ -482,23 +568,22 @@ function DashboardCard() {
               </div>
             ))}
           </div>
-          <button
+          <Link
+            href="/signup"
             style={{
               marginTop: 14,
               fontSize: 11,
               fontWeight: 700,
               color: "rgba(255,255,255,0.55)",
-              backgroundColor: "transparent",
-              border: "none",
-              cursor: "pointer",
               display: "flex",
               alignItems: "center",
               gap: 4,
               padding: 0,
+              textDecoration: "none",
             }}
           >
             View all gaps <ArrowRight size={11} />
-          </button>
+          </Link>
         </div>
 
         {/* coach suggestion */}
@@ -546,7 +631,8 @@ function DashboardCard() {
               </div>
             ))}
           </div>
-          <div
+          <Link
+            href="/signup"
             style={{
               width: 28,
               height: 28,
@@ -555,12 +641,12 @@ function DashboardCard() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              cursor: "pointer",
               flexShrink: 0,
+              textDecoration: "none",
             }}
           >
             <ArrowRight size={13} color="#fff" />
-          </div>
+          </Link>
         </div>
       </div>
     </div>
@@ -574,21 +660,25 @@ function OutcomeStrip() {
       icon: <FileText size={22} />,
       title: "UNDERSTAND\nTHE ROLE",
       body: "Decode the posting and what really matters.",
+      href: "/signup",
     },
     {
       icon: <Target size={22} />,
       title: "FIND\nRESUME GAPS",
       body: "See what's missing before you hit apply.",
+      href: "/signup",
     },
     {
       icon: <Zap size={22} />,
       title: "GENERATE\nAPPLICATION ASSETS",
       body: "Create stronger resumes, letters, and follow ups.",
+      href: "/signup",
     },
     {
       icon: <TrendingUp size={22} />,
       title: "TRACK\nWHAT WORKS",
       body: "Measure responses and improve over time.",
+      href: "/signup",
     },
   ]
 
@@ -597,6 +687,9 @@ function OutcomeStrip() {
       id="how-it-works"
       style={{ borderTop: "1px solid #DDD6CE", borderBottom: "1px solid #DDD6CE", backgroundColor: "#FFFDF8" }}
     >
+      {/* why-hirewire anchor target sits here — same section */}
+      <span id="why-hirewire" style={{ display: "block", visibility: "hidden", height: 0 }} />
+
       <div
         className="grid"
         style={{
@@ -607,13 +700,16 @@ function OutcomeStrip() {
         }}
       >
         {items.map((item, i) => (
-          <div
+          <Link
             key={i}
+            href={item.href}
             className="flex items-start gap-4"
             style={{
               padding: "28px 24px 28px 0",
               borderRight: i < 3 ? "1px solid #DDD6CE" : "none",
               paddingLeft: i > 0 ? 24 : 0,
+              textDecoration: "none",
+              transition: "background-color 0.15s",
             }}
           >
             <div
@@ -647,19 +743,21 @@ function OutcomeStrip() {
               <p style={{ fontSize: 13, color: "#3A3835", lineHeight: 1.5 }}>{item.body}</p>
             </div>
             <ArrowRight size={14} style={{ flexShrink: 0, color: "#3A3835", marginTop: 2 }} />
-          </div>
+          </Link>
         ))}
       </div>
 
       {/* mobile outcome strip */}
       <div className="md:hidden" style={{ padding: "0 20px" }}>
         {items.map((item, i) => (
-          <div
+          <Link
             key={i}
+            href={item.href}
             className="flex items-center gap-3"
             style={{
               padding: "16px 0",
               borderBottom: i < 3 ? "1px solid #DDD6CE" : "none",
+              textDecoration: "none",
             }}
           >
             <span style={{ color: "#D80000" }}>{item.icon}</span>
@@ -670,7 +768,7 @@ function OutcomeStrip() {
               <p style={{ fontSize: 12, color: "#3A3835", marginTop: 2 }}>{item.body}</p>
             </div>
             <ArrowRight size={14} style={{ color: "#3A3835", flexShrink: 0 }} />
-          </div>
+          </Link>
         ))}
       </div>
     </section>
