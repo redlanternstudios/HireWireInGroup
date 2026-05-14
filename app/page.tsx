@@ -17,10 +17,10 @@ function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number
         priority
         className="hidden md:block"
         style={{
-          width: desktop,
+          width: `${desktop}px`,
           height: "auto",
           imageRendering: "crisp-edges",
-          filter: filter.filter,
+          ...(filter.filter ? { filter: filter.filter } : {}),
         }}
       />
       {/* Mobile */}
@@ -32,10 +32,10 @@ function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number
         priority
         className="md:hidden"
         style={{
-          width: mobile,
+          width: `${mobile}px`,
           height: "auto",
           imageRendering: "crisp-edges",
-          filter: filter.filter,
+          ...(filter.filter ? { filter: filter.filter } : {}),
         }}
       />
     </>

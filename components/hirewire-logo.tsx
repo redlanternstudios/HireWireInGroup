@@ -43,7 +43,7 @@ export function HireWireLogo({
       // height:auto preserves exact aspect ratio regardless of container.
       // Never let a parent constraint squash the logo vertically.
       style={{
-        width,
+        width: `${width}px`,
         height: "auto",
         ...(VARIANT_FILTER[variant] ? { filter: VARIANT_FILTER[variant] } : {}),
       }}

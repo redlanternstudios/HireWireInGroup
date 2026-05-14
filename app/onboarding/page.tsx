@@ -183,11 +183,11 @@ export default function OnboardingPage() {
           <CardHeader className="text-center space-y-4">
             <div className="flex justify-center">
               <Image
-                src="/images/hirewire-logo.png"
+                src="/brand/hirewire-logo.png"
                 alt="HireWire"
-                width={48}
-                height={48}
-                className="rounded-lg"
+                width={140}
+                height={63}
+                style={{ width: "140px", height: "auto" }}
               />
             </div>
             <CardTitle className="text-3xl font-semibold">Welcome to HireWire</CardTitle>
