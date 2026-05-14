@@ -3,7 +3,7 @@ import Image from "next/image"
 const SIZE_MAP: Record<string, number> = {
   sm: 80,
   md: 120,
-  lg: 160,
+  lg: 150,
   xl: 220,
 }
 
