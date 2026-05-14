@@ -14,6 +14,8 @@ import {
   FileText, CheckCircle, AlertCircle, ShieldCheck,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { LinkedInImportWidget } from "@/components/dashboard/LinkedInImportWidget"
+import { ParseGithubUrlButton } from "@/components/ParseGithubButton"
 
 interface ProfileData {
   full_name: string | null
@@ -60,7 +62,7 @@ export default function ProfilePage() {
         phone: data.phone || "",
         location: data.location || "",
         summary: data.summary || "",
-        skills: data.skills || [],
+        skills: Array.isArray(data.skills) ? data.skills : [],
         website_url: data.website_url || "",
         github_url: data.github_url || "",
       })
@@ -107,12 +109,12 @@ export default function ProfilePage() {
     const trimmed = skillInput.trim()
     if (!trimmed) return
     if (profile.skills?.includes(trimmed)) { setSkillInput(""); return }
-    setProfile(p => ({ ...p, skills: [...(p.skills || []), trimmed] }))
+    setProfile(p => ({ ...p, skills: [...(Array.isArray(p.skills) ? p.skills : []), trimmed] }))
     setSkillInput("")
   }
 
   const removeSkill = (skill: string) => {
-    setProfile(p => ({ ...p, skills: (p.skills || []).filter(s => s !== skill) }))
+    setProfile(p => ({ ...p, skills: (Array.isArray(p.skills) ? p.skills : []).filter(s => s !== skill) }))
   }
 
   // Profile strength calc
@@ -261,8 +263,8 @@ export default function ProfilePage() {
           {/* Skills */}
           <div className="hw-card p-6 space-y-4">
             <p className="hw-section-label">Skills</p>
-            <div className="flex flex-wrap gap-2 min-h-[36px]">
-              {(profile.skills || []).map(skill => (
+            <div className="flex flex-wrap gap-2 min-h-9">
+              {(Array.isArray(profile.skills) ? profile.skills : []).map(skill => (
                 <Badge key={skill} variant="secondary" className="gap-1 pr-1.5">
                   {skill}
                   <button
@@ -274,7 +276,7 @@ export default function ProfilePage() {
                   </button>
                 </Badge>
               ))}
-              {(profile.skills || []).length === 0 && (
+              {(Array.isArray(profile.skills) ? profile.skills : []).length === 0 && (
                 <p className="text-sm text-muted-foreground">No skills added yet.</p>
               )}
             </div>
@@ -311,15 +313,24 @@ export default function ProfilePage() {
                 <Label htmlFor="github_url" className="flex items-center gap-1.5 text-xs">
                   <Github className="h-3.5 w-3.5 text-muted-foreground" /> GitHub
                 </Label>
-                <Input
-                  id="github_url"
-                  value={profile.github_url || ""}
-                  onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
-                  placeholder="https://github.com/yourusername"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="github_url"
+                    value={profile.github_url || ""}
+                    onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
+                    placeholder="https://github.com/yourusername"
+                    className="flex-1"
+                  />
+                  {profile.github_url?.trim() && (
+                    <ParseGithubUrlButton githubUrl={profile.github_url.trim()} />
+                  )}
+                </div>
               </div>
             </div>
           </div>
+
+          {/* LinkedIn Import */}
+          <LinkedInImportWidget />
         </div>
 
         {/* Right Rail — Profile Strength */}

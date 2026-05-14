@@ -472,11 +472,9 @@ export async function POST(request: NextRequest) {
     // Evidence matching gate removed — generation is allowed regardless of matching_complete
     
     // Load gap clarifications for this job (job-specific context)
-    const gapClarifications = (jobData.gap_clarifications as Array<{
-      gap_requirement: string
-      answer: string
-      routing: string
-    }>) || []
+    const rawGapClarifications = jobData.gap_clarifications
+    const gapClarifications: Array<{ gap_requirement: string; answer: string; routing: string }> =
+      Array.isArray(rawGapClarifications) ? rawGapClarifications : []
 
     // TRUTH-LOCK: Filter evidence based on usage rules
     // If user selected specific evidence, use that; otherwise filter automatically
@@ -524,9 +522,18 @@ export async function POST(request: NextRequest) {
   const effectiveLocation = profile?.location || sourceResumeData?.location || "Not provided"
   const rawSummary = profile?.summary || sourceResumeData?.summary || "Not provided"
   const effectiveSummary = sanitizeInput(rawSummary) // Prevent prompt injection via summary field
-  const effectiveSkills = (profile?.skills?.length > 0 ? profile.skills : sourceResumeData?.skills) || []
-  const effectiveExperience = (profile?.experience?.length > 0 ? profile.experience : sourceResumeData?.experience) || []
-  const effectiveEducation = (profile?.education?.length > 0 ? profile.education : sourceResumeData?.education) || []
+  const effectiveSkills =
+    Array.isArray(profile?.skills) && profile.skills.length > 0
+      ? profile.skills
+      : Array.isArray(sourceResumeData?.skills) ? sourceResumeData.skills : []
+  const effectiveExperience =
+    Array.isArray(profile?.experience) && profile.experience.length > 0
+      ? profile.experience
+      : Array.isArray(sourceResumeData?.experience) ? sourceResumeData.experience : []
+  const effectiveEducation =
+    Array.isArray(profile?.education) && profile.education.length > 0
+      ? profile.education
+      : Array.isArray(sourceResumeData?.education) ? sourceResumeData.education : []
 
     const profileContext = `
 CANDIDATE PROFILE:
@@ -1254,6 +1261,36 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       logErr(err, { route: "/api/generate-documents" })
       return NextResponse.json(toApiErrorResponse(err), { status: 500 })
     }
+
+    // Snapshot this generation as a new version — non-blocking
+    void (async () => {
+      try {
+        const { data: versionRow } = await supabase
+          .from("job_resume_versions")
+          .select("version_number")
+          .eq("job_id", job_id)
+          .eq("user_id", userId)
+          .order("version_number", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const nextVersion = (versionRow?.version_number ?? 0) + 1
+        await supabase.from("job_resume_versions").insert({
+          job_id,
+          user_id: userId,
+          version_number: nextVersion,
+          resume_text: formattedResume,
+          cover_letter_text: formattedCoverLetter,
+          resume_format: resumeFormatRecommendation.format,
+          resume_font: resumeFormatRecommendation.font,
+          generation_model: "claude-sonnet",
+          quality_passed: qualityPassed,
+          quality_score: qualityScore,
+          strategy,
+        })
+      } catch {
+        // Version snapshot is non-critical — never block the response
+      }
+    })()
 
     // Emit domain events for generation outcome
     void handleDomainEvent({

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
-import { handleDomainEvent } from "@/lib/events"
+import { handleDomainEvent } from "@/lib/domain-events"
 
 /**
  * POST /api/re-analyze
@@ -86,12 +86,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Emit domain event — best effort, never blocks the response
-    await handleDomainEvent(supabase, {
-      type: "job.re_analyzed",
-      jobId: job_id,
-      userId: user.id,
-      payload: { triggeredAt: new Date().toISOString() },
-    }).catch(() => {})
+    await handleDomainEvent({
+      supabase,
+      event_type: "job_analyzed",
+      job_id,
+      user_id: user.id,
+      source: "analyze_job_route",
+      payload: { triggeredAt: new Date().toISOString(), reanalysis: true },
+    })
 
     return NextResponse.json({ success: true, job_id, job: result.job })
   } catch (error) {
