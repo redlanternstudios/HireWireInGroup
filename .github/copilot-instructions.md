@@ -35,6 +35,7 @@ real, user-approved evidence. No hallucination. No inflation. No fabrication.
 
 ```
 app/
+  page.tsx         — public splash / marketing page (unauthenticated)
   (auth)/          — login, signup
   (dashboard)/     — all authenticated pages
     dashboard/     — Command Center (home)
@@ -364,6 +365,23 @@ if (error) {
 ```
 
 Never silently swallow Supabase errors. Always log with `console.error("[HireWire] ...")`.
+
+---
+
+## Logo Rendering Rules
+
+The HireWire logo lives at `/brand/hirewire-logo.png` and is rendered via
+`components/hirewire-logo.tsx` (`HireWireLogo`) or the inline `Logo` helper in
+`app/page.tsx`.
+
+Rules that must NEVER be broken:
+
+1. **Always use `style={{ width: Npx, height: "auto" }}`** — never set both `width` and `height` as fixed px values or the image will compress.
+2. **Pass `width` and `height` props to `<Image>` for layout reservation only** (prevents CLS). The CSS `height: auto` overrides the rendered height.
+3. **Desktop navbar logo width: 230px. Mobile: 160px.**
+4. **Never add `max-height` to the logo container** — it will crop or compress the logo.
+5. **Navbar height: 84px desktop, horizontal padding: 48px desktop / 20px mobile.**
+6. **The logo glow treatment is `drop-shadow(0 0 18px rgba(216, 0, 0, 0.08))`** — ultra subtle. Never increase opacity above 12%.
 
 ---
 

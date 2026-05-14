@@ -66,6 +66,17 @@ Always use job.title / job.company in UI. Never job.role_title.
 
 ---
 
+## Logo Rendering Rules
+- Logo asset: /brand/hirewire-logo.png — rendered via components/hirewire-logo.tsx
+- ALWAYS: style={{ width: Npx, height: "auto" }} — never set both dimensions as fixed px
+- Desktop navbar logo width: 230px. Mobile: 160px.
+- Navbar height: 84px desktop. Padding: 48px desktop / 20px mobile.
+- Logo glow: drop-shadow(0 0 18px rgba(216,0,0,0.08)) — never increase opacity above 12%
+- Never add max-height to the logo container — it will compress the logo
+- Public splash page: app/page.tsx (unauthenticated, no layout wrapper)
+
+---
+
 ## Never Do
 - Compute workflow stage locally — use getWorkflowState()
 - Use job.job_description as analysis gate

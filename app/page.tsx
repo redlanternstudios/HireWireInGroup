@@ -2,18 +2,43 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowRight, CheckCircle2, FileText, Play, Target, TrendingUp, Zap } from "lucide-react"
 
-function Logo({ size = "md", white = false }: { size?: "sm" | "md" | "lg", white?: boolean }) {
-  const widths = { sm: 120, md: 160, lg: 220 }
-  const w = widths[size]
+// Logo renders with width-controlled sizing and height:auto to preserve exact
+// aspect ratio — never pass a fixed height or Next.js Image will compress it.
+function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number, mobile?: number, white?: boolean }) {
+  const filter = white ? { filter: "brightness(0) invert(1)" } : {}
   return (
-    <Image
-      src="/brand/hirewire-logo.png"
-      alt="HireWire"
-      width={w}
-      height={Math.round(w * 0.45)}
-      priority
-      style={white ? { filter: "brightness(0) invert(1)" } : undefined}
-    />
+    <>
+      {/* Desktop */}
+      <Image
+        src="/brand/hirewire-logo.png"
+        alt="HireWire"
+        width={desktop}
+        height={Math.round(desktop * 0.45)}
+        priority
+        className="hidden md:block"
+        style={{
+          width: desktop,
+          height: "auto",
+          imageRendering: "crisp-edges",
+          filter: filter.filter,
+        }}
+      />
+      {/* Mobile */}
+      <Image
+        src="/brand/hirewire-logo.png"
+        alt="HireWire"
+        width={mobile}
+        height={Math.round(mobile * 0.45)}
+        priority
+        className="md:hidden"
+        style={{
+          width: mobile,
+          height: "auto",
+          imageRendering: "crisp-edges",
+          filter: filter.filter,
+        }}
+      />
+    </>
   )
 }
 
@@ -27,13 +52,21 @@ export default function SplashPage() {
       <header style={{ backgroundColor: "#F5F2EE", borderBottom: "1px solid #DDD6CE" }}>
         <div
           className="flex items-center justify-between"
-          style={{ maxWidth: 1440, margin: "0 auto", padding: "0 72px", height: 64 }}
+          style={{ maxWidth: 1440, margin: "0 auto", padding: "0 48px", height: 84 }}
         >
-          {/* logo */}
-          <Logo size="md" />
+          {/* logo — subtle red ambient glow, width-controlled, height:auto */}
+          <div
+            className="flex-shrink-0"
+            style={{
+              filter: "drop-shadow(0 0 18px rgba(216, 0, 0, 0.08))",
+              marginRight: 40,
+            }}
+          >
+            <Logo desktop={230} mobile={160} />
+          </div>
 
           {/* center nav */}
-          <nav className="hidden md:flex items-center" style={{ gap: 32 }}>
+          <nav className="hidden md:flex items-center flex-1" style={{ gap: 28 }}>
             {["HOW IT WORKS", "WHY HIREWIRE", "PRICING"].map((label) => (
               <span
                 key={label}
@@ -43,6 +76,7 @@ export default function SplashPage() {
                   letterSpacing: "0.08em",
                   color: "#3A3835",
                   cursor: "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {label}
@@ -54,6 +88,7 @@ export default function SplashPage() {
                 height: 16,
                 backgroundColor: "#DDD6CE",
                 display: "inline-block",
+                flexShrink: 0,
               }}
             />
             <Link
@@ -63,6 +98,7 @@ export default function SplashPage() {
                 fontWeight: 700,
                 letterSpacing: "0.08em",
                 color: "#3A3835",
+                whiteSpace: "nowrap",
               }}
             >
               SIGN IN
@@ -72,45 +108,41 @@ export default function SplashPage() {
           {/* CTA */}
           <Link
             href="/signup"
-            className="hidden md:inline-flex items-center gap-2"
+            className="hidden md:inline-flex items-center gap-2 flex-shrink-0"
             style={{
               backgroundColor: "#D80000",
               color: "#fff",
               fontWeight: 800,
               fontSize: 12,
               letterSpacing: "0.08em",
-              padding: "10px 20px",
+              padding: "11px 22px",
               borderRadius: 4,
+              whiteSpace: "nowrap",
             }}
           >
             GET STARTED <ArrowRight size={14} />
           </Link>
 
-          {/* mobile hamburger placeholder */}
-          <div className="md:hidden flex flex-col gap-1.5 cursor-pointer" style={{ padding: 4 }}>
-            <span style={{ width: 22, height: 2, backgroundColor: "#090909", display: "block" }} />
-            <span style={{ width: 22, height: 2, backgroundColor: "#090909", display: "block" }} />
-            <span style={{ width: 22, height: 2, backgroundColor: "#090909", display: "block" }} />
+          {/* mobile: logo + hamburger in one row */}
+          <div className="md:hidden flex items-center justify-between w-full" style={{ paddingLeft: 0 }}>
+            <div style={{ filter: "drop-shadow(0 0 14px rgba(216, 0, 0, 0.08))" }}>
+              <Logo desktop={230} mobile={160} />
+            </div>
+            <Link
+              href="/signup"
+              style={{
+                backgroundColor: "#D80000",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 11,
+                letterSpacing: "0.06em",
+                padding: "9px 18px",
+                borderRadius: 4,
+              }}
+            >
+              GET STARTED
+            </Link>
           </div>
-        </div>
-
-        {/* mobile nav */}
-        <div className="md:hidden flex items-center justify-between" style={{ padding: "12px 20px", borderTop: "1px solid #DDD6CE" }}>
-          <Logo size="sm" />
-          <Link
-            href="/signup"
-            style={{
-              backgroundColor: "#D80000",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 11,
-              letterSpacing: "0.06em",
-              padding: "8px 16px",
-              borderRadius: 4,
-            }}
-          >
-            GET STARTED
-          </Link>
         </div>
       </header>
 
