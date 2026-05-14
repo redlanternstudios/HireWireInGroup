@@ -40,7 +40,13 @@ export function HireWireLogo({
       width={width}
       height={height}
       className={className}
-      style={VARIANT_FILTER[variant] ? { filter: VARIANT_FILTER[variant] } : undefined}
+      // height:auto preserves exact aspect ratio regardless of container.
+      // Never let a parent constraint squash the logo vertically.
+      style={{
+        width,
+        height: "auto",
+        ...(VARIANT_FILTER[variant] ? { filter: VARIANT_FILTER[variant] } : {}),
+      }}
       priority
     />
   )
