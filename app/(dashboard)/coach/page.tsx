@@ -1,3 +1,5 @@
+"use server"
+
 import { createClient } from "@/lib/supabase/server"
 import { getReadyJobIds } from "@/lib/readiness"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
@@ -11,8 +13,8 @@ import {
   Plus,
   Zap,
   Activity,
-  Send,
   Star,
+  ChevronRight,
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
@@ -67,7 +69,7 @@ async function getCoachContext() {
     const [jobsResult, evidenceResult, readyResult, eventsResult] = await Promise.all([
       supabase
         .from("jobs")
-        .select("id, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed")
+        .select("id, role_title, company_name, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed, generation_status")
         .eq("user_id", user.id)
         .is("deleted_at", null),
       supabase
@@ -76,8 +78,8 @@ async function getCoachContext() {
         .eq("user_id", user.id),
       getReadyJobIds(user.id),
       supabase
-        .from("domain_events")
-        .select("id, event_type, job_id, payload, created_at")
+        .from("audit_events")
+        .select("id, event_type, job_id, metadata, created_at")
         .eq("user_id", user.id)
         .gte("created_at", cutoff)
         .order("created_at", { ascending: false })
@@ -96,9 +98,13 @@ async function getCoachContext() {
     const evidenceCount = evidence.length
     const approvedEvidence = evidence.filter(e => e.is_user_approved).length
 
-    // Surface the most recent readiness_changed event where a job became apply-ready
+    // Find the highest-readiness non-applied job for the "best opportunity" card
+    const topJob = jobs
+      .filter(j => j.status !== "applied")
+      .find(j => j.quality_passed) ?? jobs.find(j => j.status !== "applied") ?? null
+
     const urgentReady = recentEvents.find(
-      e => e.event_type === "readiness_changed" && e.payload?.can_apply === true
+      e => e.event_type === "readiness_changed" && (e.payload as Record<string, unknown>)?.can_apply === true
     ) ?? null
 
     return {
@@ -110,10 +116,23 @@ async function getCoachContext() {
       approvedEvidence,
       recentEvents,
       urgentReady,
+      topJob,
+      hasNoEvidence: evidenceCount === 0,
+      hasNoPipeline: activeJobs === 0,
     }
   } catch {
     return null
   }
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function RailLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground mb-2.5">
+      {children}
+    </p>
+  )
 }
 
 function StatRow({
@@ -129,16 +148,19 @@ function StatRow({
 }) {
   const content = (
     <div className={cn(
-      "flex items-center justify-between py-2.5 px-3 rounded-lg transition-colors",
-      href && "hover:bg-black/3 cursor-pointer",
+      "flex items-center justify-between py-2 px-2.5 rounded-lg transition-colors",
+      href && "hover:bg-black/4 cursor-pointer group",
     )}>
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={cn(
-        "text-sm font-semibold tabular-nums",
-        accent ? "text-primary" : "text-foreground"
-      )}>
-        {value}
-      </span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1">
+        <span className={cn(
+          "text-xs font-semibold tabular-nums",
+          accent ? "text-primary" : "text-foreground"
+        )}>
+          {value}
+        </span>
+        {href && <ChevronRight className="h-2.5 w-2.5 text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors" />}
+      </div>
     </div>
   )
   return href ? <Link href={href}>{content}</Link> : content
@@ -146,26 +168,47 @@ function StatRow({
 
 function ActionItem({
   label,
+  description,
   href,
   icon: Icon,
+  highlight = false,
 }: {
   label: string
+  description?: string
   href: string
   icon: React.ElementType
+  highlight?: boolean
 }) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-black/4 transition-colors group"
+      className={cn(
+        "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group",
+        highlight
+          ? "bg-primary/8 border border-primary/15 hover:bg-primary/12"
+          : "hover:bg-black/4 border border-transparent"
+      )}
     >
-      <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-        <Icon className="h-3.5 w-3.5 text-primary" />
+      <div className={cn(
+        "h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
+        highlight ? "bg-primary/15" : "bg-foreground/6"
+      )}>
+        <Icon className={cn("h-3.5 w-3.5", highlight ? "text-primary" : "text-foreground/60")} />
       </div>
-      <span className="text-sm text-foreground flex-1">{label}</span>
-      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+      <div className="flex-1 min-w-0">
+        <span className={cn("text-xs font-medium block", highlight ? "text-primary" : "text-foreground")}>
+          {label}
+        </span>
+        {description && (
+          <span className="text-[10px] text-muted-foreground">{description}</span>
+        )}
+      </div>
+      <ArrowRight className="h-3 w-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
     </Link>
   )
 }
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function CoachPage() {
   const ctx = await getCoachContext()
@@ -179,134 +222,178 @@ export default async function CoachPage() {
       ? "Strong"
       : "In progress"
 
-  const evidenceAccent = evidenceStatus === "Strong"
+  const evidenceStrong = evidenceStatus === "Strong"
+  const evidenceLow = ctx?.evidenceCount === 0 || (ctx?.approvedEvidence ?? 0) < 2
+
+  // Derive which quick actions are most relevant right now
+  const priorityActions = (() => {
+    if (!ctx) return []
+    const actions = []
+    if (ctx.hasNoPipeline) {
+      actions.push({ label: "Add your first job", description: "Start your pipeline", href: "/jobs", icon: Plus, highlight: true })
+    }
+    if (ctx.hasNoEvidence) {
+      actions.push({ label: "Build Career Context", description: "Add achievements & proof", href: "/evidence", icon: BookOpen, highlight: !ctx.hasNoPipeline })
+    }
+    if (ctx.readyCount > 0) {
+      actions.push({ label: `${ctx.readyCount} ready to apply`, description: "Jobs cleared all checks", href: "/ready-to-apply", icon: CheckCircle2, highlight: true })
+    }
+    if (ctx.withMaterials > 0 && !ctx.hasNoPipeline) {
+      actions.push({ label: "Review your materials", description: "Resume & cover letter", href: "/documents", icon: FileText, highlight: false })
+    }
+    if (ctx.activeJobs > 0) {
+      actions.push({ label: "View pipeline", description: `${ctx.activeJobs} active job${ctx.activeJobs !== 1 ? "s" : ""}`, href: "/jobs", icon: Briefcase, highlight: false })
+    }
+    // Always offer pipeline entry
+    if (!ctx.hasNoPipeline) {
+      actions.push({ label: "Add another job", description: "Analyze a new opportunity", href: "/jobs", icon: Plus, highlight: false })
+    }
+    return actions.slice(0, 4)
+  })()
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
-      {/* Page header */}
-      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
-        <div className="flex items-center justify-between">
+    <div className="flex flex-col h-[calc(100vh-2.5rem)]">
+
+      {/* ── Page Header ── */}
+      <div className="shrink-0 px-6 pt-5 pb-4 border-b border-border/70">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Career Coach</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            {/* Editorial label */}
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary mb-1">
+              AI Coach
+            </p>
+            <h1 className="text-lg font-bold tracking-tight text-foreground leading-none">
+              Career Coach
+            </h1>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-sm">
               Strategic guidance grounded in your pipeline, Career Context, and application materials.
             </p>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/8 border border-primary/15">
-            <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            <span className="text-xs font-medium text-primary">Grounded in your verified evidence</span>
+
+          {/* Grounded indicator */}
+          <div className={cn(
+            "shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border",
+            evidenceLow
+              ? "bg-amber-50 border-amber-200/60"
+              : "bg-primary/6 border-primary/15"
+          )}>
+            <div className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              evidenceLow ? "bg-amber-400" : "bg-primary animate-pulse"
+            )} />
+            <span className={cn(
+              "text-[10px] font-semibold",
+              evidenceLow ? "text-amber-700" : "text-primary"
+            )}>
+              {evidenceLow ? "Low evidence — add Career Context" : "Grounded in verified evidence"}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Two-column layout */}
+      {/* ── Two-column layout ── */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* Main chat panel */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+        <div className="flex-1 flex flex-col min-w-0 border-r border-border/70">
           <CoachChat className="h-full" />
         </div>
 
-        {/* Right context rail — hidden on mobile */}
-        <aside className="hidden lg:flex flex-col w-72 xl:w-80 shrink-0 overflow-y-auto bg-[hsl(40,8%,89%)]">
+        {/* ── Right context rail ── */}
+        <aside className="hidden lg:flex flex-col w-72 xl:w-80 shrink-0 overflow-y-auto">
 
-          {/* Coach Context */}
-          <div className="p-4 border-b border-border">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-              Coach Context
+          {/* Dark intelligence surface — pipeline at a glance */}
+          <div
+            className="shrink-0 p-4 border-b border-white/6"
+            style={{ backgroundColor: "#111110" }}
+          >
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/40 mb-3">
+              Pipeline at a glance
             </p>
             <div className="space-y-0.5">
-              <StatRow
-                label="Active jobs"
-                value={ctx?.activeJobs ?? "—"}
-                href="/jobs"
-              />
-              <StatRow
-                label="Ready to apply"
-                value={ctx?.readyCount ?? "—"}
-                href="/ready-to-apply"
-                accent={(ctx?.readyCount ?? 0) > 0}
-              />
-              <StatRow
-                label="With materials"
-                value={ctx?.withMaterials ?? "—"}
-                href="/documents"
-              />
-              <StatRow
-                label="Applied"
-                value={ctx?.appliedJobs ?? "—"}
-                href="/applications"
-              />
-              <StatRow
-                label="Career Context"
-                value={evidenceStatus}
-                href="/evidence"
-                accent={evidenceAccent}
-              />
-              <StatRow
-                label="Evidence items"
-                value={
-                  ctx
-                    ? `${ctx.approvedEvidence} / ${ctx.evidenceCount}`
-                    : "—"
-                }
-                href="/evidence"
-              />
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-white/50">Active jobs</span>
+                <span className="text-xs font-semibold text-white tabular-nums">{ctx?.activeJobs ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-white/50">Ready to apply</span>
+                <span className={cn(
+                  "text-xs font-semibold tabular-nums",
+                  (ctx?.readyCount ?? 0) > 0 ? "text-[#22c55e]" : "text-white/40"
+                )}>
+                  {ctx?.readyCount ?? "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-white/50">With materials</span>
+                <span className="text-xs font-semibold text-white tabular-nums">{ctx?.withMaterials ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-white/50">Applied</span>
+                <span className="text-xs font-semibold text-white tabular-nums">{ctx?.appliedJobs ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-t border-white/8 mt-1 pt-2">
+                <span className="text-xs text-white/50">Career Context</span>
+                <span className={cn(
+                  "text-xs font-semibold",
+                  evidenceStrong ? "text-[#22c55e]" : evidenceLow ? "text-amber-400" : "text-white"
+                )}>
+                  {evidenceStatus}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-white/50">Evidence items</span>
+                <span className="text-xs font-semibold text-white tabular-nums">
+                  {ctx ? `${ctx.approvedEvidence} / ${ctx.evidenceCount}` : "—"}
+                </span>
+              </div>
             </div>
 
-            {/* Fallback if no data */}
-            {ctx?.activeJobs === 0 && (
-              <div className="mt-3 px-3 py-2.5 rounded-lg bg-primary/6 border border-primary/12">
-                <p className="text-xs text-primary font-medium">No pipeline data yet</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Add a job to unlock pipeline guidance.
-                </p>
-              </div>
+            {/* Urgent ready job */}
+            {ctx?.urgentReady && (
+              <Link href={ctx.urgentReady.job_id ? `/jobs/${ctx.urgentReady.job_id}` : "/ready-to-apply"}>
+                <div className="mt-3 rounded-xl bg-primary/20 border border-primary/30 px-3 py-2.5 flex items-center gap-2.5 hover:bg-primary/25 transition-colors">
+                  <Star className="h-3 w-3 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-semibold text-primary">Job ready to apply</p>
+                    <p className="text-[10px] text-white/40 mt-0.5">Cleared all readiness checks</p>
+                  </div>
+                  <ArrowRight className="h-3 w-3 text-primary/60 shrink-0" />
+                </div>
+              </Link>
+            )}
+
+            {/* No pipeline nudge */}
+            {ctx?.hasNoPipeline && (
+              <Link href="/jobs">
+                <div className="mt-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 hover:bg-white/8 transition-colors">
+                  <p className="text-[11px] font-medium text-white/60">No pipeline yet</p>
+                  <p className="text-[10px] text-white/30 mt-0.5">Add a job to unlock pipeline guidance →</p>
+                </div>
+              </Link>
             )}
           </div>
 
-          {/* Urgent CTA — job just became ready */}
-          {ctx?.urgentReady && (
-            <div className="p-4 border-b border-border">
-              <Link href={ctx.urgentReady.job_id ? `/jobs/${ctx.urgentReady.job_id}` : "/ready-to-apply"}>
-                <div className="rounded-lg bg-primary/8 border border-primary/20 px-3 py-3 flex items-start gap-2.5 hover:bg-primary/12 transition-colors">
-                  <Star className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-semibold text-primary">Job ready to apply</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      A job just cleared all readiness checks. Review and submit.
-                    </p>
-                  </div>
-                  <ArrowRight className="h-3 w-3 text-primary/60 shrink-0 mt-1 ml-auto" />
-                </div>
-              </Link>
+          {/* Next Best Actions — pipeline-adaptive */}
+          {priorityActions.length > 0 && (
+            <div className="p-4 border-b border-border/70">
+              <RailLabel>Next best actions</RailLabel>
+              <div className="space-y-1">
+                {priorityActions.map((action) => (
+                  <ActionItem key={action.href + action.label} {...action} />
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Next Best Actions */}
-          <div className="p-4 border-b border-border">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-              Next Best Actions
-            </p>
-            <div className="space-y-0.5">
-              <ActionItem label="Add a job" href="/jobs" icon={Plus} />
-              <ActionItem label="Build Career Context" href="/evidence" icon={BookOpen} />
-              <ActionItem label="Review pipeline" href="/jobs" icon={Briefcase} />
-              <ActionItem label="Ready to Apply queue" href="/ready-to-apply" icon={CheckCircle2} />
-              <ActionItem label="View materials" href="/documents" icon={FileText} />
-            </div>
-          </div>
-
           {/* Recent Activity */}
           {ctx?.recentEvents && ctx.recentEvents.length > 0 && (
-            <div className="p-4 border-b border-border">
-              <div className="flex items-center gap-1.5 mb-3">
-                <Activity className="h-3 w-3 text-muted-foreground" />
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Recent Activity
-                </p>
+            <div className="p-4 border-b border-border/70">
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <Activity className="h-2.5 w-2.5 text-muted-foreground" />
+                <RailLabel>Recent activity</RailLabel>
               </div>
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {ctx.recentEvents.slice(0, 5).map(event => (
                   <div key={event.id} className="flex items-start justify-between gap-2">
                     {event.job_id ? (
@@ -327,18 +414,18 @@ export default async function CoachPage() {
                   </div>
                 ))}
               </div>
-              <Link href="/logs" className="mt-3 block text-[11px] text-primary hover:underline">
+              <Link href="/logs" className="mt-3 block text-[10px] text-primary hover:underline font-medium">
                 View full activity log →
               </Link>
             </div>
           )}
 
-          {/* Quick context note */}
+          {/* Grounding note */}
           <div className="p-4 mt-auto">
-            <div className="rounded-lg bg-foreground/4 border border-border px-3 py-3">
+            <div className="rounded-xl bg-foreground/4 border border-border px-3 py-3">
               <div className="flex items-start gap-2">
                 <Zap className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
                   Coach responses are grounded in your verified evidence. Claims not backed by your Career Context will be flagged.
                 </p>
               </div>
