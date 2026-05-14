@@ -157,45 +157,54 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
           {/* Welcome state */}
           {messages.length === 0 && (
             <div className="space-y-4">
-              {/* Coach intro bubble */}
-              <div className="flex items-start gap-3">
-                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm">
-                  <Sparkles className="h-4 w-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">HireWire Coach</p>
-                  <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                    <p className="text-sm text-foreground leading-relaxed">
-                      Hey! I&apos;m your personal career coach. I can help you with job search strategy,
-                      interview prep, building your evidence library, and improving your application materials.
+              {/* Coach intro — dark intelligence surface */}
+              <div
+                className="rounded-2xl px-5 py-4 shadow-md"
+                style={{ backgroundColor: "#111110" }}
+              >
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/40">
+                      AI Coach
                     </p>
-                    {jobContext ? (
-                      <div className="mt-3 pt-3 border-t border-border">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Focused on</p>
-                        <p className="text-sm font-medium text-foreground">
-                          {jobContext.title}
-                          <span className="text-muted-foreground font-normal"> at {jobContext.company}</span>
-                          {jobContext.score != null && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
-                              {jobContext.score}% fit
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground mt-1">What would you like to work on today?</p>
-                    )}
+                    <p className="text-xs font-semibold text-white leading-none mt-0.5">HireWire Coach</p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                    <span className="text-[10px] text-white/30">Active</span>
                   </div>
                 </div>
+                <p className="text-sm text-white/70 leading-relaxed">
+                  {jobContext
+                    ? `I'm focused on ${jobContext.title} at ${jobContext.company}. Let's build the strongest possible application.`
+                    : "I'm your strategic career coach. I can help with job search strategy, interview prep, evidence building, and improving your materials."}
+                </p>
+                {jobContext?.score != null && (
+                  <div className="mt-3 pt-3 border-t border-white/8 flex items-center gap-2">
+                    <span className="text-[10px] text-white/30 uppercase tracking-widest">Fit score</span>
+                    <span className={cn(
+                      "text-sm font-bold",
+                      jobContext.score >= 70 ? "text-[#22c55e]" : jobContext.score >= 50 ? "text-amber-400" : "text-primary"
+                    )}>
+                      {jobContext.score}%
+                    </span>
+                  </div>
+                )}
+                {!jobContext && (
+                  <p className="text-xs text-white/40 mt-2">What would you like to work on today?</p>
+                )}
               </div>
 
               {/* Grouped prompt clusters */}
-              <div className="pl-11 space-y-3">
+              <div className="space-y-4">
                 {promptClusters.map((cluster) => (
                   <div key={cluster.group}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
+                    <div className="flex items-center gap-1.5 mb-2">
                       <cluster.icon className="h-3 w-3 text-muted-foreground" />
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                         {cluster.group}
                       </p>
                     </div>
@@ -206,9 +215,9 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                           onClick={() => handleQuickAction(p.prompt)}
                           disabled={isLoading}
                           className={cn(
-                            "px-3 py-1.5 rounded-lg text-left transition-all text-xs font-medium",
-                            "bg-card border border-border text-foreground",
-                            "hover:border-primary/40 hover:bg-primary/6 hover:text-primary",
+                            "px-3 py-2 rounded-xl text-left transition-all text-xs font-medium",
+                            "bg-background border border-border text-foreground shadow-sm",
+                            "hover:border-primary/50 hover:bg-primary/6 hover:text-primary hover:shadow-none",
                             "disabled:opacity-40 disabled:cursor-not-allowed"
                           )}
                         >
@@ -312,27 +321,31 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
         </div>
       </div>
 
-      {/* Input bar — always pinned at bottom, visually distinct */}
-      <div className="shrink-0 border-t border-border bg-card px-4 py-3">
-        <form onSubmit={(e) => { e.preventDefault(); submit() }} className="flex items-end gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask me anything about your job search..."
-            className={cn(
-              "flex-1 min-h-[40px] max-h-[120px] resize-none bg-background border-border",
-              "focus-visible:ring-1 focus-visible:ring-primary/50 text-sm",
-              compact && "text-xs"
-            )}
-            rows={1}
-            disabled={isLoading}
-          />
+      {/* Input bar — pinned at bottom */}
+      <div className="shrink-0 border-t border-border/70 bg-background px-4 py-3.5">
+        <form onSubmit={(e) => { e.preventDefault(); submit() }} className="flex items-end gap-2.5">
+          <div className="flex-1 relative">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask your coach anything..."
+              className={cn(
+                "w-full min-h-[42px] max-h-[120px] resize-none",
+                "bg-card border border-border rounded-xl px-3.5 py-2.5",
+                "focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:border-primary/40",
+                "text-sm placeholder:text-muted-foreground/50 shadow-sm",
+                compact && "text-xs min-h-[36px]"
+              )}
+              rows={1}
+              disabled={isLoading}
+            />
+          </div>
           <Button
             type="submit"
             size="icon"
             disabled={!canSend}
-            className="shrink-0 h-10 w-10 rounded-xl bg-primary text-white hover:bg-primary/90 shadow-sm disabled:opacity-40"
+            className="shrink-0 h-[42px] w-[42px] rounded-xl bg-primary text-white hover:bg-primary/90 shadow-sm disabled:opacity-30 transition-all"
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -341,8 +354,8 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
             )}
           </Button>
         </form>
-        <p className="text-[10px] text-muted-foreground mt-2 text-center">
-          Responses grounded in your verified evidence library
+        <p className="text-[10px] text-muted-foreground/60 mt-2 text-center">
+          Grounded in your verified evidence — Enter to send, Shift+Enter for new line
         </p>
       </div>
     </div>
