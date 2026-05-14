@@ -66,24 +66,29 @@ export function AppSidebar() {
       (item.href !== "/dashboard" && item.href !== "/" && pathname.startsWith(item.href))
     return (
       <SidebarMenuItem key={item.name}>
-        <SidebarMenuButton 
-          asChild 
+        <SidebarMenuButton
+          asChild
           isActive={isActive}
           className={cn(
-            "h-10 px-3 rounded-lg transition-all relative",
-            isActive && "bg-accent text-foreground font-medium"
+            "h-9 px-3 rounded-lg transition-all relative",
+            isActive
+              ? "bg-primary/8 text-foreground font-semibold border border-primary/12"
+              : "hover:bg-accent/60"
           )}
         >
           <Link href={item.href}>
             <item.icon className={cn(
-              "h-4 w-4",
-              isActive ? "text-foreground" : "text-muted-foreground"
+              "h-4 w-4 shrink-0",
+              isActive ? "text-primary" : "text-muted-foreground"
             )} />
-            <span className="text-sm flex-1">{item.name}</span>
+            <span className={cn("text-sm flex-1", isActive ? "text-foreground" : "text-foreground/80")}>{item.name}</span>
             {item.premium && (
-              <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium text-primary border-primary/30">
+              <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold text-primary border-primary/30 bg-primary/5">
                 PRO
               </Badge>
+            )}
+            {isActive && (
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-primary" />
             )}
           </Link>
         </SidebarMenuButton>
@@ -93,13 +98,12 @@ export function AppSidebar() {
 
   return (
     <Sidebar className="border-r border-sidebar-border">
-      <SidebarHeader className="px-4 py-5 relative overflow-hidden">
-        {/* Off-White diagonal stripes in logo box - top-left and bottom-right */}
-        <DiagonalStripes position="top-left" size="sm" variant="black" opacity={0.08} />
-        <DiagonalStripes position="bottom-right" size="sm" variant="black" opacity={0.08} />
-        
-        <Link href="/dashboard" className="flex items-center justify-center relative z-10">
-          <HireWireLogo variant="color" size="md" />
+      <SidebarHeader className="px-4 pt-6 pb-4 relative overflow-hidden">
+        {/* Subtle diagonal stripe watermark — top-left only, very low opacity */}
+        <DiagonalStripes position="top-left" size="sm" variant="black" opacity={0.06} />
+
+        <Link href="/dashboard" className="flex items-start relative z-10" style={{ filter: "drop-shadow(0 0 18px rgba(216,0,0,0.08))" }}>
+          <HireWireLogo variant="color" size="lg" />
         </Link>
       </SidebarHeader>
       
