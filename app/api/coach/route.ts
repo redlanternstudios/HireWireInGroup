@@ -201,6 +201,30 @@ export async function POST(request: Request) {
         top.map(r => `- [${(r.type ?? "insight").toUpperCase()}] ${r.message}`).join("\n")
     }
 
+    // Rejection pattern analysis — coach feedback loop
+    const rejectedJobs = recentJobs.filter(j => j.status === "rejected")
+    if (rejectedJobs.length > 0) {
+      const scoredRejections = rejectedJobs.filter(j => j.score != null)
+      const avgRejectionScore = scoredRejections.length > 0
+        ? Math.round(scoredRejections.reduce((sum, j) => sum + (j.score ?? 0), 0) / scoredRejections.length)
+        : null
+
+      const withMaterials = rejectedJobs.filter(j => j.generated_resume || j.generated_cover_letter).length
+      const withoutMaterials = rejectedJobs.length - withMaterials
+
+      systemPrompt += `\n\n## Rejection History (${rejectedJobs.length} rejection${rejectedJobs.length !== 1 ? "s" : ""})`
+      if (avgRejectionScore !== null) {
+        systemPrompt += `\n- Average fit score at rejection: ${avgRejectionScore}%`
+        if (avgRejectionScore < FIT_ACTIVATION_THRESHOLD) {
+          systemPrompt += ` — below the ${FIT_ACTIVATION_THRESHOLD}% threshold. Suggest the user improve evidence or target better-fit roles.`
+        }
+      }
+      if (withoutMaterials > 0) {
+        systemPrompt += `\n- ${withoutMaterials} rejection${withoutMaterials !== 1 ? "s" : ""} occurred without generated materials — user may have applied too early.`
+      }
+      systemPrompt += `\nUse this history proactively: surface patterns, identify whether the user is applying below fit threshold or skipping quality review, and suggest concrete changes.`
+    }
+
     // 70% fit threshold behavior gate
     if (fitScore > 0 && fitScore < FIT_ACTIVATION_THRESHOLD) {
       systemPrompt += `\n\n## Fit Threshold: Gap Mode (${fitScore}% < ${FIT_ACTIVATION_THRESHOLD}%)\nThis job's fit score is below the ${FIT_ACTIVATION_THRESHOLD}% threshold. Prioritize gap identification and evidence coaching over readiness or document polish. Ask the user what experience they have that could address the key gaps.`
