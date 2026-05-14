@@ -77,6 +77,91 @@ Always use job.title / job.company in UI. Never job.role_title.
 
 ---
 
+---
+
+## SightEngine — Operating Doctrine (v1.0)
+
+SightEngine is the nervous system of HireWire. Not analytics — the system that answers:
+what is happening, why, what should the user do next, what should the system learn, what changes downstream.
+
+### The Closed Loop (every important action must follow this)
+```
+User action → Experience Layer captures → SightEngine logs event →
+Intelligence interprets → Records updated → AI context enriched →
+User gets better next step → Outcome tracked → Future recs improve
+```
+
+### 5 Design Rules (never violate)
+1. Observe everything important, show only what matters
+2. Every signal must have a reason (no scoreless warnings)
+3. Every insight must have a next action (never show a gap without a CTA)
+4. Don't turn analytics into noise
+5. Product adapts quietly based on behavior
+
+### Visual surface rules
+- Dark surface → readiness score, recruiter signals, AI coach, risk warnings, package review, role intelligence
+- Light surface → forms, job lists, onboarding, evidence editing, settings, general nav
+- Red → primary actions, warnings, active signals, flagged gaps
+- Green → verified evidence, completed steps, positive recruiter response
+- Amber → moderate risk, missing proof, needs review
+- Gray → inactive states, secondary metadata, helper text
+
+### SightEngine Service Layer (canonical paths)
+```
+lib/sightengine/events/event-types.ts    — all event type constants
+lib/sightengine/events/emit-event.ts     — emitSightEvent() client helper (never throws)
+lib/sightengine/events/event-schema.ts   — SightEventInput type
+lib/sightengine/ai/trace-ai-call.ts      — traceAiCall() — wraps every AI call
+lib/sightengine/outcomes/record-outcome.ts — recordCareerOutcome()
+lib/sightengine/insights/generate-insight.ts
+app/api/sightengine/events/route.ts      — POST endpoint for client events
+```
+
+### Supabase tables (create IF NOT EXISTS, never destructive)
+- sight_events — core event log
+- sight_sessions — session tracking
+- sight_ai_traces — AI reasoning metadata (no raw CoT)
+- career_outcomes — real-world application results
+- sight_insights — generated insights with lifecycle (active/dismissed/completed)
+- feature_health — daily adoption rollup (unique on feature_key + date)
+
+### Event type constants (grouped — use constants, never raw strings)
+Session: SESSION_STARTED SESSION_ENDED USER_RETURNED USER_IDLE USER_REACTIVATED
+Navigation: PAGE_VIEWED NAV_ITEM_CLICKED ROUTE_CHANGED BACK_NAVIGATION_USED MOBILE_MENU_OPENED
+Onboarding: ONBOARDING_STARTED ONBOARDING_STEP_COMPLETED ONBOARDING_STEP_SKIPPED ONBOARDING_COMPLETED RESUME_UPLOADED TARGET_ROLE_ADDED
+Jobs: JOB_IMPORTED JOB_PARSED JOB_VIEWED JOB_SAVED JOB_ARCHIVED JOB_DELETED JOB_STATUS_CHANGED
+Role Intelligence: ROLE_ANALYSIS_STARTED ROLE_ANALYSIS_COMPLETED ROLE_REANALYZED ROLE_RISK_DETECTED
+Evidence: EVIDENCE_CREATED EVIDENCE_UPDATED EVIDENCE_LINKED_TO_JOB EVIDENCE_USED_IN_RESUME EVIDENCE_GAP_DETECTED
+Resume: RESUME_GENERATION_STARTED RESUME_GENERATED RESUME_EDITED RESUME_EXPORTED RESUME_MARKED_USED
+Cover Letter: COVER_LETTER_GENERATED COVER_LETTER_EDITED COVER_LETTER_EXPORTED COVER_LETTER_MARKED_USED
+Coach: COACH_OPENED COACH_MESSAGE_SENT COACH_SUGGESTION_ACCEPTED COACH_SUGGESTION_DISMISSED
+Package: PACKAGE_STARTED PACKAGE_READY PACKAGE_REVIEWED PACKAGE_EXPORTED PACKAGE_SENT
+Outcomes: APPLICATION_SUBMITTED RECRUITER_RESPONSE_RECEIVED CALLBACK_RECEIVED INTERVIEW_SCHEDULED INTERVIEW_COMPLETED REJECTION_RECEIVED OFFER_RECEIVED NO_RESPONSE_RECORDED
+AI: AI_REQUEST_STARTED AI_REQUEST_COMPLETED AI_REQUEST_FAILED AI_OUTPUT_ACCEPTED AI_OUTPUT_REJECTED AI_GUARDRAIL_TRIGGERED AI_HALLUCINATION_PREVENTED
+System: API_CALL_FAILED DATABASE_WRITE_FAILED AUTH_REQUIRED RATE_LIMIT_HIT
+
+### AI trace rules
+- Every AI call must call traceAiCall()
+- Store: input_context_summary, output_summary, evidence_ids, confidence_score, guardrails_triggered, latency_ms
+- Never store: raw chain-of-thought, full prompt dumps, unbounded AI output
+
+### Insight rules (user-facing)
+- Must be: short, actionable, explainable, non-judgmental, tied to evidence, dismissable
+- Never: "Your applications are weak"
+- Always: "This role asks for X but your resume does not show that clearly. Add one proof point."
+
+### MVP implementation order
+Phase 1: sight_events + emit helper + API route + page views + core events
+Phase 2: sight_ai_traces + trace wrapper
+Phase 3: career_outcomes + outcome UI + follow-up reminders
+Phase 4: sight_insights + pattern detection
+Phase 5: admin dashboard + feature health
+
+### SightEngine never stores
+Passwords, tokens, raw CoT, full prompt dumps, unnecessary PII, unredacted third-party secrets
+
+---
+
 ## Never Do
 - Compute workflow stage locally — use getWorkflowState()
 - Use job.job_description as analysis gate
