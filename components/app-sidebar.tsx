@@ -33,7 +33,7 @@ import {
   SidebarMenuItem,
   SidebarFooter,
 } from "@/components/ui/sidebar"
-import { DiagonalStripes } from "@/components/off-white-stripes"
+import { DiagonalStripes, HazardTape } from "@/components/off-white-stripes"
 import { cn } from "@/lib/utils"
 
 // Pipeline navigation - main workflow
@@ -97,17 +97,22 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar className="border-r border-sidebar-border">
-      <SidebarHeader className="px-4 pt-6 pb-4 relative overflow-hidden">
+    <Sidebar className="border-r border-sidebar-border relative">
+      {/* Virgil Abloh / Off-White permanent left-edge hazard stripe — full sidebar height */}
+      <div className="absolute left-0 top-0 bottom-0 w-[10px] z-50 pointer-events-none overflow-hidden">
+        <HazardTape direction="vertical" variant="black" className="h-full w-full opacity-[0.09]" />
+      </div>
+
+      <SidebarHeader className="px-4 pt-6 pb-4 pl-6 relative overflow-hidden">
         {/* Subtle diagonal stripe watermark — top-left only, very low opacity */}
-        <DiagonalStripes position="top-left" size="sm" variant="black" opacity={0.06} />
+        <DiagonalStripes position="top-left" size="sm" variant="black" opacity={0.04} />
 
         <Link href="/dashboard" className="flex items-start relative z-10" style={{ filter: "drop-shadow(0 0 18px rgba(216,0,0,0.08))" }}>
           <HireWireLogo variant="color" size="lg" />
         </Link>
       </SidebarHeader>
       
-      <SidebarContent className="px-3">
+      <SidebarContent className="pl-4 pr-3">
         {/* Pipeline Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase px-3">
@@ -121,7 +126,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       
-      <SidebarFooter className="px-3 pb-4">
+      <SidebarFooter className="pl-4 pr-3 pb-4">
         {/* Bottom nav items */}
         <SidebarMenu className="border-t border-sidebar-border pt-3">
           {bottomNav.map(renderNavItem)}
