@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
-import { handleDomainEvent } from "@/lib/events"
+import { handleDomainEvent } from "@/lib/domain-events"
 
 export interface PackageActionResult {
   success: boolean
@@ -62,15 +62,17 @@ export async function acceptApplicationPackage(
   if (updateError) return { success: false, error: updateError.message }
 
   // Emit domain event — also triggers cache invalidation for /ready-queue, /dashboard
-  await handleDomainEvent(supabase, {
-    type: "package.accepted",
-    jobId,
-    userId: user.id,
+  await handleDomainEvent({
+    supabase,
+    event_type: "package_reviewed",
+    job_id: jobId,
+    user_id: user.id,
+    source: "package_review_action",
     payload: {
       acceptedAt: new Date().toISOString(),
       previousStatus,
     },
-  }).catch(() => {})
+  })
 
   revalidatePath(`/jobs/${jobId}/documents`)
   revalidatePath(`/jobs/${jobId}`)
@@ -112,15 +114,17 @@ export async function markPackageNeedsReview(
 
   if (updateError) return { success: false, error: updateError.message }
 
-  await handleDomainEvent(supabase, {
-    type: "package.needs_review",
-    jobId,
-    userId: user.id,
+  await handleDomainEvent({
+    supabase,
+    event_type: "package_invalidated",
+    job_id: jobId,
+    user_id: user.id,
+    source: "package_review_action",
     payload: {
       reason,
       flaggedAt: new Date().toISOString(),
     },
-  }).catch(() => {})
+  })
 
   revalidatePath(`/jobs/${jobId}/documents`)
   revalidatePath(`/jobs/${jobId}`)
@@ -158,12 +162,14 @@ export async function resetPackageReviewStatus(
 
   if (updateError) return { success: false, error: updateError.message }
 
-  await handleDomainEvent(supabase, {
-    type: "package.reset",
-    jobId,
-    userId: user.id,
+  await handleDomainEvent({
+    supabase,
+    event_type: "package_invalidated",
+    job_id: jobId,
+    user_id: user.id,
+    source: "package_review_action",
     payload: { resetAt: new Date().toISOString() },
-  }).catch(() => {})
+  })
 
   revalidatePath(`/jobs/${jobId}/documents`)
 

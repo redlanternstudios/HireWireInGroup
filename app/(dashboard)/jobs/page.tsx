@@ -24,6 +24,8 @@ export default async function JobsPage() {
       applied_at,
       evidence_map,
       score,
+      score_gaps,
+      intelligence,
       updated_at,
       created_at,
       job_scores ( overall_score )
@@ -34,7 +36,8 @@ export default async function JobsPage() {
     .limit(200)
 
   // Normalize score — prefer job_scores.overall_score, fall back to jobs.score
-  const pipeline: PipelineJob[] = (jobs ?? []).map(j => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pipeline: PipelineJob[] = (jobs ?? []).map((j: any) => {
     const scores = (j.job_scores as Array<{ overall_score?: number }> | null) ?? []
     const score = scores[0]?.overall_score ?? (j.score as number | null) ?? null
     return {
@@ -49,6 +52,8 @@ export default async function JobsPage() {
       applied_at:            j.applied_at ?? null,
       evidence_map:          (j.evidence_map as Record<string, unknown> | null) ?? null,
       score,
+      score_gaps:            (j.score_gaps as string[] | null) ?? null,
+      intelligence:          (j.intelligence as Record<string, unknown> | null) ?? null,
       updated_at:            j.updated_at ?? null,
       created_at:            j.created_at,
     }

@@ -94,8 +94,10 @@ export async function evaluateJobReadiness(
     .eq("is_active", true)
   
   // Extract artifact states
-  const analyses = (job.job_analyses as Array<{ id: string; qualifications_required?: string[]; qualifications_preferred?: string[] }>) || []
-  const scores = (job.job_scores as Array<{ id: string; overall_score?: number }>) || []
+  const analyses: Array<{ id: string; qualifications_required?: string[]; qualifications_preferred?: string[] }> =
+    Array.isArray(job.job_analyses) ? job.job_analyses : []
+  const scores: Array<{ id: string; overall_score?: number }> =
+    Array.isArray(job.job_scores) ? job.job_scores : []
   const evidenceMap = job.evidence_map as Record<string, unknown> | null
   
   const has_job_analysis = analyses.length > 0

@@ -28,9 +28,9 @@ export type ClaudeModel = (typeof CLAUDE_MODELS)[keyof typeof CLAUDE_MODELS]
 
 /**
  * Check if Anthropic is available.
- * With AI Gateway, Anthropic is available zero-config.
+ * The app uses Vercel AI Gateway model strings, so the gateway key must be
+ * present before generation starts.
  */
 export function isAnthropicConfigured(): boolean {
-  // AI Gateway handles Anthropic zero-config
-  return true
+  return Boolean(process.env.AI_GATEWAY_API_KEY?.trim())
 }

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import {
   Plus, Briefcase, ArrowRight, Target, AlertTriangle,
-  CheckCircle2, Clock, Send, Zap, Sparkles, BarChart2, Bell,
+  CheckCircle2, Clock, Send, Zap, Sparkles, BarChart2, Bell, Activity,
 } from "lucide-react"
 
 function timeAgo(dateStr: string) {
@@ -46,6 +46,22 @@ function statusStyle(status: string): StatusStyle {
   return STATUS_STYLE[status] ?? { bg: "bg-stone-100", text: "text-stone-600", border: "border-stone-200" }
 }
 
+const EVENT_LABEL: Record<string, string> = {
+  application_submitted:  "Application submitted",
+  documents_generated:    "Documents generated",
+  quality_passed:         "Quality check passed",
+  quality_failed:         "Quality check failed",
+  evidence_added:         "Evidence added",
+  evidence_updated:       "Evidence updated",
+  evidence_deleted:       "Evidence removed",
+  resume_uploaded:        "Resume uploaded",
+  job_analyzed:           "Job analyzed",
+  readiness_changed:      "Readiness updated",
+  package_reviewed:       "Package accepted",
+  package_invalidated:    "Package flagged for review",
+  export_generated:       "Document exported",
+}
+
 function greeting() {
   const h = new Date().getHours()
   if (h < 12) return "Good morning"
@@ -79,7 +95,7 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-  const [{ data: profile }, { data: jobs }] = await Promise.all([
+  const [{ data: profile }, { data: jobs }, { data: recentEvents }] = await Promise.all([
     supabase.from("user_profile")
       .select("full_name, headline")
       .eq("user_id", user.id)
@@ -90,6 +106,11 @@ export default async function DashboardPage() {
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .limit(200),
+    supabase.from("domain_events")
+      .select("id, event_type, job_id, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(5),
   ])
 
   const jobList = jobs ?? []
@@ -102,6 +123,14 @@ export default async function DashboardPage() {
   const activeJobs      = jobList.filter(j => evaluateReadiness(j).outcome === "active")
   const needAttention   = needsActionJobs.length + needsReviewJobs.length
 
+  // "Applications this week" — jobs applied since Monday 00:00 local time
+  const weekStart = new Date()
+  const dayOfWeek = weekStart.getDay()
+  weekStart.setDate(weekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+  weekStart.setHours(0, 0, 0, 0)
+  const appliedThisWeek = jobList.filter(j => j.applied_at && new Date(j.applied_at) >= weekStart)
+
+  // "Your Next Move" — highest-urgency job
   const heroJob = needsActionJobs[0] ?? needsReviewJobs[0] ?? readyJobs[0] ?? jobList[0] ?? null
   const heroTier = heroJob ? urgencyTier(heroJob) : null
 
@@ -657,7 +686,7 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* ── MOMENTUM — light with red accent ── */}
+          {/* MOMENTUM + RECENT ACTIVITY */}
           <div className="rounded-2xl p-4" style={cardBase}>
             <div className="flex items-center gap-1.5 mb-3">
               <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ background: "hsl(var(--primary)/0.08)" }}>
@@ -665,39 +694,29 @@ export default async function DashboardPage() {
               </div>
               <p className="hw-section-label">Momentum</p>
             </div>
-
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Applications this week</p>
-            <div className="flex items-baseline justify-between mb-2">
-              <p className="text-2xl font-bold tabular-nums text-foreground">
-                {submittedJobs.length}
-                <span className="text-xs font-normal text-muted-foreground ml-1">/ 5</span>
-              </p>
-              <p className="text-[10px] text-muted-foreground font-medium">Target</p>
+            <p className="text-xs text-muted-foreground mb-1">Applications this week</p>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <p className="text-xl font-bold tabular-nums text-foreground">{appliedThisWeek.length} <span className="text-xs font-normal text-muted-foreground">/ 5</span></p>
+              <p className="text-[10px] text-muted-foreground">Target</p>
             </div>
-
-            {/* Progress bar */}
-            <div
-              className="h-1.5 rounded-full overflow-hidden mb-2.5"
-              style={{ background: "hsl(var(--muted))" }}
-            >
+            <div className="h-1.5 rounded-full overflow-hidden mb-2.5" style={{ background: "hsl(var(--muted))" }}>
               <div
                 className="h-full rounded-full transition-all"
                 style={{
-                  width: `${Math.min((submittedJobs.length / 5) * 100, 100)}%`,
-                  background: submittedJobs.length >= 5 ? "#22c55e" : submittedJobs.length >= 3 ? "#f59e0b" : "hsl(var(--primary))",
+                  width: `${Math.min((appliedThisWeek.length / 5) * 100, 100)}%`,
+                  background: appliedThisWeek.length >= 5 ? "#22c55e" : appliedThisWeek.length >= 3 ? "#f59e0b" : "hsl(var(--primary))",
                 }}
               />
             </div>
-
-            {submittedJobs.length === 0 ? (
+            {appliedThisWeek.length === 0 ? (
               <>
                 <p className="text-xs font-semibold text-rose-600">{"You're behind pace."}</p>
                 <Link href="/ready-to-apply" className="text-xs font-medium text-primary flex items-center gap-1 mt-1 hover:gap-1.5 transition-all">
-                  View ready jobs <ArrowRight className="h-3 w-3" />
+                  View analytics <ArrowRight className="h-3 w-3" />
                 </Link>
               </>
-            ) : submittedJobs.length < 5 ? (
-              <p className="text-xs text-amber-600 font-medium">{5 - submittedJobs.length} more to hit your target.</p>
+            ) : appliedThisWeek.length < 5 ? (
+              <p className="text-xs text-amber-600 font-medium">{5 - appliedThisWeek.length} more to hit your target.</p>
             ) : (
               <p className="text-xs text-emerald-600 font-medium">Target reached this week!</p>
             )}
@@ -712,26 +731,44 @@ export default async function DashboardPage() {
               boxShadow: "0 0 0 1px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.25)",
             }}
           >
+            {/* RECENT ACTIVITY */}
             <div
-              className="absolute top-0 left-0 w-full h-full pointer-events-none"
-              style={{
-                background: "radial-gradient(ellipse at bottom left, rgba(189,10,10,0.10) 0%, transparent 70%)",
-              }}
-            />
-            <div className="relative z-10">
-              <div className="w-6 h-6 rounded flex items-center justify-center mb-2.5" style={{ background: "hsl(var(--primary))" }}>
-                <Sparkles className="h-3.5 w-3.5 text-white" />
+              className="rounded-xl p-3.5 mt-4"
+              style={{ background: "hsl(var(--card))", border: "1px solid rgba(26,23,20,0.07)", boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 3px 8px rgba(26,23,20,0.04)" }}
+            >
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <div className="w-5 h-5 rounded-md bg-muted flex items-center justify-center">
+                  <Activity className="h-3 w-3 text-muted-foreground" />
+                </div>
+                <p className="hw-section-label">Recent Activity</p>
               </div>
-              <p className="text-sm font-bold text-white leading-snug mb-1">
-                Stop guessing.<br />Apply with clarity.
-              </p>
-              <p className="text-[11px] mb-3" style={{ color: "rgba(255,255,255,0.5)" }}>
-                Get role intelligence before you hit apply.
-              </p>
-              <Link href="/jobs/new">
-                <Button size="sm" className="hw-btn-primary w-full h-8 text-xs gap-1.5">
-                  Analyze a job <ArrowRight className="h-3 w-3" />
-                </Button>
+              {(recentEvents ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground">No activity yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {(recentEvents ?? []).map(event => (
+                    <div key={event.id} className="flex items-start justify-between gap-2">
+                      {event.job_id ? (
+                        <Link
+                          href={`/jobs/${event.job_id}`}
+                          className="text-xs text-foreground hover:text-primary transition-colors leading-snug flex-1 min-w-0 truncate"
+                        >
+                          {EVENT_LABEL[event.event_type] ?? event.event_type}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-foreground leading-snug flex-1 min-w-0 truncate">
+                          {EVENT_LABEL[event.event_type] ?? event.event_type}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+                        {timeAgo(event.created_at)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Link href="/logs" className="mt-3 block text-[10px] text-primary hover:underline">
+                Full activity log →
               </Link>
             </div>
           </div>

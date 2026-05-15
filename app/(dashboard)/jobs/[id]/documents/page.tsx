@@ -3,7 +3,11 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import DocumentsEditor from './DocumentsEditor'
 import ApplicationPackagePreview from '@/components/documents/ApplicationPackagePreview'
+import VoiceIntegritySection from '@/components/documents/VoiceIntegritySection'
+import ResumeVersionHistory from '@/components/documents/ResumeVersionHistory'
 import { ApplyButton } from '@/components/jobs/ApplyButton'
+import type { VoiceProfile, VoiceDriftResult } from '@/lib/voice/voice-types'
+import { getResumeVersions } from '@/lib/actions/resume-versions'
 import {
   normalizeResumeFont,
   normalizeResumeFormat,
@@ -33,7 +37,7 @@ export default async function DocumentsPage({
       resume_format, resume_font, format_recommendation_reason,
       generation_timestamp, last_edited_at,
       quality_passed, evidence_map, status, applied_at,
-      package_review_status, voice_drift_result, voice_mode
+      generation_status, voice_drift_result, voice_mode, voice_profile_snapshot
     `)
     .eq('id', id)
     .eq('user_id', user.id)
@@ -43,6 +47,7 @@ export default async function DocumentsPage({
   if (error || !job) notFound()
 
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
+  const versions = hasDocs ? await getResumeVersions(id) : []
 
   if (!hasDocs) {
     return (
@@ -69,6 +74,10 @@ export default async function DocumentsPage({
   const resumeFont = normalizeResumeFont(job.resume_font ?? recommendation.font, resumeFormat)
   const jobWithFormat = {
     ...job,
+    package_review_status:
+      job.quality_passed === true && job.generation_status === 'ready'
+        ? 'accepted'
+        : 'needs_review',
     resume_format: resumeFormat,
     resume_font: resumeFont,
     format_recommendation_reason: job.format_recommendation_reason ?? recommendation.reason,
@@ -105,6 +114,16 @@ export default async function DocumentsPage({
         </div>
         <aside className="w-full md:w-96 shrink-0 space-y-4">
           <ApplicationPackagePreview job={jobWithFormat} readiness={readiness} userId={user.id} />
+          <VoiceIntegritySection
+            mode={job.voice_mode ?? null}
+            profile={typeof job.voice_profile_snapshot === 'object' && job.voice_profile_snapshot !== null
+              ? job.voice_profile_snapshot as VoiceProfile
+              : null}
+            drift={typeof job.voice_drift_result === 'object' && job.voice_drift_result !== null
+              ? job.voice_drift_result as VoiceDriftResult
+              : null}
+          />
+          <ResumeVersionHistory jobId={id} versions={versions} />
           <ApplyButton jobId={id} disabled={!readiness.canApply} />
         </aside>
       </div>

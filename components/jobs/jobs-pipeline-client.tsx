@@ -29,6 +29,8 @@ export interface PipelineJob {
   applied_at: string | null
   evidence_map: Record<string, unknown> | null
   score: number | null
+  score_gaps: string[] | null
+  intelligence: Record<string, unknown> | null
   updated_at: string | null
   created_at: string
 }

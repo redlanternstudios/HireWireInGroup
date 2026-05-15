@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { BarChart3, Lock, TrendingUp, Target, ArrowRight, Sparkles } from "lucide-react"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 
 export const dynamic = "force-dynamic"
 
@@ -13,7 +14,7 @@ export default async function AnalyticsPage() {
 
   const [{ data: userData }, { data: jobs }] = await Promise.all([
     supabase.from("users").select("plan_type").eq("id", user.id).single(),
-    supabase.from("jobs").select("id, status, created_at, job_scores(overall_score)").eq("user_id", user.id).is("deleted_at", null).order("created_at", { ascending: false }),
+    supabase.from("jobs").select("id, status, created_at, quality_passed, generated_resume, generated_cover_letter, evidence_map, applied_at, job_scores(overall_score)").eq("user_id", user.id).is("deleted_at", null).order("created_at", { ascending: false }),
   ])
 
   const isPro = userData?.plan_type === "pro"
@@ -40,7 +41,7 @@ export default async function AnalyticsPage() {
 
   const breakdownRows = [
     { label: "Draft / In progress", count: jobList.filter(j => ["draft", "analyzing", "generating", "analyzed"].includes(j.status)).length, color: "bg-stone-400" },
-    { label: "Ready to apply",      count: jobList.filter(j => j.status === "ready").length,        color: "bg-emerald-500" },
+    { label: "Ready to apply",      count: jobList.filter(j => evaluateReadiness(j).stage === "ready").length, color: "bg-emerald-500" },
     { label: "Applied",             count: jobList.filter(j => j.status === "applied").length,      color: "bg-blue-500" },
     { label: "Interviewing",        count: jobList.filter(j => j.status === "interviewing").length, color: "bg-blue-400" },
     { label: "Offered",             count: jobList.filter(j => j.status === "offered").length,      color: "bg-violet-500" },

@@ -471,33 +471,68 @@ export async function getJobById(id: string): Promise<Job | null> {
   } as unknown as Job
 }
 
+const OUTCOME_STATUSES = ["rejected", "offered", "interviewing"] as const
+type OutcomeStatus = typeof OUTCOME_STATUSES[number]
+
 export async function updateJobStatus(
   id: string,
   status: JobStatus,
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
-  
-  // Get current user
+
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) {
     return { success: false, error: "Not authenticated" }
   }
 
   const canonicalStatus = normalizeJobStatus(status)
+  const isOutcome = (OUTCOME_STATUSES as readonly string[]).includes(canonicalStatus)
+
+  // Fetch job metadata before update so we can include it in the outcome event
+  let jobMeta: { role_title: string | null; company_name: string | null; score: number | null; fit: string | null } | null = null
+  if (isOutcome) {
+    const { data } = await supabase
+      .from("jobs")
+      .select("role_title, company_name, score, fit")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single()
+    jobMeta = data
+  }
 
   const { error } = await supabase
     .from("jobs")
     .update({ status: canonicalStatus })
     .eq("id", id)
-    .eq("user_id", user.id) // Ensure user can only update their own jobs
+    .eq("user_id", user.id)
 
   if (error) {
     console.error("Error updating job status:", error)
     return { success: false, error: error.message }
   }
 
+  // Emit outcome event — non-blocking, never fails the mutation
+  if (isOutcome) {
+    void handleDomainEvent({
+      supabase,
+      event_type: "outcome_updated",
+      job_id: id,
+      user_id: user.id,
+      source: "user",
+      payload: {
+        outcome: canonicalStatus as OutcomeStatus,
+        role_title: jobMeta?.role_title ?? null,
+        company_name: jobMeta?.company_name ?? null,
+        fit_score: jobMeta?.score ?? null,
+        fit_band: jobMeta?.fit ?? null,
+        recorded_at: new Date().toISOString(),
+      },
+    })
+  }
+
   revalidatePath("/jobs")
   revalidatePath(`/jobs/${id}`)
+  revalidatePath("/applications")
   revalidatePath("/")
 
   return { success: true }

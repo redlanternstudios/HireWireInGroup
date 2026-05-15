@@ -30,7 +30,7 @@ export async function saveDocumentEdits(
       edited_cover_letter: editedCoverLetter,
       last_edited_at: new Date().toISOString(),
       quality_passed: false,
-      package_review_status: 'needs_review',
+      generation_status: 'needs_review',
     })
     .eq('id', jobId)
     .eq('user_id', user.id)
@@ -74,7 +74,7 @@ export async function resetDocumentEdits(
       edited_resume: null,
       edited_cover_letter: null,
       last_edited_at: null,
-      package_review_status: 'needs_review',
+      generation_status: 'needs_review',
     })
     .eq('id', jobId)
     .eq('user_id', user.id)
@@ -153,7 +153,7 @@ export async function saveDocumentFormatSettings(
       resume_font: font,
       format_recommendation_reason: recommendationReason,
       // Format/font changes require re-review of the package
-      package_review_status: 'needs_review',
+      generation_status: 'needs_review',
     })
     .eq('id', jobId)
     .eq('user_id', user.id)

@@ -25,6 +25,7 @@ import {
 } from "@/lib/job-workflow"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import type { Job } from "@/lib/types"
+import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
 
 export const dynamic = "force-dynamic"
 
@@ -123,11 +124,18 @@ function NextStepBanner({ workflow, jobId, hasDocs }: {
           <p className="text-sm font-semibold text-foreground">Materials ready</p>
           <p className="text-xs text-muted-foreground">Your tailored resume and cover letter are generated.</p>
         </div>
-        <Link href={`/jobs/${jobId}/documents`} className="shrink-0">
-          <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-            <FileText className="h-3.5 w-3.5" /> View documents
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link href={`/jobs/${jobId}/resume`}>
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+              <Zap className="h-3.5 w-3.5" /> Intelligence
+            </Button>
+          </Link>
+          <Link href={`/jobs/${jobId}/documents`}>
+            <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
+              <FileText className="h-3.5 w-3.5" /> Documents
+            </Button>
+          </Link>
+        </div>
       </div>
     )
   }
@@ -324,6 +332,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 <Button className="hw-btn-primary">Check Apply Gate</Button>
               </Link>
             </div>
+          )}
+          {/* Outcome Tracker — visible once applied or in active pipeline */}
+          {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
+            <OutcomeTracker
+              jobId={id}
+              currentOutcome={(job as Record<string, unknown>).outcome as string | null}
+              currentStatus={job.status}
+            />
           )}
         </>
       )}

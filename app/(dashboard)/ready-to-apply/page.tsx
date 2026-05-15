@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { AlertTriangle, CheckSquare, FileText, Plus, ShieldCheck } from "lucide-react"
+import { AlertTriangle, CheckSquare, FileText, Plus, ShieldCheck, Star } from "lucide-react"
 
 import ReadinessChecklist from "@/components/ReadinessChecklist"
 import { Button } from "@/components/ui/button"
@@ -26,14 +26,33 @@ export default async function ReadyToApplyPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-  const { data: jobs } = await supabase
-    .from("jobs")
-    .select("id, role_title, company_name, status, generated_resume, generated_cover_letter, quality_passed, evidence_map, generation_timestamp, created_at, applied_at")
-    .eq("user_id", user.id)
-    .is("deleted_at", null)
-    .not("status", "in", "(applied,interviewing,offered,rejected,archived)")
-    .order("updated_at", { ascending: false })
-    .limit(100)
+  const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+
+  const [{ data: jobs }, { data: recentReadyEvents }] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select("id, role_title, company_name, status, generated_resume, generated_cover_letter, quality_passed, evidence_map, generation_timestamp, created_at, applied_at")
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .not("status", "in", "(applied,interviewing,offered,rejected,archived)")
+      .order("updated_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("domain_events")
+      .select("job_id, payload")
+      .eq("user_id", user.id)
+      .eq("event_type", "readiness_changed")
+      .gte("created_at", cutoff48h)
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ])
+
+  const recentlyReadyJobIds = new Set(
+    (recentReadyEvents ?? [])
+      .filter(e => (e.payload as Record<string, unknown>)?.can_apply === true)
+      .map(e => e.job_id)
+      .filter((id): id is string => id !== null)
+  )
 
   const evaluatedJobs = (jobs ?? []).map(job => ({
     job,
@@ -41,6 +60,7 @@ export default async function ReadyToApplyPage() {
   }))
   const readyJobs = evaluatedJobs.filter(({ readiness }) => readiness.isReady)
   const blockedJobs = evaluatedJobs.filter(({ readiness }) => !readiness.isReady)
+  const justClearedJobs = readyJobs.filter(({ job }) => recentlyReadyJobIds.has(job.id))
 
   return (
     <div className="hw-page">
@@ -91,6 +111,23 @@ export default async function ReadyToApplyPage() {
         </div>
       ) : (
         <div className="space-y-8">
+
+          {justClearedJobs.length > 0 && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5 flex items-start gap-3">
+              <Star className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">
+                  {justClearedJobs.length === 1
+                    ? "1 job just cleared all readiness checks"
+                    : `${justClearedJobs.length} jobs just cleared all readiness checks`}
+                </p>
+                <p className="text-xs text-emerald-700 mt-0.5">
+                  {justClearedJobs.map(({ job }) => job.role_title ?? "Untitled").join(", ")} — review and apply before momentum fades.
+                </p>
+              </div>
+            </div>
+          )}
+
           <section>
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
