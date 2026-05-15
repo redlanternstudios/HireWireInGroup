@@ -65,7 +65,10 @@ export async function updateSession(request: NextRequest) {
 
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone()
-    url.pathname = '/jobs'
+    // Honor ?redirect= param if present, otherwise send to dashboard
+    const redirectParam = request.nextUrl.searchParams.get('redirect')
+    url.pathname = redirectParam && redirectParam.startsWith('/') ? redirectParam : '/dashboard'
+    url.search = ''
     return NextResponse.redirect(url)
   }
 
