@@ -1,21 +1,26 @@
 // CoachRecommendations: Generate contextual, workflow-aware, actionable recommendations
-import { deduplicateRecommendations, filterByCooldown } from "./deduplicate"
-import { sortRecommendations } from "./priority"
+import { deduplicateRecommendations, filterByCooldown } from "./deduplicate";
+import { sortRecommendations } from "./priority";
 
 export interface CoachRecommendation {
-  id: string
-  message: string
-  context: string
-  priority: number
-  evidenceKey?: string
-  type?: "blocker" | "next_action" | "improvement" | "insight" | "motivation"
+  id: string;
+  message: string;
+  context: string;
+  priority: number;
+  evidenceKey?: string;
+  type?: "blocker" | "next_action" | "improvement" | "insight" | "motivation";
 }
 
-export function generateRecommendations(context: any, signals: any[]): CoachRecommendation[] {
+export function generateRecommendations(
+  context: any,
+  signals: any[],
+): CoachRecommendation[] {
   // Implement recommendation logic using context and signals
   // Example: priorRecommendations = [{ id, lastShown }]
-  let recs: CoachRecommendation[] = []
-  const priorRecommendations = Array.isArray(context.priorRecommendations) ? context.priorRecommendations : []
+  let recs: CoachRecommendation[] = [];
+  const priorRecommendations = Array.isArray(context.priorRecommendations)
+    ? context.priorRecommendations
+    : [];
 
   // Blockers first
   if (Array.isArray(context.blockers) && context.blockers.length > 0) {
@@ -26,8 +31,8 @@ export function generateRecommendations(context: any, signals: any[]): CoachReco
         context: context.workflowStage,
         priority: 1,
         type: "blocker",
-      }))
-    )
+      })),
+    );
   }
 
   // Next action
@@ -38,7 +43,7 @@ export function generateRecommendations(context: any, signals: any[]): CoachReco
       context: context.workflowStage,
       priority: 2,
       type: "next_action",
-    })
+    });
   }
 
   // Example: evidence coverage
@@ -49,7 +54,7 @@ export function generateRecommendations(context: any, signals: any[]): CoachReco
       context: context.workflowStage,
       priority: 3,
       type: "improvement",
-    })
+    });
   }
 
   // Example: fit score
@@ -60,7 +65,7 @@ export function generateRecommendations(context: any, signals: any[]): CoachReco
       context: context.workflowStage,
       priority: 3,
       type: "improvement",
-    })
+    });
   }
 
   // Example: strong alignment
@@ -71,16 +76,16 @@ export function generateRecommendations(context: any, signals: any[]): CoachReco
       context: context.workflowStage,
       priority: 4,
       type: "insight",
-    })
+    });
   }
 
   // Deduplicate
-  recs = deduplicateRecommendations(recs)
+  recs = deduplicateRecommendations(recs);
   // Cooldown
-  recs = filterByCooldown(recs, priorRecommendations)
+  recs = filterByCooldown(recs, priorRecommendations);
   // Sort by priority
-  recs = sortRecommendations(recs)
-  return recs
+  recs = sortRecommendations(recs);
+  return recs;
 }
 
 // Example recommendations:

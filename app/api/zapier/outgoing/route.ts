@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export async function POST(request: Request) {
+  const auth = await requireUser()
+  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
   try {
     const { eventType, payload } = await request.json()
     const zapierWebhookUrl = process.env.ZAPIER_WEBHOOK_URL

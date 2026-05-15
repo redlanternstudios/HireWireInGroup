@@ -1,11 +1,27 @@
-import Image from "next/image"
-import Link from "next/link"
-import { ArrowRight, CheckCircle2, FileText, Play, Target, TrendingUp, Zap } from "lucide-react"
+import Image from "next/image";
+import Link from "next/link";
+import {
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  Play,
+  Target,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 
 // Logo renders with width-controlled sizing and height:auto to preserve exact
 // aspect ratio — never pass a fixed height or Next.js Image will compress it.
-function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number, mobile?: number, white?: boolean }) {
-  const filter = white ? { filter: "brightness(0) invert(1)" } : {}
+function Logo({
+  desktop = 230,
+  mobile = 160,
+  white = false,
+}: {
+  desktop?: number;
+  mobile?: number;
+  white?: boolean;
+}) {
+  const filter = white ? { filter: "brightness(0) invert(1)" } : {};
   return (
     <>
       {/* Desktop */}
@@ -39,20 +55,34 @@ function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number
         }}
       />
     </>
-  )
+  );
 }
 
 export default function SplashPage() {
   return (
     <div
       className="min-h-screen overflow-x-hidden"
-      style={{ backgroundColor: "#F5F2EE", color: "#090909", fontFamily: "var(--font-inter, Inter, sans-serif)" }}
+      style={{
+        backgroundColor: "#F5F2EE",
+        color: "#090909",
+        fontFamily: "var(--font-inter, Inter, sans-serif)",
+      }}
     >
       {/* ─── NAV ─── */}
-      <header style={{ backgroundColor: "#F5F2EE", borderBottom: "1px solid #DDD6CE" }}>
+      <header
+        style={{
+          backgroundColor: "#F5F2EE",
+          borderBottom: "1px solid #DDD6CE",
+        }}
+      >
         <div
           className="flex items-center justify-between"
-          style={{ maxWidth: 1440, margin: "0 auto", padding: "0 48px", height: 84 }}
+          style={{
+            maxWidth: 1440,
+            margin: "0 auto",
+            padding: "0 48px",
+            height: 84,
+          }}
         >
           {/* logo — subtle red ambient glow, width-controlled, height:auto */}
           <div
@@ -66,7 +96,10 @@ export default function SplashPage() {
           </div>
 
           {/* center nav */}
-          <nav className="hidden md:flex items-center flex-1" style={{ gap: 28 }}>
+          <nav
+            className="hidden md:flex items-center flex-1"
+            style={{ gap: 28 }}
+          >
             {[
               { label: "HOW IT WORKS", href: "#how-it-works" },
               { label: "WHY HIREWIRE", href: "#why-hirewire" },
@@ -129,8 +162,13 @@ export default function SplashPage() {
           </Link>
 
           {/* mobile: logo + hamburger in one row */}
-          <div className="md:hidden flex items-center justify-between w-full" style={{ paddingLeft: 0 }}>
-            <div style={{ filter: "drop-shadow(0 0 14px rgba(216, 0, 0, 0.08))" }}>
+          <div
+            className="md:hidden flex items-center justify-between w-full"
+            style={{ paddingLeft: 0 }}
+          >
+            <div
+              style={{ filter: "drop-shadow(0 0 14px rgba(216, 0, 0, 0.08))" }}
+            >
               <Logo desktop={230} mobile={160} />
             </div>
             <Link
@@ -154,7 +192,11 @@ export default function SplashPage() {
       {/* ─── HERO ─── */}
       <section
         className="relative"
-        style={{ backgroundColor: "#F5F2EE", minHeight: 640, overflow: "hidden" }}
+        style={{
+          backgroundColor: "#F5F2EE",
+          minHeight: 640,
+          overflow: "hidden",
+        }}
       >
         {/* diagonal stripe accent — far left edge */}
         <div
@@ -162,7 +204,8 @@ export default function SplashPage() {
           className="absolute top-0 left-0 bottom-0 hidden md:block"
           style={{
             width: 64,
-            background: "repeating-linear-gradient(135deg, #090909 0px, #090909 10px, transparent 10px, transparent 22px)",
+            background:
+              "repeating-linear-gradient(135deg, #090909 0px, #090909 10px, transparent 10px, transparent 22px)",
             zIndex: 1,
           }}
         />
@@ -172,7 +215,8 @@ export default function SplashPage() {
           className="absolute top-0 left-0 bottom-0 md:hidden"
           style={{
             width: 34,
-            background: "repeating-linear-gradient(135deg, #090909 0px, #090909 8px, transparent 8px, transparent 18px)",
+            background:
+              "repeating-linear-gradient(135deg, #090909 0px, #090909 8px, transparent 8px, transparent 18px)",
             zIndex: 1,
           }}
         />
@@ -189,7 +233,8 @@ export default function SplashPage() {
             height: 480,
             zIndex: 0,
             opacity: 0.06,
-            backgroundImage: "radial-gradient(ellipse at 60% 50%, #D80000 0%, transparent 70%)",
+            backgroundImage:
+              "radial-gradient(ellipse at 60% 50%, #D80000 0%, transparent 70%)",
           }}
         />
 
@@ -232,8 +277,16 @@ export default function SplashPage() {
             >
               CAREER OS
               <span style={{ display: "flex", gap: 2 }}>
-                {[0,1,2,3].map(i => (
-                  <span key={i} style={{ width: 2, height: 10, backgroundColor: "rgba(255,255,255,0.6)", display: "inline-block" }} />
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    style={{
+                      width: 2,
+                      height: 10,
+                      backgroundColor: "rgba(255,255,255,0.6)",
+                      display: "inline-block",
+                    }}
+                  />
                 ))}
               </span>
             </div>
@@ -252,8 +305,7 @@ export default function SplashPage() {
             >
               KNOW BEFORE
               <br />
-              YOU{" "}
-              <span style={{ color: "#D80000" }}>APPLY.</span>
+              YOU <span style={{ color: "#D80000" }}>APPLY.</span>
             </h1>
 
             {/* body */}
@@ -266,11 +318,15 @@ export default function SplashPage() {
                 maxWidth: 400,
               }}
             >
-              HireWire turns each job into a clear application strategy so you know what to fix, what to say, and when you are ready.
+              HireWire turns each job into a clear application strategy so you
+              know what to fix, what to say, and when you are ready.
             </p>
 
             {/* buttons */}
-            <div className="flex flex-col sm:flex-row" style={{ gap: 12, marginBottom: 28 }}>
+            <div
+              className="flex flex-col sm:flex-row"
+              style={{ gap: 12, marginBottom: 28 }}
+            >
               <Link
                 href="/signup"
                 className="inline-flex items-center justify-center gap-2"
@@ -347,18 +403,31 @@ export default function SplashPage() {
       <CtaBand />
 
       {/* ─── FOOTER ─── */}
-      <footer style={{ backgroundColor: "#F5F2EE", borderTop: "1px solid #DDD6CE", padding: "40px 72px 24px" }}>
+      <footer
+        style={{
+          backgroundColor: "#F5F2EE",
+          borderTop: "1px solid #DDD6CE",
+          padding: "40px 72px 24px",
+        }}
+      >
         <div
           className="flex flex-col md:flex-row md:items-start justify-between gap-10"
           style={{ maxWidth: 1440, margin: "0 auto" }}
         >
           {/* brand */}
           <div style={{ maxWidth: 220 }}>
-            <div style={{ filter: "drop-shadow(0 0 12px rgba(216,0,0,0.07))", marginBottom: 12 }}>
+            <div
+              style={{
+                filter: "drop-shadow(0 0 12px rgba(216,0,0,0.07))",
+                marginBottom: 12,
+              }}
+            >
               <Logo desktop={140} mobile={120} />
             </div>
             <p style={{ fontSize: 11, color: "#3A3835", lineHeight: 1.6 }}>
-              Built by RedLantern Studios™<br />By Red, LLC
+              Built by RedLantern Studios™
+              <br />
+              By Red, LLC
             </p>
           </div>
 
@@ -402,12 +471,18 @@ export default function SplashPage() {
                 >
                   {heading}
                 </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
                   {links.map(({ label, href }) => (
                     <Link
                       key={label}
                       href={href}
-                      style={{ fontSize: 13, color: "#3A3835", textDecoration: "none" }}
+                      style={{
+                        fontSize: 13,
+                        color: "#3A3835",
+                        textDecoration: "none",
+                      }}
                     >
                       {label}
                     </Link>
@@ -431,12 +506,13 @@ export default function SplashPage() {
           }}
         >
           <p style={{ fontSize: 11, color: "#999" }}>
-            &copy; {new Date().getFullYear()} RedLantern Studios™. All rights reserved.
+            &copy; {new Date().getFullYear()} RedLantern Studios™. All rights
+            reserved.
           </p>
         </div>
       </footer>
     </div>
-  )
+  );
 }
 
 /* ─── DASHBOARD PREVIEW CARD ─── */
@@ -457,7 +533,10 @@ function DashboardCard() {
       {/* card top bar */}
       <div
         className="flex items-center justify-between"
-        style={{ padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+        style={{
+          padding: "14px 18px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+        }}
       >
         <div className="flex items-center gap-3">
           <Image
@@ -465,7 +544,11 @@ function DashboardCard() {
             alt="HireWire"
             width={80}
             height={53}
-            style={{ width: "80px", height: "auto", filter: "brightness(0) invert(1)" }}
+            style={{
+              width: "80px",
+              height: "auto",
+              filter: "brightness(0) invert(1)",
+            }}
           />
           <span
             style={{
@@ -482,16 +565,43 @@ function DashboardCard() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <CheckCircle2 size={12} style={{ color: "#22c55e" }} />
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>Saved</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+              Saved
+            </span>
           </div>
-          <span style={{ fontSize: 18, color: "rgba(255,255,255,0.3)", lineHeight: 1 }}>⋮</span>
+          <span
+            style={{
+              fontSize: 18,
+              color: "rgba(255,255,255,0.3)",
+              lineHeight: 1,
+            }}
+          >
+            ⋮
+          </span>
         </div>
       </div>
 
       {/* job title */}
       <div style={{ padding: "14px 18px 0" }}>
-        <p style={{ fontSize: 18, fontWeight: 800, color: "#fff", lineHeight: 1.1 }}>Senior Product Manager</p>
-        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginTop: 3 }}>Fintech · San Diego, CA</p>
+        <p
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            color: "#fff",
+            lineHeight: 1.1,
+          }}
+        >
+          Senior Product Manager
+        </p>
+        <p
+          style={{
+            fontSize: 12,
+            color: "rgba(255,255,255,0.45)",
+            marginTop: 3,
+          }}
+        >
+          Fintech · San Diego, CA
+        </p>
       </div>
 
       {/* metrics row */}
@@ -506,53 +616,147 @@ function DashboardCard() {
       >
         {/* readiness */}
         <div style={{ backgroundColor: "#111010", padding: "14px 18px" }}>
-          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 6 }}>
+          <p
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "rgba(255,255,255,0.4)",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
             JOB READINESS SCORE
           </p>
-          <p style={{ fontSize: 36, fontWeight: 900, color: "#fff", lineHeight: 1, marginBottom: 8 }}>74%</p>
-          <div style={{ height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.1)", marginBottom: 6, overflow: "hidden" }}>
+          <p
+            style={{
+              fontSize: 36,
+              fontWeight: 900,
+              color: "#fff",
+              lineHeight: 1,
+              marginBottom: 8,
+            }}
+          >
+            74%
+          </p>
+          <div
+            style={{
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: "rgba(255,255,255,0.1)",
+              marginBottom: 6,
+              overflow: "hidden",
+            }}
+          >
             <div
               style={{
                 height: "100%",
                 width: "74%",
                 borderRadius: 2,
-                background: "linear-gradient(to right, #D80000, #f59e0b, #22c55e)",
+                background:
+                  "linear-gradient(to right, #D80000, #f59e0b, #22c55e)",
               }}
             />
           </div>
-          <p style={{ fontSize: 9, fontWeight: 700, color: "#f59e0b", letterSpacing: "0.08em" }}>
+          <p
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              color: "#f59e0b",
+              letterSpacing: "0.08em",
+            }}
+          >
             STRONG FIT
-            <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 500 }}> WITH MISSING PROOF</span>
+            <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 500 }}>
+              {" "}
+              WITH MISSING PROOF
+            </span>
           </p>
         </div>
 
         {/* resume match */}
         <div style={{ backgroundColor: "#111010", padding: "14px 18px" }}>
-          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 6 }}>
+          <p
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "rgba(255,255,255,0.4)",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
             RESUME MATCH
           </p>
-          <p style={{ fontSize: 36, fontWeight: 900, color: "#22c55e", lineHeight: 1, marginBottom: 6 }}>82%</p>
-          <p style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>Strong</p>
+          <p
+            style={{
+              fontSize: 36,
+              fontWeight: 900,
+              color: "#22c55e",
+              lineHeight: 1,
+              marginBottom: 6,
+            }}
+          >
+            82%
+          </p>
+          <p style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>
+            Strong
+          </p>
         </div>
 
         {/* cover letter */}
         <div style={{ backgroundColor: "#111010", padding: "14px 18px" }}>
-          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 6 }}>
+          <p
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "rgba(255,255,255,0.4)",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
             COVER LETTER STATUS
           </p>
-          <p style={{ fontSize: 18, fontWeight: 800, color: "#fff", lineHeight: 1.2, marginBottom: 4 }}>Not started</p>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Needs attention</p>
+          <p
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: "#fff",
+              lineHeight: 1.2,
+              marginBottom: 4,
+            }}
+          >
+            Not started
+          </p>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+            Needs attention
+          </p>
         </div>
       </div>
 
       {/* missing evidence + coach suggestion */}
       <div
         className="grid"
-        style={{ gridTemplateColumns: "1fr 1fr", gap: 1, backgroundColor: "rgba(255,255,255,0.06)", marginTop: 1 }}
+        style={{
+          gridTemplateColumns: "1fr 1fr",
+          gap: 1,
+          backgroundColor: "rgba(255,255,255,0.06)",
+          marginTop: 1,
+        }}
       >
         {/* missing evidence */}
         <div style={{ backgroundColor: "#111010", padding: "14px 18px" }}>
-          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 10 }}>
+          <p
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "rgba(255,255,255,0.4)",
+              textTransform: "uppercase",
+              marginBottom: 10,
+            }}
+          >
             MISSING EVIDENCE
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -563,8 +767,18 @@ function DashboardCard() {
               { color: "rgba(255,255,255,0.3)", label: "User research depth" },
             ].map(({ color, label }) => (
               <div key={label} className="flex items-center gap-2">
-                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{label}</span>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    backgroundColor: color,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                  {label}
+                </span>
               </div>
             ))}
           </div>
@@ -588,12 +802,39 @@ function DashboardCard() {
 
         {/* coach suggestion */}
         <div style={{ backgroundColor: "#111010", padding: "14px 18px" }}>
-          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 10 }}>
+          <p
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "rgba(255,255,255,0.4)",
+              textTransform: "uppercase",
+              marginBottom: 10,
+            }}
+          >
             COACH SUGGESTION
           </p>
-          <span style={{ fontSize: 28, color: "#D80000", lineHeight: 1, display: "block", marginBottom: 6 }}>&quot;</span>
-          <p style={{ fontSize: 13, color: "#fff", lineHeight: 1.45, fontWeight: 500 }}>
-            Add one strong proof point about impact or ownership before applying.
+          <span
+            style={{
+              fontSize: 28,
+              color: "#D80000",
+              lineHeight: 1,
+              display: "block",
+              marginBottom: 6,
+            }}
+          >
+            &quot;
+          </span>
+          <p
+            style={{
+              fontSize: 13,
+              color: "#fff",
+              lineHeight: 1.45,
+              fontWeight: 500,
+            }}
+          >
+            Add one strong proof point about impact or ownership before
+            applying.
           </p>
           <div className="flex items-center gap-2" style={{ marginTop: 14 }}>
             <div
@@ -609,24 +850,53 @@ function DashboardCard() {
             >
               <span style={{ fontSize: 11 }}>🤖</span>
             </div>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontWeight: 600 }}>AI Coach</span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "rgba(255,255,255,0.45)",
+                fontWeight: 600,
+              }}
+            >
+              AI Coach
+            </span>
           </div>
         </div>
       </div>
 
       {/* application package */}
-      <div style={{ padding: "14px 18px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-        <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 12 }}>
+      <div
+        style={{
+          padding: "14px 18px",
+          borderTop: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <p
+          style={{
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            color: "rgba(255,255,255,0.4)",
+            textTransform: "uppercase",
+            marginBottom: 12,
+          }}
+        >
           APPLICATION PACKAGE
         </p>
         <div className="flex items-center justify-between">
           <div className="flex" style={{ gap: 24 }}>
             {["Resume", "Cover Letter", "Follow Up Plan"].map((item) => (
               <div key={item} className="flex items-center gap-2">
-                <FileText size={14} style={{ color: "rgba(255,255,255,0.4)" }} />
+                <FileText
+                  size={14}
+                  style={{ color: "rgba(255,255,255,0.4)" }}
+                />
                 <div>
-                  <p style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>{item}</p>
-                  <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>Not started</p>
+                  <p style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>
+                    {item}
+                  </p>
+                  <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+                    Not started
+                  </p>
                 </div>
               </div>
             ))}
@@ -650,7 +920,7 @@ function DashboardCard() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 /* ─── OUTCOME STRIP ─── */
@@ -680,15 +950,22 @@ function OutcomeStrip() {
       body: "Measure responses and improve over time.",
       href: "/signup",
     },
-  ]
+  ];
 
   return (
     <section
       id="how-it-works"
-      style={{ borderTop: "1px solid #DDD6CE", borderBottom: "1px solid #DDD6CE", backgroundColor: "#FFFDF8" }}
+      style={{
+        borderTop: "1px solid #DDD6CE",
+        borderBottom: "1px solid #DDD6CE",
+        backgroundColor: "#FFFDF8",
+      }}
     >
       {/* why-hirewire anchor target sits here — same section */}
-      <span id="why-hirewire" style={{ display: "block", visibility: "hidden", height: 0 }} />
+      <span
+        id="why-hirewire"
+        style={{ display: "block", visibility: "hidden", height: 0 }}
+      />
 
       <div
         className="grid"
@@ -740,9 +1017,14 @@ function OutcomeStrip() {
               >
                 {item.title}
               </p>
-              <p style={{ fontSize: 13, color: "#3A3835", lineHeight: 1.5 }}>{item.body}</p>
+              <p style={{ fontSize: 13, color: "#3A3835", lineHeight: 1.5 }}>
+                {item.body}
+              </p>
             </div>
-            <ArrowRight size={14} style={{ flexShrink: 0, color: "#3A3835", marginTop: 2 }} />
+            <ArrowRight
+              size={14}
+              style={{ flexShrink: 0, color: "#3A3835", marginTop: 2 }}
+            />
           </Link>
         ))}
       </div>
@@ -762,17 +1044,27 @@ function OutcomeStrip() {
           >
             <span style={{ color: "#D80000" }}>{item.icon}</span>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "#090909" }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "#090909",
+                }}
+              >
                 {item.title.replace("\n", " ")}
               </p>
-              <p style={{ fontSize: 12, color: "#3A3835", marginTop: 2 }}>{item.body}</p>
+              <p style={{ fontSize: 12, color: "#3A3835", marginTop: 2 }}>
+                {item.body}
+              </p>
             </div>
             <ArrowRight size={14} style={{ color: "#3A3835", flexShrink: 0 }} />
           </Link>
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 /* ─── CTA BAND ─── */
@@ -791,13 +1083,19 @@ function CtaBand() {
         className="absolute top-0 right-0 bottom-0 hidden md:block"
         style={{
           width: 100,
-          background: "repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 10px, transparent 10px, transparent 22px)",
+          background:
+            "repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 10px, transparent 10px, transparent 22px)",
         }}
       />
 
       <div
         className="relative flex flex-col md:flex-row items-center justify-between gap-8"
-        style={{ maxWidth: 1440, margin: "0 auto", padding: "52px 72px", zIndex: 1 }}
+        style={{
+          maxWidth: 1440,
+          margin: "0 auto",
+          padding: "52px 72px",
+          zIndex: 1,
+        }}
       >
         {/* left — logo */}
         <div className="flex-shrink-0">
@@ -806,7 +1104,12 @@ function CtaBand() {
             alt="HireWire"
             width={160}
             height={107}
-            style={{ width: "160px", height: "auto", filter: "brightness(0) saturate(100%) invert(13%) sepia(74%) saturate(3000%) hue-rotate(340deg) brightness(80%)" }}
+            style={{
+              width: "160px",
+              height: "auto",
+              filter:
+                "brightness(0) saturate(100%) invert(13%) sepia(74%) saturate(3000%) hue-rotate(340deg) brightness(80%)",
+            }}
           />
         </div>
 
@@ -826,8 +1129,15 @@ function CtaBand() {
             STOP GUESSING.{" "}
             <span style={{ color: "#D80000" }}>APPLY WITH CLARITY.</span>
           </h2>
-          <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", lineHeight: 1.5 }}>
-            Build stronger applications from real job intelligence, not generic templates.
+          <p
+            style={{
+              fontSize: 15,
+              color: "rgba(255,255,255,0.55)",
+              lineHeight: 1.5,
+            }}
+          >
+            Build stronger applications from real job intelligence, not generic
+            templates.
           </p>
         </div>
 
@@ -851,11 +1161,16 @@ function CtaBand() {
             START YOUR FIRST JOB ANALYSIS <ArrowRight size={14} />
           </Link>
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={13} style={{ color: "rgba(255,255,255,0.4)" }} />
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>No credit card required</span>
+            <CheckCircle2
+              size={13}
+              style={{ color: "rgba(255,255,255,0.4)" }}
+            />
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+              No credit card required
+            </span>
           </div>
         </div>
       </div>
     </section>
-  )
+  );
 }

@@ -1,5 +1,5 @@
 // Example CoachContext object
-import { CoachContext } from "./build-context"
+import { CoachContext } from "./build-context";
 
 export const exampleCoachContext: CoachContext = {
   workflowStage: "gap_resolution",
@@ -20,4 +20,4 @@ export const exampleCoachContext: CoachContext = {
   userPreferences: { tone: "concise" },
   currentPage: "/jobs/123/gap-resolution",
   currentAction: "reviewing_gaps",
-}
+};

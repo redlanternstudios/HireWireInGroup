@@ -7,4 +7,4 @@ export const COACH_UX_RULES = {
   avoidConstantSpeech: true,
   avoidRoboticTone: true,
   avoidRepetition: true,
-}
+};

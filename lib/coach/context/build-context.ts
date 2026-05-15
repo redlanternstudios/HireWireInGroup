@@ -1,17 +1,17 @@
-import { CoachBehaviorMode } from "../behavior/modes"
+import { CoachBehaviorMode } from "../behavior/modes";
 
 export interface CoachContext {
-  workflowStage: string
-  blockers: string[]
-  readiness: number | string
-  evidenceCoverage: number
-  fitScore: number
-  generationHistory: Array<any>
-  applicationHistory: Array<any>
-  recentOutcomes: Array<any>
-  userPreferences: Record<string, any>
-  currentPage: string
-  currentAction: string
+  workflowStage: string;
+  blockers: string[];
+  readiness: number | string;
+  evidenceCoverage: number;
+  fitScore: number;
+  generationHistory: Array<any>;
+  applicationHistory: Array<any>;
+  recentOutcomes: Array<any>;
+  userPreferences: Record<string, any>;
+  currentPage: string;
+  currentAction: string;
 }
 
 // Compile all context into a single object for the Coach
@@ -28,5 +28,5 @@ export function buildCoachContext(params: Partial<CoachContext>): CoachContext {
     userPreferences: params.userPreferences || {},
     currentPage: params.currentPage || "",
     currentAction: params.currentAction || "",
-  }
+  };
 }

@@ -1,10 +1,10 @@
-import { redirect } from "next/navigation"
+import { redirect } from "next/navigation";
 
 export default async function ResumeIntelligencePage({
   params,
 }: {
-  params: Promise<{ id: string }>
+  params: Promise<{ id: string }>;
 }) {
-  const { id } = await params
-  redirect(`/jobs/${id}/documents`)
+  const { id } = await params;
+  redirect(`/jobs/${id}/documents`);
 }

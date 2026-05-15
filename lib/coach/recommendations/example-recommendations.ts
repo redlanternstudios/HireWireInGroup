@@ -1,5 +1,5 @@
 // Example recommendation payloads
-import { CoachRecommendation } from "./index"
+import { CoachRecommendation } from "./index";
 
 export const exampleRecommendations: CoachRecommendation[] = [
   {
@@ -12,7 +12,8 @@ export const exampleRecommendations: CoachRecommendation[] = [
   },
   {
     id: "refine-summary",
-    message: "I recommend refining your summary instead of regenerating the full resume.",
+    message:
+      "I recommend refining your summary instead of regenerating the full resume.",
     context: "generation",
     priority: 2,
     type: "next_action",
@@ -24,4 +25,4 @@ export const exampleRecommendations: CoachRecommendation[] = [
     priority: 4,
     type: "insight",
   },
-]
+];

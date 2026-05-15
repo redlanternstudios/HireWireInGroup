@@ -1,7 +1,9 @@
 # COACH_VALIDATION.md
+
 # Verified: 2026-05-10 | Branch: v0/rsemeah-8ad75be8
 
 ## Scope
+
 Career Coach AI: model usage, prompt injection safety, input handling, response quality, session management.
 
 ## Findings

@@ -111,26 +111,26 @@ Evidence must feed readiness. Evidence pages may manage proof points, but job-le
 
 ## 6. Canonical Sidebar Routes
 
-| Route | Purpose | File |
-|---|---|---|
-| `/dashboard` | Command center | `app/(dashboard)/dashboard/page.tsx` |
-| `/coach` | State-aware guidance | `app/(dashboard)/coach/page.tsx` |
-| `/jobs` | All jobs pipeline | `app/(dashboard)/jobs/page.tsx` |
-| `/jobs/new` | Add job | `app/(dashboard)/jobs/new/page.tsx` |
-| `/jobs/[id]` | Job detail and progress | `app/(dashboard)/jobs/[id]/page.tsx` |
+| Route                       | Purpose                            | File                                                |
+| --------------------------- | ---------------------------------- | --------------------------------------------------- |
+| `/dashboard`                | Command center                     | `app/(dashboard)/dashboard/page.tsx`                |
+| `/coach`                    | State-aware guidance               | `app/(dashboard)/coach/page.tsx`                    |
+| `/jobs`                     | All jobs pipeline                  | `app/(dashboard)/jobs/page.tsx`                     |
+| `/jobs/new`                 | Add job                            | `app/(dashboard)/jobs/new/page.tsx`                 |
+| `/jobs/[id]`                | Job detail and progress            | `app/(dashboard)/jobs/[id]/page.tsx`                |
 | `/jobs/[id]/evidence-match` | Evidence gaps and mapping guidance | `app/(dashboard)/jobs/[id]/evidence-match/page.tsx` |
-| `/jobs/[id]/documents` | Generated materials review | `app/(dashboard)/jobs/[id]/documents/page.tsx` |
-| `/ready-to-apply` | Apply gate | `app/(dashboard)/ready-to-apply/page.tsx` |
-| `/ready-queue` | Compatibility redirect | `app/(dashboard)/ready-queue/page.tsx` |
-| `/applications` | Applied/outcome tracker | `app/(dashboard)/applications/page.tsx` |
-| `/documents` | Materials library | `app/(dashboard)/documents/page.tsx` |
-| `/evidence` | Career Context | `app/(dashboard)/evidence/page.tsx` |
-| `/career-context` | Compatibility redirect | `app/(dashboard)/career-context/page.tsx` |
-| `/analytics` | Pipeline analytics | `app/(dashboard)/analytics/page.tsx` |
-| `/logs` | Activity log | `app/(dashboard)/logs/page.tsx` |
-| `/profile` | User profile | `app/(dashboard)/profile/page.tsx` |
-| `/billing` | Plan and billing | `app/(dashboard)/billing/page.tsx` |
-| `/settings` | Settings | `app/(dashboard)/settings/page.tsx` |
+| `/jobs/[id]/documents`      | Generated materials review         | `app/(dashboard)/jobs/[id]/documents/page.tsx`      |
+| `/ready-to-apply`           | Apply gate                         | `app/(dashboard)/ready-to-apply/page.tsx`           |
+| `/ready-queue`              | Compatibility redirect             | `app/(dashboard)/ready-queue/page.tsx`              |
+| `/applications`             | Applied/outcome tracker            | `app/(dashboard)/applications/page.tsx`             |
+| `/documents`                | Materials library                  | `app/(dashboard)/documents/page.tsx`                |
+| `/evidence`                 | Career Context                     | `app/(dashboard)/evidence/page.tsx`                 |
+| `/career-context`           | Compatibility redirect             | `app/(dashboard)/career-context/page.tsx`           |
+| `/analytics`                | Pipeline analytics                 | `app/(dashboard)/analytics/page.tsx`                |
+| `/logs`                     | Activity log                       | `app/(dashboard)/logs/page.tsx`                     |
+| `/profile`                  | User profile                       | `app/(dashboard)/profile/page.tsx`                  |
+| `/billing`                  | Plan and billing                   | `app/(dashboard)/billing/page.tsx`                  |
+| `/settings`                 | Settings                           | `app/(dashboard)/settings/page.tsx`                 |
 
 Do not add sidebar routes for legacy concepts unless the route exists and is wired to readiness.
 
@@ -151,7 +151,7 @@ All API routes must authenticate the user and tenant-scope reads/writes with `us
 Preferred pattern:
 
 ```ts
-import { requireUser } from "@/lib/supabase/require-user"
+import { requireUser } from "@/lib/supabase/require-user";
 ```
 
 If a route still uses `supabase.auth.getUser()`, it must still:
@@ -163,7 +163,7 @@ If a route still uses `supabase.auth.getUser()`, it must still:
 Never silently swallow Supabase errors. Log with:
 
 ```ts
-console.error("[HireWire] ...", error)
+console.error("[HireWire] ...", error);
 ```
 
 ---
@@ -215,28 +215,28 @@ JSONB columns may be `null`, `{}`, or arrays. Guard before `.map()`.
 Correct:
 
 ```ts
-const items = Array.isArray(data.column) ? data.column : []
+const items = Array.isArray(data.column) ? data.column : [];
 ```
 
 Forbidden:
 
 ```ts
-const items = data.column || []
+const items = data.column || [];
 ```
 
 ---
 
 ## 11. Column Name Map
 
-| Table | Use | Never use |
-|---|---|---|
-| `source_resumes` | `file_name` | `filename` |
-| `source_resumes` | `parsed_text` | `content_text` |
-| `jobs` | `role_title` | `title` |
-| `jobs` | `company_name` | `company` |
-| `job_analyses` | `title`, `company` | `jobs.title`, `jobs.company` |
-| `user_profile` | `website_url`, `github_url` | `linkedin_url`, `portfolio_url` |
-| `evidence_library` | `confidence_level` | `confidence_score` as display authority |
+| Table              | Use                         | Never use                               |
+| ------------------ | --------------------------- | --------------------------------------- |
+| `source_resumes`   | `file_name`                 | `filename`                              |
+| `source_resumes`   | `parsed_text`               | `content_text`                          |
+| `jobs`             | `role_title`                | `title`                                 |
+| `jobs`             | `company_name`              | `company`                               |
+| `job_analyses`     | `title`, `company`          | `jobs.title`, `jobs.company`            |
+| `user_profile`     | `website_url`, `github_url` | `linkedin_url`, `portfolio_url`         |
+| `evidence_library` | `confidence_level`          | `confidence_score` as display authority |
 
 ---
 
@@ -256,16 +256,16 @@ const items = data.column || []
 
 Understand the full flow before changing:
 
-| File | Risk |
-|---|---|
-| `lib/readiness/evaluator.ts` | Canonical readiness authority |
-| `lib/actions/apply.ts` | Only apply mutation path |
-| `app/(dashboard)/ready-to-apply/page.tsx` | Apply gate |
-| `app/api/generate-documents/route.ts` | Writes generated materials and quality |
-| `lib/canonical-evidence.ts` | Evidence normalization |
-| `lib/coach/claim-validator.ts` | Claim safety |
-| `lib/coach/drift-scorer.ts` | Drift safety |
-| `lib/contracts/hirewire.ts` | Billing/product contract |
+| File                                      | Risk                                   |
+| ----------------------------------------- | -------------------------------------- |
+| `lib/readiness/evaluator.ts`              | Canonical readiness authority          |
+| `lib/actions/apply.ts`                    | Only apply mutation path               |
+| `app/(dashboard)/ready-to-apply/page.tsx` | Apply gate                             |
+| `app/api/generate-documents/route.ts`     | Writes generated materials and quality |
+| `lib/canonical-evidence.ts`               | Evidence normalization                 |
+| `lib/coach/claim-validator.ts`            | Claim safety                           |
+| `lib/coach/drift-scorer.ts`               | Drift safety                           |
+| `lib/contracts/hirewire.ts`               | Billing/product contract               |
 
 ---
 

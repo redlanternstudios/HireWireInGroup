@@ -18,11 +18,12 @@ export const runtime = 'nodejs'
 export async function POST(req: NextRequest) {
   const correlationId = createCorrelationId()
 
-  // Authenticate — exports are user-scoped operations
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  // Export is allowed without auth (client-side use), but we track if authed
-  const userId = user?.id ?? null
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  const userId = user.id
 
   let body: { text?: unknown; filename?: unknown; resumeFormat?: unknown; resumeFont?: unknown; job_id?: unknown }
   try {
@@ -97,21 +98,20 @@ export async function POST(req: NextRequest) {
     const buffer = await Packer.toBuffer(doc)
     const safeName = filename.replace(/[^a-z0-9\-_]/gi, '').slice(0, 64) || 'document'
 
-    if (userId) {
-      void handleDomainEvent({
-        supabase,
-        event_type: 'export_generated',
-        job_id: jobId,
-        user_id: userId,
-        source: 'export_route',
-        payload: {
-          filename: safeName,
-          resume_format: resumeFormat,
-          resume_font: resumeFont,
-          correlation_id: correlationId,
-        },
-      })
-    }
+    void handleDomainEvent({
+      supabase,
+      event_type: 'resume_docx_exported',
+      job_id: jobId,
+      user_id: userId,
+      source: 'export_route',
+      payload: {
+        format: 'docx',
+        filename: safeName,
+        resume_format: resumeFormat,
+        resume_font: resumeFont,
+        correlation_id: correlationId,
+      },
+    })
 
     return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,

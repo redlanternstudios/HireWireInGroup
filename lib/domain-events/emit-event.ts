@@ -13,17 +13,17 @@
  * The emitter also triggers route revalidation via the invalidation map.
  */
 
-import { createClient } from "@/lib/supabase/server"
-import { revalidatePath } from "next/cache"
-import type { DomainEventInput, DomainEvent } from "./event-types"
-import { relayToAutomation } from "./relay-to-automation"
+import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+import type { DomainEventInput, DomainEvent } from "./event-types";
+import { relayToAutomation } from "./relay-to-automation";
 
-type ServerSupabase = Awaited<ReturnType<typeof createClient>>
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
 
-let _idCounter = 0
+let _idCounter = 0;
 function generateEventId(): string {
-  _idCounter = (_idCounter + 1) % 1_000_000
-  return `evt_${Date.now()}_${_idCounter.toString().padStart(6, "0")}`
+  _idCounter = (_idCounter + 1) % 1_000_000;
+  return `evt_${Date.now()}_${_idCounter.toString().padStart(6, "0")}`;
 }
 
 export async function emitDomainEvent(input: DomainEventInput): Promise<void> {
@@ -31,25 +31,25 @@ export async function emitDomainEvent(input: DomainEventInput): Promise<void> {
     ...input,
     event_id: generateEventId(),
     timestamp: new Date().toISOString(),
-  }
+  };
 
   // Revalidate affected routes synchronously — these are cheap Next.js cache tags
   for (const route of event.affected_routes) {
     try {
-      revalidatePath(route)
+      revalidatePath(route);
     } catch {
       // revalidatePath is a no-op outside request context — safe to ignore
     }
   }
 
   // Write to domain_events (primary) or audit_events (fallback) — non-blocking
-  void writeToPersistence(event)
+  void writeToPersistence(event);
 }
 
 async function writeToPersistence(event: DomainEvent): Promise<void> {
   try {
-    const supabase = await createClient()
-    void writeEvent(supabase, event)
+    const supabase = await createClient();
+    void writeEvent(supabase, event);
   } catch {
     // Never throw — audit logging is non-blocking
   }
@@ -62,26 +62,29 @@ async function writeToPersistence(event: DomainEvent): Promise<void> {
  */
 export async function emitDomainEventWithClient(
   supabase: ServerSupabase,
-  input: DomainEventInput
+  input: DomainEventInput,
 ): Promise<void> {
   const event: DomainEvent = {
     ...input,
     event_id: generateEventId(),
     timestamp: new Date().toISOString(),
-  }
+  };
 
   for (const route of event.affected_routes) {
     try {
-      revalidatePath(route)
+      revalidatePath(route);
     } catch {
       // safe
     }
   }
 
-  void writeEvent(supabase, event)
+  void writeEvent(supabase, event);
 }
 
-async function writeEvent(supabase: ServerSupabase, event: DomainEvent): Promise<void> {
+async function writeEvent(
+  supabase: ServerSupabase,
+  event: DomainEvent,
+): Promise<void> {
   try {
     const { error: domainError } = await supabase.from("domain_events").insert({
       event_id: event.event_id,
@@ -96,11 +99,11 @@ async function writeEvent(supabase: ServerSupabase, event: DomainEvent): Promise
       severity: event.severity,
       metadata: event.metadata,
       created_at: event.timestamp,
-    })
+    });
 
     if (!domainError) {
-      void relayToAutomation(event)
-      return
+      void relayToAutomation(event);
+      return;
     }
 
     // Fallback: audit_events (always exists)
@@ -109,7 +112,10 @@ async function writeEvent(supabase: ServerSupabase, event: DomainEvent): Promise
       job_id: event.job_id,
       event_type: event.event_type,
       outcome: event.severity === "error" ? "error" : "success",
-      reason: JSON.stringify({ invalidates: event.invalidates, source: event.source }),
+      reason: JSON.stringify({
+        invalidates: event.invalidates,
+        source: event.source,
+      }),
       metadata: {
         event_id: event.event_id,
         payload: event.payload,
@@ -119,10 +125,10 @@ async function writeEvent(supabase: ServerSupabase, event: DomainEvent): Promise
         ...event.metadata,
       },
       created_at: event.timestamp,
-    })
+    });
 
     // Relay to Zapier/MCP automation after fallback persistence too (non-blocking)
-    void relayToAutomation(event)
+    void relayToAutomation(event);
   } catch {
     // Audit logging must never throw into the mutation path
   }

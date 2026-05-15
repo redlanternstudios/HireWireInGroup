@@ -1,5 +1,7 @@
 # GENERATION_STRATEGY.md
+
 # HireWire Generation Strategy Decision Tree
+
 # Version: 1.0.0
 
 ---
@@ -11,6 +13,7 @@ immediately after the evidence map is built. It is the primary control surface
 that determines how the AI writes — and whether it writes at all.
 
 The strategy is derived from two inputs:
+
 1. **Requirement coverage** — what percentage of required qualifications the
    evidence_library covers, as computed by the evidence-map step.
 2. **Evidence quality** — percentage of evidence items with `confidence_level = "high"`.
@@ -51,6 +54,7 @@ requirementCoverage ≥80% AND evidenceQuality ≥70%
 ---
 
 ## Regeneration Rules
+
 - Never allow random regenerate.
 - Every regeneration requires intent.
 - Default regeneration is targeted by section.
@@ -60,6 +64,7 @@ requirementCoverage ≥80% AND evidenceQuality ≥70%
 - Store full snapshots, not diffs.
 
 ## Generation Flow
+
 1. Job analysis must exist and be valid.
 2. Requirement graph must exist or be created.
 3. Evidence match must meet minimum threshold or require user approval.
@@ -76,6 +81,7 @@ letter generation prompts. These are defined in
 `lib/coach/generation-strategy.ts::STRATEGY_PROMPT_FRAGMENTS`.
 
 The fragments:
+
 - Tell the AI how confident to sound
 - Define what framing is permitted
 - Prohibit specific language patterns for stretch strategies
@@ -100,6 +106,7 @@ Beyond coverage thresholds, `do_not_generate` is also triggered when:
 ## Strategy Persistence
 
 The selected strategy is stored in:
+
 - `jobs.resume_strategy` — the string enum value
 - `jobs.score_reasoning.strategy` — full strategy decision object (JSON)
 - `generation_governance_runs.strategy_decision` — full JSONB record per run

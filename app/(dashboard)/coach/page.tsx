@@ -40,6 +40,10 @@ const EVENT_LABEL: Record<string, string> = {
   package_reviewed: "Package accepted",
   package_invalidated: "Package flagged for review",
   export_generated: "Document exported",
+  resume_preview_opened: "Resume previewed",
+  resume_docx_exported: "Resume downloaded (DOCX)",
+  resume_txt_exported: "Resume downloaded (TXT)",
+  resume_print_started: "Resume sent to print",
 };
 
 function timeAgo(iso: string) {
@@ -122,10 +126,11 @@ async function getCoachContext() {
 
     // Find the highest-readiness non-applied job for the "best opportunity" card
     const topJob =
-      jobs
-        .filter((j) => j.status !== "applied")
-        .find((j) => j.quality_passed) ??
-      jobs.find((j) => j.status !== "applied") ??
+      evaluatedJobs
+        .filter(({ readiness }) => readiness.outcome !== "applied")
+        .find(({ readiness }) => readiness.isReady)?.job ??
+      evaluatedJobs.find(({ readiness }) => readiness.outcome !== "applied")
+        ?.job ??
       null;
 
     const urgentReady =
