@@ -89,7 +89,13 @@ async function getCoachContext() {
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
     const readyIds = readyResult.ready ?? []
-    const recentEvents = (eventsResult.data ?? []) as RecentEvent[]
+    const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(e => ({
+      id: e.id,
+      event_type: e.event_type,
+      job_id: e.job_id,
+      payload: (e.metadata ?? {}) as Record<string, unknown>,
+      created_at: e.created_at,
+    }))
     const evaluatedJobs = jobs.map(job => ({ job, readiness: evaluateReadiness(job) }))
 
     const activeJobs = jobs.length
