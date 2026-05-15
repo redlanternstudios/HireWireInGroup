@@ -32,7 +32,8 @@ pnpm dev
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase Dashboard → Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key | Supabase Dashboard → Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side only) | Supabase Dashboard → Settings → API |
-| `GROQ_API_KEY` | Groq API key for all AI operations | [console.groq.com](https://console.groq.com) |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key for document generation | Vercel AI Gateway |
+| `GROQ_API_KEY` | Groq API key for legacy AI operations | [console.groq.com](https://console.groq.com) |
 
 > **Note**: There is no n8n dependency. All orchestration runs inside Next.js API routes.
 

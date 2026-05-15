@@ -13,9 +13,9 @@ export async function acceptApplicationPackage(jobId: string, format: string, fo
   const { error } = await supabase
     .from('jobs')
     .update({
-      package_review_status: 'accepted',
-      package_reviewed_at: new Date().toISOString(),
-      package_reviewed_by: userId,
+      quality_passed: true,
+      generation_status: 'ready',
+      updated_at: new Date().toISOString(),
       resume_format: format,
       resume_font: font,
     })
@@ -54,9 +54,9 @@ export async function markPackageNeedsReview(jobId: string, userId: string, reas
   const { error } = await supabase
     .from('jobs')
     .update({
-      package_review_status: 'needs_review',
-      package_reviewed_at: null,
-      package_reviewed_by: null,
+      quality_passed: false,
+      generation_status: 'needs_review',
+      updated_at: new Date().toISOString(),
     })
     .eq('id', jobId)
     .eq('user_id', userId)

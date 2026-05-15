@@ -331,7 +331,7 @@ export async function POST(request: NextRequest) {
 
   if (!isAnthropicConfigured()) {
     return NextResponse.json(
-      { success: false, error: "AI service not configured. ANTHROPIC_API_KEY required." },
+      { success: false, error: "AI service not configured. AI_GATEWAY_API_KEY required." },
       { status: 500 }
       )
     }
@@ -989,9 +989,6 @@ ${signatureBlock}`
           status: "error",
           generation_status: "failed",
           generation_error: blockReason,
-          governance_passed: false,
-          governance_drift_score: driftResult.score,
-          governance_version: "1.0.0",
         })
         .eq("id", job_id)
         .eq("user_id", userId)
@@ -1183,7 +1180,12 @@ If no issues found, return empty arrays and overall_passed: true.`,
       const retryRequest = new NextRequest(request.url, {
         method: "POST",
         body: retryBody,
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          ...(request.headers.get("cookie")
+            ? { cookie: request.headers.get("cookie") as string }
+            : {}),
+        },
       })
       
       return POST(retryRequest)
@@ -1223,9 +1225,6 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         resume_format: resumeFormatRecommendation.format,
         resume_font: resumeFormatRecommendation.font,
         format_recommendation_reason: resumeFormatRecommendation.reason,
-        governance_passed: true,
-        governance_drift_score: driftResult.score,
-        governance_version: "1.0.0",
     generation_quality_issues: [
       ...allBannedPhrases.map(p => `Banned phrase: "${p}"`),
       ...vaguePatterns.map(p => `Vague pattern: "${p}"`),
@@ -1561,7 +1560,11 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         if (user) {
           await supabase
             .from("jobs")
-            .update({ status: "error" })
+            .update({
+              status: "error",
+              generation_status: "failed",
+              generation_error: error instanceof Error ? error.message : "Generation failed",
+            })
             .eq("id", job_id)
             .eq("user_id", user.id)
         }

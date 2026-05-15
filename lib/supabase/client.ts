@@ -3,6 +3,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 let supabaseClient: SupabaseClient | null = null
 
+function cleanEnvValue(value: string | undefined) {
+  return value?.replace(/[\u2028\u2029]/g, '').trim()
+}
+
 // Run polyfill immediately on module load (before any createClient calls)
 if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
   try {
@@ -34,8 +38,8 @@ export function createClient(): SupabaseClient {
   }
 
   supabaseClient = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)!,
+    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!
   )
   
   return supabaseClient

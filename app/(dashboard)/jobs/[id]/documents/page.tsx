@@ -37,7 +37,7 @@ export default async function DocumentsPage({
       resume_format, resume_font, format_recommendation_reason,
       generation_timestamp, last_edited_at,
       quality_passed, evidence_map, status, applied_at,
-      package_review_status, voice_drift_result, voice_mode, voice_profile_snapshot
+      generation_status, voice_drift_result, voice_mode, voice_profile_snapshot
     `)
     .eq('id', id)
     .eq('user_id', user.id)
@@ -74,6 +74,10 @@ export default async function DocumentsPage({
   const resumeFont = normalizeResumeFont(job.resume_font ?? recommendation.font, resumeFormat)
   const jobWithFormat = {
     ...job,
+    package_review_status:
+      job.quality_passed === true && job.generation_status === 'ready'
+        ? 'accepted'
+        : 'needs_review',
     resume_format: resumeFormat,
     resume_font: resumeFont,
     format_recommendation_reason: job.format_recommendation_reason ?? recommendation.reason,

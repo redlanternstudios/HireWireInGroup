@@ -23,7 +23,8 @@ type RecentEvent = {
   id: number
   event_type: string
   job_id: string | null
-  payload: Record<string, unknown>
+  payload?: Record<string, unknown>
+  metadata?: Record<string, unknown>
   created_at: string
 }
 
@@ -89,7 +90,14 @@ async function getCoachContext() {
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
     const readyIds = readyResult.ready ?? []
-    const recentEvents = (eventsResult.data ?? []) as RecentEvent[]
+    const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(event => ({
+      id: event.id,
+      event_type: event.event_type,
+      job_id: event.job_id,
+      payload: event.metadata ?? {},
+      metadata: event.metadata ?? {},
+      created_at: event.created_at,
+    }))
     const evaluatedJobs = jobs.map(job => ({ job, readiness: evaluateReadiness(job) }))
 
     const activeJobs = jobs.length
@@ -104,7 +112,7 @@ async function getCoachContext() {
       .find(j => j.quality_passed) ?? jobs.find(j => j.status !== "applied") ?? null
 
     const urgentReady = recentEvents.find(
-      e => e.event_type === "readiness_changed" && (e.payload as Record<string, unknown>)?.can_apply === true
+      e => e.event_type === "readiness_changed" && e.payload?.can_apply === true
     ) ?? null
 
     return {
