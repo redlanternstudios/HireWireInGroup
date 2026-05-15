@@ -18,7 +18,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 
 type RecentEvent = {
-  id: number
+  id: string
   event_type: string
   job_id: string | null
   payload: Record<string, unknown>
