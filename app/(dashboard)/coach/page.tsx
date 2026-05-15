@@ -1,5 +1,3 @@
-"use server"
-
 import { createClient } from "@/lib/supabase/server"
 import { getReadyJobIds } from "@/lib/readiness"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
