@@ -8,8 +8,7 @@
 
 update public.job_scores js
 set
-  overall_score = j.score,
-  updated_at = now()
+  overall_score = j.score
 from public.jobs j
 where js.job_id = j.id
   and j.score is not null
