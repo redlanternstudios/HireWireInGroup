@@ -253,8 +253,8 @@ export default async function ApplicationsPage() {
             <h2 className="hw-section-label mb-2">Quick Links</h2>
             <div className="space-y-2">
               {[
-                { href: "/ready-to-apply", icon: CheckSquare, label: "Ready to Apply", desc: "Submit your next package" },
-                { href: "/jobs",           icon: Send,         label: "Pipeline",       desc: "All jobs in progress" },
+                { href: "/ready-to-apply", icon: CheckSquare, label: "Ready to Apply",  desc: "Submit your next package" },
+                { href: "/jobs",           icon: Send,         label: "Opportunities",  desc: "All jobs in progress" },
               ].map(item => (
                 <Link key={item.href} href={item.href}>
                   <div className="hw-card px-3.5 py-3 flex items-center gap-3 group">

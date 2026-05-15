@@ -30,12 +30,12 @@ export default async function DocumentsPage() {
     <div className="hw-page">
       <div className="hw-page-header">
         <div>
-          <h1 className="hw-page-title">Materials</h1>
+          <h1 className="hw-page-title">Documents</h1>
           <p className="hw-page-subtitle">All generated resumes and cover letters.</p>
         </div>
         <Link href="/jobs/new">
           <Button size="sm" className="hw-btn-primary gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Add Job
+            <Plus className="h-3.5 w-3.5" /> Add Opportunity
           </Button>
         </Link>
       </div>
@@ -57,7 +57,7 @@ export default async function DocumentsPage() {
           </div>
           <Link href="/jobs">
             <Button size="sm" className="hw-btn-primary gap-1.5 mt-1">
-              <Plus className="h-3.5 w-3.5" /> Add a job
+              <Plus className="h-3.5 w-3.5" /> Add an opportunity
             </Button>
           </Link>
         </div>
