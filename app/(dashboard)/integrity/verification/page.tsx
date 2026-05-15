@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { VerificationSimulator } from "../IntegrityCheckers"
-import { isAnthropicConfigured } from "@/lib/adapters/anthropic"
+import { isAnthropicConfigured } from "@/lib/ai/gateway"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0

@@ -15,7 +15,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { parseResumeText } from "@/lib/resumeParser"
-import { isAnthropicConfigured } from "@/lib/adapters/anthropic"
+import { isAnthropicConfigured } from "@/lib/ai/gateway"
 import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
 import { extractEducationFromResumeText, buildEducationEvidenceRows } from "@/lib/resume/extractEducation"
 import { handleDomainEvent } from "@/lib/domain-events"
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     if (!isAnthropicConfigured()) {
       await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
       return NextResponse.json(
-        { error: "AI not configured. Add GROQ_API_KEY to enable resume parsing." },
+        { error: "AI Gateway is not configured. Add AI_GATEWAY_API_KEY to enable resume parsing." },
         { status: 500 }
       )
     }

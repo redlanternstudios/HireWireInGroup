@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { streamText } from "ai"
-import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/adapters/anthropic"
+import { streamText } from "@/lib/ai/gateway"
+import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
 import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
 import { buildCoachContext } from "@/lib/coach/context/build-context"
 import { detectCoachSignals } from "@/lib/coach/signals/engine"
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "AI Coach is not connected in this environment. Add GROQ_API_KEY to enable live coaching.",
+          error: "AI Coach is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live coaching.",
         }),
         { status: 503, headers: { "Content-Type": "application/json" } }
       )

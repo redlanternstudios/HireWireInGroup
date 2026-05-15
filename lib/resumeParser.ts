@@ -8,10 +8,11 @@
  * and this logic can be reused by future parse endpoints.
  */
 
-import { generateText, Output } from "ai"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import type { ParsedResume } from "./mapResumeToEvidence"
-import { CLAUDE_MODELS } from "./adapters/anthropic"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 // ── Zod schemas for structured extraction ─────────────────────────────────
 

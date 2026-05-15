@@ -12,7 +12,8 @@
  * client-supplied input.
  */
 
-import { generateText, Output } from "ai"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
 import {
@@ -28,7 +29,7 @@ import {
   type ExplainableFitScore,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/adapters/anthropic"
+import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
 import { parseJobPage, detectSource } from "@/lib/parsers"
 import { findJobByUrl } from "@/lib/queries/jobs"
 import { linkJobToCompany } from "@/lib/company-utils"

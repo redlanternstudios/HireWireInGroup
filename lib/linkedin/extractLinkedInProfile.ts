@@ -14,9 +14,10 @@
  *   - No data is invented — missing fields get status "missing", value null.
  */
 
-import { generateText, Output } from "ai"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
 import { z } from "zod"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 // ── Status label ──────────────────────────────────────────────────────────────
 

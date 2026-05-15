@@ -115,7 +115,8 @@ export async function POST(request: NextRequest) {
 //
 // Simpler approach: just call the shared extraction logic directly.
 
-import { generateText, Output } from "ai"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import {
   normalizeEvidenceRecord,
@@ -124,7 +125,7 @@ import {
   type CanonicalEvidence,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { parseJobPage } from "@/lib/parsers"
 import {
   inferRoleFromJobTitle,

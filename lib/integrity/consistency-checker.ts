@@ -1,7 +1,8 @@
 // LinkedIn ↔ Resume Consistency Engine
 import { z } from "zod"
-import { generateText, Output } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 export const ConsistencyFlagSchema = z.object({
   field: z.string(),

@@ -7,8 +7,9 @@
  * Called from app/api/resume/upload/route.ts after parseResumeText().
  */
 
-import { generateText, Output } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { z } from "zod"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────

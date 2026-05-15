@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { generateText, Output } from "ai"
+import { Output } from "ai"
+import { generateText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
-import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
   BANNED_PHRASES,
@@ -119,6 +120,13 @@ const CoverLetterWithProvenanceSchema = z.object({
     claim_confidence: z.enum(["high", "medium", "low"]).describe("Confidence in claims made"),
   })).describe("Cover letter paragraphs with provenance"),
 })
+
+type GeneratedResumeBullet = z.infer<typeof ResumeWithProvenanceSchema>["experience_bullets"][number]
+type GeneratedCoverLetterParagraph = z.infer<typeof CoverLetterWithProvenanceSchema>["paragraphs"][number]
+type ConcreteBulletAnalysis = ReturnType<typeof analyzeBulletConcreteness> & {
+  bullet: string
+  has_metric: boolean
+}
 
 // Schema for quality check
 const QualityCheckSchema = z.object({
@@ -1102,7 +1110,7 @@ ${effectiveEducation.map((edu: { degree: string; school: string; year?: string }
 
 Dear Hiring Manager,
 
-${coverLetterWithProvenance.paragraphs.map(p => p.paragraph_text).join("\n\n")}
+${coverLetterWithProvenance.paragraphs.map((p: GeneratedCoverLetterParagraph) => p.paragraph_text).join("\n\n")}
 
 Sincerely,
 
@@ -1165,7 +1173,7 @@ ${signatureBlock}`
     // 2. Drift scoring — measures deviation of generated output from evidence
     const driftResult = scoreDrift({
       bulletTexts: bulletClaimInputs.map(b => ({ text: b.text, evidence_id: b.cited_evidence_id })),
-      paragraphTexts: paragraphClaimInputs.map(p => ({ text: p.text, evidence_id: p.cited_evidence_id })),
+      paragraphTexts: paragraphClaimInputs.map((p: { text: string; cited_evidence_id: string | null }) => ({ text: p.text, evidence_id: p.cited_evidence_id })),
       bulletVerdicts: claimValidation.bulletVerdicts,
       paragraphVerdicts: claimValidation.paragraphVerdicts,
       evidenceSet: governanceEvidence,
@@ -1253,13 +1261,13 @@ ${signatureBlock}`
     const vaguePatterns = detectVaguePatterns(formattedResume)
 
     // Analyze bullet concreteness
-    const bulletAnalysis = resumeWithProvenance.experience_bullets.map(b => ({
+    const bulletAnalysis: ConcreteBulletAnalysis[] = resumeWithProvenance.experience_bullets.map((b: GeneratedResumeBullet) => ({
       bullet: b.bullet_text,
       ...analyzeBulletConcreteness(b.bullet_text),
       has_metric: hasMetrics(b.bullet_text)
     }))
     
-    const weakBullets = bulletAnalysis.filter(b => !b.is_concrete_enough)
+    const weakBullets = bulletAnalysis.filter((b: ConcreteBulletAnalysis) => !b.is_concrete_enough)
     
     // QUANTIFICATION SAFETY CHECK - Detect and flag unsafe invented metrics
     const unsafeMetricsFound: { bullet: string; unsafe_claims: string[]; safe_alternatives: string[] }[] = []
@@ -1321,7 +1329,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
     }
 
     // Build provenance records for storage
-    const bulletProvenance: BulletProvenance[] = resumeWithProvenance.experience_bullets.map(b => ({
+    const bulletProvenance: BulletProvenance[] = resumeWithProvenance.experience_bullets.map((b: GeneratedResumeBullet) => ({
       bullet_text: b.bullet_text,
       source_evidence_id: b.source_evidence_id,
       source_evidence_title: resumeEvidence.find((e: { id: string; source_title: string }) => e.id === b.source_evidence_id)?.source_title || "Unknown",
@@ -1336,7 +1344,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
       concrete_signal_count: analyzeBulletConcreteness(b.bullet_text).concrete_signal_count
     }))
 
-    const paragraphProvenance: ParagraphProvenance[] = coverLetterWithProvenance.paragraphs.map(p => ({
+    const paragraphProvenance: ParagraphProvenance[] = coverLetterWithProvenance.paragraphs.map((p: GeneratedCoverLetterParagraph) => ({
       paragraph_text: p.paragraph_text,
       evidence_used: p.evidence_ids_used,
       matched_job_theme: p.job_theme_addressed,
@@ -1425,7 +1433,7 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
     generation_quality_issues: [
       ...allBannedPhrases.map(p => `Banned phrase: "${p}"`),
       ...vaguePatterns.map(p => `Vague pattern: "${p}"`),
-      ...weakBullets.map(b => `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`),
+      ...weakBullets.map((b: ConcreteBulletAnalysis) => `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`),
       ...unsafeMetricsFound.map(m => `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || 'qualitative language'}"`),
       ...qualityCheck.invented_claims,
       ...qualityCheck.vague_bullets,
@@ -1594,7 +1602,7 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         .update({
           matched_skills: generatedEvidenceMap.matched_skills,
           matched_tools: generatedEvidenceMap.matched_tools,
-          matched_projects: generatedEvidenceMap.matched_projects.map(p => p.project_name),
+          matched_projects: generatedEvidenceMap.matched_projects.map((p: { project_name: string }) => p.project_name),
           known_gaps: generatedEvidenceMap.gaps,
           ats_match_score: generatedEvidenceMap.fit_score,
         })
@@ -1694,7 +1702,7 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         score: qualityScore,
         banned_phrases_found: allBannedPhrases,
         vague_patterns_found: vaguePatterns,
-        weak_bullets: weakBullets.map(b => b.bullet),
+        weak_bullets: weakBullets.map((b: ConcreteBulletAnalysis) => b.bullet),
         issues: {
           invented_claims: qualityCheck.invented_claims,
           vague_bullets: qualityCheck.vague_bullets,

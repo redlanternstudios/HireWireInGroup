@@ -5,8 +5,8 @@
  * Body: { content: string }
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { generateText } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { generateText } from "@/lib/ai/gateway"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { createClient } from "@/lib/supabase/server"
 import {
   buildCoachSystemPrompt,
