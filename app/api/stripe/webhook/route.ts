@@ -6,9 +6,11 @@ import type Stripe from "stripe"
 
 // Lazy init the admin client at request time (not module load) to avoid build errors
 function getSupabaseAdmin() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
+  if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SECRET_KEY")
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    serviceRoleKey
   )
 }
 

@@ -10,7 +10,8 @@ function cleanEnvValue(value: string | undefined) {
 const getSupabaseConfig = () => {
   const supabaseUrl = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)
   const supabaseAnonKey = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-  const supabaseServiceRoleKey = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY)
+  // Accept SUPABASE_SECRET_KEY as alias (Supabase integration stores it under that name)
+  const supabaseServiceRoleKey = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY)
 
   if (!supabaseUrl) {
     throw new Error(

@@ -3,11 +3,12 @@ import { NextResponse } from "next/server"
 export async function POST(request: Request) {
   try {
     const { eventType, payload } = await request.json()
-    const zapierWebhookUrl = process.env.ZAPIER_WEBHOOK_URL
+    // Accept N8N_JOB_INTAKE_WEBHOOK_URL as alias for ZAPIER_WEBHOOK_URL
+    const zapierWebhookUrl = process.env.ZAPIER_WEBHOOK_URL || process.env.N8N_JOB_INTAKE_WEBHOOK_URL
 
     if (!zapierWebhookUrl) {
       return NextResponse.json(
-        { error: "Zapier webhook URL not configured" },
+        { error: "Webhook URL not configured (set ZAPIER_WEBHOOK_URL or N8N_JOB_INTAKE_WEBHOOK_URL)" },
         { status: 500 }
       )
     }
