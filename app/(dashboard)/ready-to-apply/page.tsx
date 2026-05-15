@@ -71,8 +71,8 @@ export default async function ReadyToApplyPage() {
           <p className="hw-page-subtitle">Apply only after the readiness checklist clears, or log an explicit override.</p>
         </div>
         <Link href="/jobs/new">
-          <Button size="sm" className="hw-btn-primary gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Add Job
+            <Button size="sm" className="hw-btn-primary gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> Add Opportunity
           </Button>
         </Link>
       </div>
@@ -104,8 +104,8 @@ export default async function ReadyToApplyPage() {
             </p>
           </div>
           <Link href="/jobs/new">
-            <Button size="sm" className="hw-btn-primary gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Add a job
+              <Button size="sm" className="hw-btn-primary gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Add an opportunity
             </Button>
           </Link>
         </div>

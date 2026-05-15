@@ -226,7 +226,7 @@ export default async function DashboardPage() {
           </button>
           <Link href="/jobs/new">
             <Button size="sm" className="hw-btn-primary gap-1.5 px-4 h-9">
-              <Plus className="h-3.5 w-3.5" /> Add Job
+              <Plus className="h-3.5 w-3.5" /> Add Opportunity
             </Button>
           </Link>
         </div>
@@ -674,9 +674,9 @@ export default async function DashboardPage() {
 
             <div className="space-y-0.5">
               {[
-                { href: "/jobs/new", icon: Plus,     label: "Paste a job description", desc: "Analyze a new opportunity" },
-                { href: "/coach",    icon: Sparkles, label: "Improve a resume",         desc: "Tailor for a specific role" },
-                { href: "/coach",    icon: Target,   label: "Ask Coach",                desc: "Get personalized guidance" },
+                { href: "/jobs/new", icon: Plus,     label: "Add an opportunity",  desc: "Analyze a new job posting" },
+                { href: "/coach",    icon: Sparkles, label: "Improve a document",  desc: "Tailor for a specific role" },
+                { href: "/coach",    icon: Target,   label: "Ask Coach",           desc: "Get personalized guidance" },
               ].map((a) => (
                 <Link key={a.label} href={a.href}>
                   <div className="flex items-center gap-2.5 p-2 rounded-xl group hover:bg-muted/60 transition-colors">

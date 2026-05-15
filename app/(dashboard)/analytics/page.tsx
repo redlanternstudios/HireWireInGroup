@@ -229,9 +229,9 @@ export default async function AnalyticsPage() {
               <div className="hw-next-action group">
                 <Target className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold">Grow your pipeline</p>
+                  <p className="text-sm font-semibold">Grow your opportunities</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    More jobs means richer analytics. Add 3–5 strong matches to see trends emerge.
+                    More tracked roles means richer analytics. Add 3–5 strong matches to see trends emerge.
                   </p>
                   <span className="text-xs font-medium text-primary mt-1.5 inline-flex items-center gap-1 group-hover:gap-1.5 transition-all">
                     View pipeline <ArrowRight className="h-3 w-3" />

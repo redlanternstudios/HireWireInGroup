@@ -490,7 +490,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Pipeline Hub</p>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-tight">All Jobs</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-tight">Opportunities</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {jobs.length} opportunit{jobs.length === 1 ? "y" : "ies"} tracked
             {needsActionCount > 0 && (
@@ -499,7 +499,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
           </p>
         </div>
         <Button size="sm" className="hw-btn-primary gap-1.5 h-9 px-4" onClick={() => setShowAddJob(v => !v)}>
-          <Plus className="h-3.5 w-3.5" /> Add Job
+          <Plus className="h-3.5 w-3.5" /> Add Opportunity
         </Button>
       </div>
 
@@ -664,7 +664,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
                     onClick={() => { setActiveView("all"); setActiveFilter("all") }}
                     className="rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-background hover:opacity-90"
                   >
-                    View All Jobs
+                    View All Opportunities
                   </button>
                 </div>
               ) : null}
