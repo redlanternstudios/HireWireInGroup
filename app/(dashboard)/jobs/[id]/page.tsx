@@ -202,7 +202,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, summary, qualifications_required, responsibilities, title, company, location")
+      .select("matched_skills, known_gaps, summary, qualifications_required, responsibilities")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -221,8 +221,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   // Merge analysis fields into job so workflow functions can read them.
   const jobWithAnalysis: Job = {
     ...job,
-    title: job.role_title ?? job.title ?? analysis?.title ?? "Untitled role",
-    company: job.company_name ?? job.company ?? analysis?.company ?? "",
+    title: job.role_title ?? job.title ?? "Untitled role",
+    company: job.company_name ?? job.company ?? "",
     qualifications_required:
       (job.qualifications_required?.length ?? 0) > 0
         ? job.qualifications_required

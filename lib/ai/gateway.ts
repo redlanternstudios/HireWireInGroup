@@ -57,12 +57,29 @@ export function isAiGatewayConfigured(): boolean {
   return Boolean(getApiKey())
 }
 
+// Resolved model names — always use DEFAULT_GROQ_MODEL unless explicitly overridden
+// with a valid non-legacy model. This prevents stale GROQ_MODEL env vars from
+// silently switching back to decommissioned models like llama-3.3-70b-versatile.
+const LEGACY_MODELS = new Set([
+  "llama-3.3-70b-versatile",
+  "llama-3.1-70b-versatile",
+  "llama3-70b-8192",
+])
+
+function resolveModel(envVar: string | undefined, defaultModel: string): string {
+  const override = envVar?.trim()
+  if (override && !LEGACY_MODELS.has(override)) return override
+  return defaultModel
+}
+
 export function getAiGatewayStatus() {
+  const model = resolveModel(process.env.GROQ_MODEL, DEFAULT_GROQ_MODEL)
+  const fastModel = resolveModel(process.env.GROQ_FAST_MODEL, DEFAULT_GROQ_FAST_MODEL)
   return {
     configured: isAiGatewayConfigured(),
     provider: "groq",
-    model: process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL,
-    fastModel: process.env.GROQ_FAST_MODEL?.trim() || DEFAULT_GROQ_FAST_MODEL,
+    model,
+    fastModel,
     timeoutMs: getTimeoutMs(),
     keySource: process.env.AI_GATEWAY_API_KEY?.trim()
       ? "AI_GATEWAY_API_KEY"
@@ -74,10 +91,10 @@ export function getAiGatewayStatus() {
 
 export const AI_MODELS = {
   get PRIMARY() {
-    return getModel(process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL)
+    return getModel(resolveModel(process.env.GROQ_MODEL, DEFAULT_GROQ_MODEL))
   },
   get QUALITY() {
-    return getModel(process.env.GROQ_FAST_MODEL?.trim() || DEFAULT_GROQ_FAST_MODEL)
+    return getModel(resolveModel(process.env.GROQ_FAST_MODEL, DEFAULT_GROQ_FAST_MODEL))
   },
 } as const
 
