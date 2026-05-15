@@ -190,10 +190,10 @@ export default async function DashboardPage() {
     <div className="w-full" style={{ maxWidth: 1200, marginInline: "auto" }}>
 
       {/* ─── HEADER ─── */}
-      <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 mb-5">
         <div>
           <p className="hw-section-label mb-1">Command Center</p>
-          <h1 className="text-[26px] font-bold tracking-tight text-foreground leading-tight">
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-foreground leading-tight">
             {greeting()},{" "}
             <span style={{ color: "hsl(var(--primary))" }}>{firstName}.</span>
           </h1>
@@ -228,7 +228,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* ─── TWO-COLUMN WORKSPACE ─── */}
-      <div className="flex gap-4 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
 
         {/* ─── MAIN COLUMN ─── */}
         <div className="flex-1 min-w-0 space-y-4">
@@ -351,7 +351,7 @@ export default async function DashboardPage() {
           {/* ── TODAY'S QUEUE ── */}
           <div>
             <p className="hw-section-label mb-2.5">{"Today's Queue"}</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {[
                 {
                   label: "Needs Action",
@@ -386,27 +386,27 @@ export default async function DashboardPage() {
               ].map((q) => (
                 <Link key={q.label} href={q.href}>
                   <div
-                    className="rounded-2xl px-4 py-4 flex flex-col gap-2 group transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+                    className="rounded-xl sm:rounded-2xl px-3 sm:px-4 py-3 sm:py-4 flex flex-col gap-1.5 sm:gap-2 group transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
                     style={cardBase}
                   >
                     {/* Icon circle */}
                     <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center"
                       style={{ background: q.iconBg }}
                     >
-                      <q.icon className="h-4 w-4" style={{ color: q.iconColor }} />
+                      <q.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" style={{ color: q.iconColor }} />
                     </div>
                     {/* Number */}
                     <p
-                      className="text-[28px] font-bold tabular-nums leading-none"
+                      className="text-xl sm:text-[28px] font-bold tabular-nums leading-none"
                       style={{ color: q.numColor ?? "hsl(var(--muted-foreground)/0.35)" }}
                     >
                       {q.count}
                     </p>
                     {/* Label + arrow */}
                     <div className="flex items-center justify-between mt-0.5">
-                      <p className="text-xs font-medium text-muted-foreground">{q.label}</p>
-                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
+                      <p className="text-[10px] sm:text-xs font-medium text-muted-foreground leading-tight">{q.label}</p>
+                      <ArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors hidden sm:block" />
                     </div>
                   </div>
                 </Link>
@@ -417,7 +417,7 @@ export default async function DashboardPage() {
           {/* ── PIPELINE OVERVIEW ── */}
           <div>
             <p className="hw-section-label mb-2.5">Pipeline Overview</p>
-            <div className="grid grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
               {[
                 { label: "Jobs Active",    value: activeJobs.length,   icon: Briefcase,     color: "#1a1714" },
                 { label: "Need Attention", value: needAttention,        icon: AlertTriangle, color: "#d97706" },
@@ -571,7 +571,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* ─── RIGHT RAIL ─── */}
-        <div className="shrink-0 space-y-3" style={{ width: 264 }}>
+        <div className="w-full lg:w-[264px] lg:shrink-0 space-y-3 order-first lg:order-none">
 
           {/* ── PIPELINE INTELLIGENCE — dark intelligence surface ── */}
           <div
@@ -720,6 +720,17 @@ export default async function DashboardPage() {
             ) : (
               <p className="text-xs text-emerald-600 font-medium">Target reached this week!</p>
             )}
+          </div>
+
+          {/* ── DARK CTA PROMO CARD — desktop only to avoid redundancy ── */}
+          <div
+            className="rounded-2xl p-4 relative overflow-hidden hidden lg:block"
+            style={{
+              background: "#111110",
+              border: "1px solid rgba(255,255,255,0.07)",
+              boxShadow: "0 0 0 1px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.25)",
+            }}
+          >
             {/* RECENT ACTIVITY */}
             <div
               className="rounded-xl p-3.5 mt-4"

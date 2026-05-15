@@ -1,5 +1,3 @@
-"use server"
-
 import { createClient } from "@/lib/supabase/server"
 import { getReadyJobIds } from "@/lib/readiness"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
@@ -20,7 +18,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 
 type RecentEvent = {
-  id: number
+  id: string
   event_type: string
   job_id: string | null
   payload?: Record<string, unknown>
@@ -90,6 +88,12 @@ async function getCoachContext() {
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
     const readyIds = readyResult.ready ?? []
+    const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(e => ({
+      id: e.id,
+      event_type: e.event_type,
+      job_id: e.job_id,
+      payload: (e.metadata ?? {}) as Record<string, unknown>,
+      created_at: e.created_at,
     const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(event => ({
       id: event.id,
       event_type: event.event_type,

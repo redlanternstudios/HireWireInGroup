@@ -4,11 +4,13 @@ import { stripe } from "@/lib/stripe"
 import { createClient } from "@supabase/supabase-js"
 import type Stripe from "stripe"
 
-// Use service role client for webhook — no user session available
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy init the admin client at request time (not module load) to avoid build errors
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 /**
  * Stripe webhook handler — canonical fulfillment path.
@@ -97,6 +99,7 @@ export async function POST(request: Request) {
  * Handle successful checkout — activate Pro subscription
  */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  const supabaseAdmin = getSupabaseAdmin()
   const userId = session.metadata?.user_id
   if (!userId) {
     console.error("No user_id in checkout session metadata")
@@ -151,6 +154,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
  * Handle subscription updates — renewals, plan changes
  */
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+  const supabaseAdmin = getSupabaseAdmin()
   const userId = subscription.metadata?.user_id
   if (!userId) {
     // Try to find user by stripe_subscription_id
@@ -173,6 +177,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 }
 
 async function updateUserSubscription(userId: string, subscription: Stripe.Subscription) {
+  const supabaseAdmin = getSupabaseAdmin()
   const status = subscription.status === "active" || subscription.status === "trialing"
     ? "active"
     : subscription.status
@@ -209,6 +214,7 @@ async function updateUserSubscription(userId: string, subscription: Stripe.Subsc
  * Handle subscription cancellation — downgrade to free
  */
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const supabaseAdmin = getSupabaseAdmin()
   const userId = subscription.metadata?.user_id
 
   // Find user by subscription ID if no metadata
@@ -254,6 +260,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
  * Handle failed payment — mark as past_due
  */
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
+  const supabaseAdmin = getSupabaseAdmin()
   const inv = invoice as unknown as { subscription?: string | { id?: string } | null }
   const subscriptionId = typeof inv.subscription === "string"
     ? inv.subscription
