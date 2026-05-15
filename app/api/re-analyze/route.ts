@@ -300,30 +300,29 @@ async function reAnalyzeExistingJob(
   const gaps = explainableFit.gaps.filter((g) => g.severity === "critical").slice(0, 5).map((g) => `Gap: ${g.requirement.slice(0, 80)}`)
   const strengths = explainableFit.strengths.slice(0, 5).map((s) => `Strong: ${s.requirement.slice(0, 80)}`)
 
-  // Update the existing jobs row
+  // Update the existing jobs row — only columns that exist on public.jobs
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
       role_title: title,
       company_name: company,
       status: "analyzed",
-      qualifications_required: analysis.qualifications_required,
-      responsibilities: analysis.responsibilities,
       score: explainableFit.score,
       fit: fitBandToLegacy[explainableFit.band],
       score_gaps: gaps,
       score_strengths: strengths,
       seniority_level: seniority,
       role_family: analysis.role_family,
-      location: analysis.location,
       industry_guess: analysis.industry_guess,
-      ats_keywords: analysis.keywords,
       job_description: pageContent.slice(0, 10000),
     })
     .eq("id", jobId)
     .eq("user_id", user.id)
 
-  if (updateError) return { success: false, error: "Failed to update job" }
+  if (updateError) {
+    console.error("[re-analyze] jobs PATCH error:", updateError.message, updateError.details)
+    return { success: false, error: `Failed to update job: ${updateError.message}` }
+  }
 
   // Insert fresh analysis record
   const { error: analysisError } = await supabase.from("job_analyses").insert({
