@@ -12,7 +12,7 @@
  * client-supplied input.
  */
 
-import { generateObject, CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
+import { generateStructuredText, CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
 import { z } from "zod"
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
 import {
@@ -323,32 +323,46 @@ Instructions: Extract whatever information is available. For any fields that can
 
   if (isAnthropicConfigured()) {
     try {
-      const { object } = await generateObject({
+      analysis = await generateStructuredText({
         model: CLAUDE_MODELS.SONNET,
         schema: JobAnalysisSchema,
-        prompt: `Analyze this job posting and extract structured information as JSON.
+        contextPrompt: `Analyze this job posting. Be precise — extract only what is explicitly stated.
 
-Be precise and extract only what is explicitly stated. Do not invent or assume information.
+Role family options:
+- AI Technical Product Manager, Technical Product Manager, AI Product Manager,
+  Product Manager, Senior Product Manager, Systems Product Manager,
+  Workflow Product Manager, Analytics Product Manager, Product Owner,
+  Program Manager, Other
 
-Role family options for categorization:
-- AI Technical Product Manager (AI products + technical depth)
-- Technical Product Manager (technical products, systems, APIs)
-- AI Product Manager (AI products, less technical)
-- Product Manager (general product roles)
-- Senior Product Manager (senior IC roles)
-- Systems Product Manager (infrastructure, platform)
-- Workflow Product Manager (automation, process)
-- Analytics Product Manager (data, analytics products)
-- Product Owner (scrum-focused)
-- Program Manager (coordination, delivery)
-- Other (doesn't fit above)
-
-Job posting content:
-${pageContent.slice(0, 12000)}
-
-Extract the job details following the schema.`,
-      })
-      analysis = object
+Job posting:
+${pageContent.slice(0, 12000)}`,
+        schemaDescription: `{
+  "title": string | null,
+  "company": string | null,
+  "location": string | null,
+  "employment_type": string | null,
+  "salary_text": string | null,
+  "description_summary": string | null,
+  "responsibilities": string[],
+  "qualifications_required": string[],
+  "qualifications_preferred": string[],
+  "keywords": string[],
+  "ats_phrases": string[],
+  "tech_stack": string[],
+  "role_family": "AI Technical Product Manager"|"Technical Product Manager"|"AI Product Manager"|"Product Manager"|"Senior Product Manager"|"Systems Product Manager"|"Workflow Product Manager"|"Analytics Product Manager"|"Product Owner"|"Program Manager"|"Other",
+  "industry_guess": string | null,
+  "seniority_level": string | null,
+  "fit_signals": {
+    "has_ai_focus": boolean,
+    "has_technical_requirements": boolean,
+    "has_workflow_focus": boolean,
+    "has_startup_culture": boolean,
+    "has_pure_engineering": boolean,
+    "has_people_management": boolean,
+    "product_ownership_level": "low"|"medium"|"high"
+  }
+}`,
+      }, { route: "analyze-job-core", operation: "job-analysis" })
     } catch (aiError) {
       console.error("[analyze-job-core] AI extraction failed, using fallback:", aiError)
       analysis = fallbackAnalyzeJob(pageContent)

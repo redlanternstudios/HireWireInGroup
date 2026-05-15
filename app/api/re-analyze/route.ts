@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
 //
 // Simpler approach: just call the shared extraction logic directly.
 
-import { generateObject } from "@/lib/ai/gateway"
+import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { z } from "zod"
 import {
   normalizeEvidenceRecord,
@@ -124,7 +124,6 @@ import {
   type CanonicalEvidence,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { parseJobPage } from "@/lib/parsers"
 import {
   inferRoleFromJobTitle,
@@ -204,15 +203,40 @@ async function reAnalyzeExistingJob(
     return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
   }
 
-  // Extract structured data using generateObject with mode:"json" (required for Groq)
+  // Extract structured data via generateStructuredText (works with all Groq models)
   let analysis: z.infer<typeof JobAnalysisSchema>
   try {
-    const { object } = await generateObject({
+    analysis = await generateStructuredText({
       model: CLAUDE_MODELS.SONNET,
       schema: JobAnalysisSchema,
-      prompt: `Analyze this job posting and extract structured information as JSON.\n\nJob posting:\n${pageContent.slice(0, 12000)}`,
-    })
-    analysis = object
+      contextPrompt: `Analyze this job posting:\n\n${pageContent.slice(0, 12000)}`,
+      schemaDescription: `{
+  "title": string | null,
+  "company": string | null,
+  "location": string | null,
+  "employment_type": string | null,
+  "salary_text": string | null,
+  "description_summary": string | null,
+  "responsibilities": string[],
+  "qualifications_required": string[],
+  "qualifications_preferred": string[],
+  "keywords": string[],
+  "ats_phrases": string[],
+  "tech_stack": string[],
+  "role_family": "AI Technical Product Manager"|"Technical Product Manager"|"AI Product Manager"|"Product Manager"|"Senior Product Manager"|"Systems Product Manager"|"Workflow Product Manager"|"Analytics Product Manager"|"Product Owner"|"Program Manager"|"Other",
+  "industry_guess": string | null,
+  "seniority_level": string | null,
+  "fit_signals": {
+    "has_ai_focus": boolean,
+    "has_technical_requirements": boolean,
+    "has_workflow_focus": boolean,
+    "has_startup_culture": boolean,
+    "has_pure_engineering": boolean,
+    "has_people_management": boolean,
+    "product_ownership_level": "low"|"medium"|"high"
+  }
+}`,
+    }, { route: "re-analyze", operation: "job-analysis" })
   } catch (e) {
     return { success: false, error: `AI extraction failed: ${e instanceof Error ? e.message : "unknown"}` }
   }
