@@ -89,7 +89,6 @@ function LoginForm() {
 
       if (data.user) {
         router.push(redirectTo)
-        router.refresh()
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid email or password')

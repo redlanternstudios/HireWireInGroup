@@ -19,7 +19,6 @@ import {
   Sparkles,
   Library,
   CreditCard,
-  Zap,
 } from "lucide-react"
 import {
   Sidebar,
@@ -48,7 +47,7 @@ const pipelineNav = [
   { name: "Career Context", href: "/evidence", icon: Library },
   { name: "Analytics", href: "/analytics", icon: BarChart3, premium: true },
   { name: "Activity Log", href: "/logs", icon: History },
-  { name: "Add Job", href: "/jobs", icon: PlusCircle },
+  { name: "Add Job", href: "/jobs/new", icon: PlusCircle },
 ]
 
 // Bottom navigation - settings/profile
@@ -62,8 +61,12 @@ export function AppSidebar() {
   const pathname = usePathname()
 
   const renderNavItem = (item: { name: string; href: string; icon: React.ComponentType<{ className?: string }>; premium?: boolean }) => {
-    const isActive = pathname === item.href ||
-      (item.href !== "/dashboard" && item.href !== "/" && pathname.startsWith(item.href))
+    // Exact match for dashboard and jobs/new; prefix match for everything else
+    // Special case: /jobs should NOT match /jobs/new or /jobs/[id] sub-routes
+    const isActive =
+      pathname === item.href ||
+      (item.href === "/jobs" && (pathname === "/jobs" || (pathname.startsWith("/jobs/") && pathname !== "/jobs/new"))) ||
+      (item.href !== "/dashboard" && item.href !== "/" && item.href !== "/jobs" && pathname.startsWith(item.href))
     return (
       <SidebarMenuItem key={item.name}>
         <SidebarMenuButton
