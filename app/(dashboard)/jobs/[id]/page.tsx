@@ -352,13 +352,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <p className="text-sm font-semibold">Analysis in progress</p>
             <p className="text-xs text-muted-foreground mt-1">This usually takes 15–30 seconds.</p>
           </div>
-          <Link href="">
-            <button
-              onClick={undefined}
-              className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </button>
+          <Link
+            href={`/jobs/${jobId}`}
+            className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Link>
         </div>
       )}
