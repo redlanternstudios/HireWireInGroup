@@ -142,8 +142,20 @@ export default async function DashboardPage() {
       const gaps = (job.score_gaps as string[] | null) ?? []
       const gapCount = gaps.length
       const evidenceBlocked = readiness.stage === "evidence_blocked"
-      // Route to documents when materials are missing — evaluator returns /jobs/[id] as a
-      // placeholder for materials_missing but we always want the documents sub-route here.
+      const notAnalyzed = !job.score && !job.evidence_map && !job.generated_resume
+
+      // If not yet analyzed, send to job page to trigger analysis first
+      if (notAnalyzed) {
+        return {
+          label: "Analyze job",
+          desc: "Extract requirements, score your fit, and unlock document generation.",
+          href: base,
+          cta: "Analyze now",
+          timeEst: "Est. 15–30 sec",
+        }
+      }
+
+      // Job is analyzed — route to the right next step
       const actionHref = evidenceBlocked
         ? `${base}/evidence-match`
         : `${base}/documents`

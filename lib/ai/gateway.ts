@@ -30,7 +30,12 @@ type AiTelemetry = {
 }
 
 function getApiKey() {
-  return process.env.AI_GATEWAY_API_KEY?.trim() || process.env.GROQ_API_KEY?.trim() || ""
+  // AI_GATEWAY_API_KEY may be a Vercel AI Gateway key (vck_...) or a Groq key (gsk_...).
+  // createGroq() only accepts Groq keys — use it only when it looks like one.
+  const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim() ?? ""
+  const groqKey = process.env.GROQ_API_KEY?.trim() ?? ""
+  if (gatewayKey.startsWith("gsk_")) return gatewayKey
+  return groqKey || gatewayKey // fall back to groqKey, then gateway key as last resort
 }
 
 function getTimeoutMs() {
