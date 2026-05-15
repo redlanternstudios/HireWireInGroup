@@ -16,6 +16,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import type { DomainEventInput, DomainEvent } from "./event-types"
+import { relayToAutomation } from "./relay-to-automation"
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
@@ -97,7 +98,10 @@ async function writeEvent(supabase: ServerSupabase, event: DomainEvent): Promise
       created_at: event.timestamp,
     })
 
-    if (!domainError) return
+    if (!domainError) {
+      void relayToAutomation(event)
+      return
+    }
 
     // Fallback: audit_events (always exists)
     await supabase.from("audit_events").insert({
@@ -116,6 +120,9 @@ async function writeEvent(supabase: ServerSupabase, event: DomainEvent): Promise
       },
       created_at: event.timestamp,
     })
+
+    // Relay to Zapier/MCP automation after fallback persistence too (non-blocking)
+    void relayToAutomation(event)
   } catch {
     // Audit logging must never throw into the mutation path
   }

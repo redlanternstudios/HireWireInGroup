@@ -244,7 +244,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
-  const hasUrl = !!(job.job_url)
+  const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const isAnalyzed = !!(
     analysis ||
     scores ||
@@ -272,7 +272,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               {job.role_title ?? "Untitled role"}
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">{job.company_name ?? "—"}</p>
-            {job.job_url && (
+            {hasUrl && (
               <a
                 href={job.job_url}
                 target="_blank"
@@ -353,7 +353,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <p className="text-xs text-muted-foreground mt-1">This usually takes 15–30 seconds.</p>
           </div>
           <Link
-            href={`/jobs/${jobId}`}
+            href={`/jobs/${id}`}
             className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
           >
             <RefreshCw className="h-3.5 w-3.5" /> Refresh

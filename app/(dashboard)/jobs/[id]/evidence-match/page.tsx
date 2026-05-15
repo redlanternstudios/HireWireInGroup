@@ -14,7 +14,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
 
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, qualifications_required, responsibilities")
+    .select("id, role_title, company_name")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -37,7 +37,6 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
   ])
 
   const requirements: string[] = [
-    ...(Array.isArray(job.qualifications_required) ? job.qualifications_required : []),
     ...(Array.isArray(analysis?.qualifications_required) ? analysis.qualifications_required : []),
   ].filter(Boolean)
 

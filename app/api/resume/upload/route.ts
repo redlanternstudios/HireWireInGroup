@@ -15,6 +15,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { parseResumeText } from "@/lib/resumeParser"
+import { isAnthropicConfigured } from "@/lib/adapters/anthropic"
 import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
 import { extractEducationFromResumeText, buildEducationEvidenceRows } from "@/lib/resume/extractEducation"
 import { handleDomainEvent } from "@/lib/domain-events"
@@ -121,6 +122,15 @@ export async function POST(request: NextRequest) {
     const sourceResumeId = sourceResume.id
 
     // ── 3. Parse via Claude ──────────────────────────────────────────────────
+
+    if (!isAnthropicConfigured()) {
+      await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
+      return NextResponse.json(
+        { error: "AI Gateway not configured. Resume parsing requires an AI_GATEWAY_API_KEY." },
+        { status: 500 }
+      )
+    }
+
     let parsed
     try {
       parsed = await parseResumeText(rawText)

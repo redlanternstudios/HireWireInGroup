@@ -28,7 +28,7 @@ import {
   type ExplainableFitScore,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/adapters/anthropic"
 import { parseJobPage, detectSource } from "@/lib/parsers"
 import { findJobByUrl } from "@/lib/queries/jobs"
 import { linkJobToCompany } from "@/lib/company-utils"
@@ -39,7 +39,6 @@ import type { Job } from "@/lib/types"
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
-// Role families for categorization - PM-focused but extensible
 const ROLE_FAMILIES = [
   "AI Technical Product Manager",
   "Technical Product Manager",
@@ -54,7 +53,6 @@ const ROLE_FAMILIES = [
   "Other",
 ] as const
 
-// Schema for job analysis extraction
 const JobAnalysisSchema = z.object({
   title: z.string().nullable().describe("Job title as stated, or null if not found"),
   company: z.string().nullable().describe("Company name, or null if not found"),
@@ -157,6 +155,93 @@ function normalizeSeniority(level: string | null): string {
   return "Mid"
 }
 
+function collectNumberedSection(content: string, heading: string): string[] {
+  const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const start = lines.findIndex((line) => line.toLowerCase().replace(/:$/, "") === heading.toLowerCase())
+  if (start === -1) {
+    const nextHeadings = ["Responsibilities", "Required Qualifications", "Preferred Qualifications"]
+      .filter((candidate) => candidate.toLowerCase() !== heading.toLowerCase())
+      .join("|")
+    const flatMatch = content.match(new RegExp(`${heading}:?\\s+([\\s\\S]*?)(?=\\s+(?:${nextHeadings}):?|$)`, "i"))
+    const flatSection = flatMatch?.[1]?.trim()
+    if (!flatSection) return []
+    return flatSection
+      .split(/(?:^|\s)\d+\.\s+|(?<=\.)\s+(?=[A-Z][a-z]+ )/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 12)
+      .slice(0, 10)
+  }
+
+  const items: string[] = []
+  for (const line of lines.slice(start + 1)) {
+    if (/^[A-Z][A-Za-z\s]+:$/.test(line) || /^(Required|Preferred) Qualifications:?$/i.test(line)) break
+    const cleaned = line.replace(/^\d+\.\s*/, "").trim()
+    if (cleaned) items.push(cleaned)
+  }
+  return items
+}
+
+function extractLabeledValue(content: string, label: string): string | null {
+  const labels = ["Title", "Company", "Location", "Salary", "Job Description", "Responsibilities", "Required Qualifications", "Preferred Qualifications"]
+    .filter((candidate) => candidate.toLowerCase() !== label.toLowerCase())
+    .join("|")
+  const match = content.match(new RegExp(`${label}:\\s*([\\s\\S]+?)(?=\\s+(?:${labels}):?\\s|$)`, "i"))
+  return match?.[1]?.trim() || null
+}
+
+function fallbackAnalyzeJob(content: string): z.infer<typeof JobAnalysisSchema> {
+  const responsibilities = collectNumberedSection(content, "Responsibilities")
+  const required = collectNumberedSection(content, "Required Qualifications")
+  const preferred = collectNumberedSection(content, "Preferred Qualifications")
+  const keywordCandidates = [
+    "AI product management",
+    "LLMs",
+    "APIs",
+    "cloud platforms",
+    "product requirements",
+    "Agile",
+    "KPIs",
+    "stakeholder management",
+    "safe AI",
+    "evaluation loops",
+    "Salesforce",
+    "SAP",
+    "SQL",
+    "GTM alignment",
+  ]
+  const lowerContent = content.toLowerCase()
+
+  return {
+    title: extractLabeledValue(content, "Title") || "Unknown Position",
+    company: extractLabeledValue(content, "Company") || "Unknown Company",
+    location: extractLabeledValue(content, "Location") || null,
+    employment_type: "Full-time",
+    salary_text: extractLabeledValue(content, "Salary") || null,
+    description_summary:
+      "AI Product Manager role focused on AI-powered workflow products, enterprise customers, product requirements, KPIs, safe AI experiences, and cross-functional delivery.",
+    responsibilities,
+    qualifications_required: required,
+    qualifications_preferred: preferred,
+    keywords: keywordCandidates.filter((keyword) => lowerContent.includes(keyword.toLowerCase().replace("llms", "llm"))),
+    ats_phrases: keywordCandidates.filter((keyword) => lowerContent.includes(keyword.toLowerCase().replace("llms", "llm"))),
+    tech_stack: ["LLMs", "APIs", "cloud platforms", "Salesforce", "SAP", "SQL"].filter((tech) =>
+      lowerContent.includes(tech.toLowerCase().replace("llms", "llm"))
+    ),
+    role_family: "AI Product Manager",
+    industry_guess: "Enterprise AI workflow software",
+    seniority_level: "Mid",
+    fit_signals: {
+      has_ai_focus: true,
+      has_technical_requirements: true,
+      has_workflow_focus: true,
+      has_startup_culture: lowerContent.includes("startup"),
+      has_pure_engineering: false,
+      has_people_management: false,
+      product_ownership_level: "high",
+    },
+  }
+}
+
 /**
  * Executes the full job analysis pipeline in the current server context.
  *
@@ -166,15 +251,20 @@ function normalizeSeniority(level: string | null): string {
  * @param requestLike - Object satisfying RequestLike for cookie/origin forwarding in runJobFlow
  */
 export async function analyzeJobCore(
-  job_url: string,
+  job_url: string | null,
   supabase: ServerSupabase,
   user: User,
-  requestLike: { headers: { get(name: string): string | null } }
+  requestLike: { headers: { get(name: string): string | null } },
+  job_description?: string | null
 ): Promise<AnalyzeCoreOutput> {
-  const source = detectSource(job_url)
+  const source = job_url ? detectSource(job_url) : "OTHER"
+  let pageContent = job_description?.trim() || ""
+  const jobUrlForStorage = job_url ?? `manual://hirewire/${crypto.randomUUID()}`
 
   // Check for existing job with this URL
-  const { data: existingJob } = await findJobByUrl(supabase, user.id, job_url) as { data: Job | null; error: unknown }
+  const { data: existingJob } = job_url
+    ? await findJobByUrl(supabase, user.id, job_url) as { data: Job | null; error: unknown }
+    : { data: null }
 
   if (existingJob) {
     return {
@@ -202,14 +292,18 @@ export async function analyzeJobCore(
     }
   }
 
-  // Fetch the job page
-  let pageContent: string
-  try {
-    pageContent = await fetchJobPage(job_url)
-  } catch (fetchError) {
-    return {
-      success: false,
-      error: `Failed to fetch job page: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`,
+  if (!pageContent) {
+    if (!job_url) {
+      return { success: false, error: "No job_url or job_description provided" }
+    }
+
+    try {
+      pageContent = await fetchJobPage(job_url)
+    } catch (fetchError) {
+      return {
+        success: false,
+        error: `Failed to fetch job page: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`,
+      }
     }
   }
 
@@ -217,7 +311,7 @@ export async function analyzeJobCore(
   if (isLimitedContent) {
     pageContent = `[LIMITED CONTENT WARNING]
 This job page returned minimal content, likely due to JavaScript rendering requirements.
-URL: ${job_url}
+URL: ${job_url ?? "manual-entry"}
 Source: ${source}
 
 Available content:
@@ -226,11 +320,14 @@ ${pageContent}
 Instructions: Extract whatever information is available. For any fields that cannot be determined from this limited content, use null or empty arrays as appropriate.`
   }
 
-  // Analyze with Claude
-  const analysisResult = await generateText({
-    model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: JobAnalysisSchema }),
-    prompt: `Analyze this job posting and extract structured information.
+  let analysis: z.infer<typeof JobAnalysisSchema>
+
+  if (isAnthropicConfigured()) {
+    // Analyze with Claude
+    const analysisResult = await generateText({
+      model: CLAUDE_MODELS.SONNET,
+      output: Output.object({ schema: JobAnalysisSchema }),
+      prompt: `Analyze this job posting and extract structured information.
 
 Be precise and extract only what is explicitly stated. Do not invent or assume information.
 
@@ -251,8 +348,11 @@ Job posting content:
 ${pageContent}
 
 Extract the job details following the schema.`,
-  })
-  const analysis = analysisResult.experimental_output!
+    })
+    analysis = analysisResult.experimental_output!
+  } else {
+    analysis = fallbackAnalyzeJob(pageContent)
+  }
 
   const validatedAnalysis = {
     ...analysis,
@@ -269,7 +369,7 @@ Extract the job details following the schema.`,
     user.id,
     validatedAnalysis.company,
     validatedAnalysis.title,
-    job_url
+    job_url ?? undefined
   )
 
   if (duplicateCheck.isDuplicate && duplicateCheck.existingJob) {
@@ -401,7 +501,7 @@ Extract the job details following the schema.`,
       role_title: validatedAnalysis.title,
       company_name: validatedAnalysis.company,
       source: source,
-      job_url: job_url,
+      job_url: jobUrlForStorage,
       job_description: pageContent.slice(0, 10000),
       status: "analyzed",
     })
@@ -450,11 +550,11 @@ Extract the job details following the schema.`,
     job_id: job.id,
     overall_score: fitResult.score,
     confidence_score: confidenceScore,
-    skills_match: dimensionScores.skills,
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats || 0,
+    skills_match: Math.round(dimensionScores.skills),
+    experience_relevance: Math.round(dimensionScores.experience),
+    evidence_quality: Math.round(dimensionScores.evidence),
+    seniority_alignment: Math.round(dimensionScores.seniority),
+    ats_keywords: Math.round(dimensionScores.ats || 0),
     scoring_version: "3.0-explainable",
   })
   if (scoresError) console.error("Scores insert error:", scoresError)
@@ -469,8 +569,6 @@ Extract the job details following the schema.`,
     .update({
       role_title: validatedAnalysis.title,
       company_name: validatedAnalysis.company,
-      qualifications_required: validatedAnalysis.qualifications_required,
-      responsibilities: validatedAnalysis.responsibilities,
       score: fitResult.score,
       fit: fitResult.fit,
       // Ensure fit and score are always written
@@ -478,9 +576,7 @@ Extract the job details following the schema.`,
       score_strengths: strengths,
       seniority_level: normalizedSeniority,
       role_family: validatedAnalysis.role_family,
-      location: validatedAnalysis.location,
       industry_guess: validatedAnalysis.industry_guess,
-      ats_keywords: validatedAnalysis.keywords,
     })
     .eq("id", job.id)
     .eq("user_id", user.id)

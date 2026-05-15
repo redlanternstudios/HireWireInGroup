@@ -284,7 +284,7 @@ export function RecruiterIntelligencePanel({ intelligence, hasMaterials }: Props
 
           {/* First Impression */}
           <p className="text-[10px] text-muted-foreground leading-relaxed mb-3 italic">
-            "{recruiter_scan.first_impression}"
+            &quot;{recruiter_scan.first_impression}&quot;
           </p>
 
           {/* Standouts */}

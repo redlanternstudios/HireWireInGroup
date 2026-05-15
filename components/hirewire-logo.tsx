@@ -31,7 +31,7 @@ export function HireWireLogo({
   size?: "sm" | "md" | "lg" | "xl"
 }) {
   const width = SIZE_MAP[size] ?? 120
-  const height = Math.round(width * 0.45)
+  const height = Math.round(width * (1024 / 1536))
 
   return (
     <Image

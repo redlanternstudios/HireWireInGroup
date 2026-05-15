@@ -13,7 +13,7 @@ function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number
         src="/brand/hirewire-logo.png"
         alt="HireWire"
         width={desktop}
-        height={Math.round(desktop * 0.45)}
+        height={Math.round(desktop * (1024 / 1536))}
         priority
         className="hidden md:block"
         style={{
@@ -28,7 +28,7 @@ function Logo({ desktop = 230, mobile = 160, white = false }: { desktop?: number
         src="/brand/hirewire-logo.png"
         alt="HireWire"
         width={mobile}
-        height={Math.round(mobile * 0.45)}
+        height={Math.round(mobile * (1024 / 1536))}
         priority
         className="md:hidden"
         style={{
@@ -464,8 +464,8 @@ function DashboardCard() {
             src="/brand/hirewire-logo.png"
             alt="HireWire"
             width={80}
-            height={36}
-            style={{ filter: "brightness(0) invert(1)" }}
+            height={53}
+            style={{ width: "80px", height: "auto", filter: "brightness(0) invert(1)" }}
           />
           <span
             style={{
@@ -591,7 +591,7 @@ function DashboardCard() {
           <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 10 }}>
             COACH SUGGESTION
           </p>
-          <span style={{ fontSize: 28, color: "#D80000", lineHeight: 1, display: "block", marginBottom: 6 }}>"</span>
+          <span style={{ fontSize: 28, color: "#D80000", lineHeight: 1, display: "block", marginBottom: 6 }}>&quot;</span>
           <p style={{ fontSize: 13, color: "#fff", lineHeight: 1.45, fontWeight: 500 }}>
             Add one strong proof point about impact or ownership before applying.
           </p>
@@ -805,8 +805,8 @@ function CtaBand() {
             src="/brand/hirewire-logo.png"
             alt="HireWire"
             width={160}
-            height={72}
-            style={{ filter: "brightness(0) saturate(100%) invert(13%) sepia(74%) saturate(3000%) hue-rotate(340deg) brightness(80%)" }}
+            height={107}
+            style={{ width: "160px", height: "auto", filter: "brightness(0) saturate(100%) invert(13%) sepia(74%) saturate(3000%) hue-rotate(340deg) brightness(80%)" }}
           />
         </div>
 

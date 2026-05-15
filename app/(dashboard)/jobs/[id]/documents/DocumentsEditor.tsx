@@ -12,10 +12,14 @@ import {
   type ResumeFontId,
   type ResumeFormatId,
 } from '@/lib/resume-formats'
+import { ResumePreviewPanel } from '@/components/documents/ResumePreviewPanel'
+import { ResumeExportMenu } from '@/components/documents/ResumeExportMenu'
 
 type Job = {
   id: string
   job_url?: string | null
+  role_title?: string | null
+  company_name?: string | null
   generated_resume: string | null
   generated_cover_letter: string | null
   edited_resume: string | null
@@ -28,13 +32,16 @@ type Job = {
   recommended_resume_reason: string
   quality_passed?: boolean | null
   package_review_status?: string | null
+  generation_timestamp?: string | null
+  last_edited_at?: string | null
 }
 
 interface DocumentsEditorProps {
   job: Job
+  candidateName?: string
 }
 
-export default function DocumentsEditor({ job }: DocumentsEditorProps) {
+export default function DocumentsEditor({ job, candidateName = '' }: DocumentsEditorProps) {
   const originalResume = job.generated_resume ?? ''
   const originalCover = job.generated_cover_letter ?? ''
 
@@ -45,8 +52,14 @@ export default function DocumentsEditor({ job }: DocumentsEditorProps) {
   const [status, setStatus] = useState<string | null>(null)
   const [isAccepted, setIsAccepted] = useState(job.quality_passed === true)
   const [packageStatus, setPackageStatus] = useState(job.package_review_status ?? 'needs_review')
+  const [showPreview, setShowPreview] = useState(false)
   const [isPending, startTransition] = useTransition()
   const formatWarning = getFormatSafetyWarning(resumeFormat, job.job_url)
+
+  // Saved database state — preview always shows this, not the textarea value
+  const savedResumeContent = job.edited_resume ?? originalResume
+  // True when the textarea has changes the user hasn't saved yet
+  const resumeHasUnsavedChanges = resume !== savedResumeContent
 
   const flash = (msg: string, ms = 2500) => {
     setStatus(msg)
@@ -151,30 +164,26 @@ export default function DocumentsEditor({ job }: DocumentsEditorProps) {
     }
   }
 
-  const handleExportDocx = async (text: string, filename: string) => {
-    try {
-      const res = await fetch('/api/export-docx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, filename, resumeFormat, resumeFont, job_id: job.id }),
-      })
-      if (!res.ok) { flash('Export failed'); return }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${filename}.docx`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-      flash('Downloaded')
-    } catch {
-      flash('Export failed')
-    }
-  }
-
   return (
+    <>
+    <ResumePreviewPanel
+      open={showPreview}
+      onOpenChange={setShowPreview}
+      savedResumeContent={savedResumeContent}
+      generatedResumeContent={job.generated_resume}
+      editedResumeContent={job.edited_resume}
+      resumeFormat={resumeFormat}
+      resumeFont={resumeFont}
+      jobId={job.id}
+      jobTitle={job.role_title ?? ''}
+      company={job.company_name ?? ''}
+      candidateName={candidateName}
+      generatedAt={job.generation_timestamp ?? null}
+      editedAt={job.last_edited_at ?? null}
+      hasUnsavedChanges={resumeHasUnsavedChanges}
+      onEdit={() => setShowPreview(false)}
+      onMessage={flash}
+    />
     <div className="space-y-6">
       <PackageGate
         isAccepted={isAccepted}
@@ -244,16 +253,68 @@ export default function DocumentsEditor({ job }: DocumentsEditorProps) {
         )}
       </section>
 
-      <Section title="Resume" onCopy={() => handleCopy(resume, 'Resume')} onExport={() => handleExportDocx(resume, 'resume')}>
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-foreground">Resume</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleCopy(resume, 'Resume')}
+              className="rounded border border-border px-3 py-1 text-xs hover:bg-muted"
+            >
+              Copy
+            </button>
+            {!!originalResume && (
+              <button
+                type="button"
+                onClick={() => setShowPreview(true)}
+                className="rounded border border-border bg-background px-3 py-1 text-xs transition-colors hover:bg-muted"
+              >
+                Preview
+              </button>
+            )}
+            <ResumeExportMenu
+              jobId={job.id}
+              resumeContent={resume}
+              resumeFormat={resumeFormat}
+              resumeFont={resumeFont}
+              jobTitle={job.role_title ?? ''}
+              company={job.company_name ?? ''}
+              candidateName={candidateName}
+              documentType="resume"
+              onMessage={flash}
+            />
+          </div>
+        </div>
         <textarea
           value={resume}
           onChange={e => setResume(e.target.value)}
-          className="h-[28rem] w-full rounded border border-border bg-background p-3 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          className="h-112 w-full rounded border border-border bg-background p-3 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           spellCheck
         />
-      </Section>
+      </section>
 
-      <Section title="Cover Letter" onCopy={() => handleCopy(cover, 'Cover letter')} onExport={() => handleExportDocx(cover, 'cover-letter')}>
+      <Section
+        title="Cover Letter"
+        onCopy={() => handleCopy(cover, 'Cover letter')}
+        onExport={async () => {
+          try {
+            const res = await fetch('/api/export-docx', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: cover, filename: 'cover-letter', resumeFormat, resumeFont, job_id: job.id }),
+            })
+            if (!res.ok) { flash('Export failed'); return }
+            const blob = await res.blob()
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url; a.download = 'cover-letter.docx'
+            document.body.appendChild(a); a.click(); a.remove()
+            URL.revokeObjectURL(url)
+            flash('Downloaded')
+          } catch { flash('Export failed') }
+        }}
+      >
         <textarea
           value={cover}
           onChange={e => setCover(e.target.value)}
@@ -280,6 +341,7 @@ export default function DocumentsEditor({ job }: DocumentsEditorProps) {
         {status && <span className="text-sm text-muted-foreground">{status}</span>}
       </div>
     </div>
+    </>
   )
 }
 

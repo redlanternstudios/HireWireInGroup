@@ -334,3 +334,17 @@
     background: hsl(var(--primary));
   }
 }
+
+/* ─── PRINT ISOLATION ────────────────────────────────────────────────────────
+   When the user prints via the preview panel's isolated print window,
+   this CSS is a safety net for any browser that renders the main document.
+   The hw-watermark must never appear in any printed or exported output.
+────────────────────────────────────────────────────────────────────────────── */
+@media print {
+  .hw-watermark {
+    display: none !important;
+  }
+  .hw-preview-chrome {
+    display: none !important;
+  }
+}

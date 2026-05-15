@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getReadyJobIds } from "@/lib/readiness"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { CoachChat } from "@/components/coach-chat"
+import { isAnthropicConfigured } from "@/lib/adapters/anthropic"
 import {
   Briefcase,
   CheckCircle2,
@@ -88,12 +89,6 @@ async function getCoachContext() {
     const jobs = jobsResult.data ?? []
     const evidence = evidenceResult.data ?? []
     const readyIds = readyResult.ready ?? []
-    const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(e => ({
-      id: e.id,
-      event_type: e.event_type,
-      job_id: e.job_id,
-      payload: (e.metadata ?? {}) as Record<string, unknown>,
-      created_at: e.created_at,
     const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(event => ({
       id: event.id,
       event_type: event.event_type,
@@ -224,6 +219,7 @@ function ActionItem({
 
 export default async function CoachPage() {
   const ctx = await getCoachContext()
+  const aiEnabled = isAnthropicConfigured()
 
   const evidenceStatus =
     !ctx || ctx.evidenceCount === 0
@@ -308,7 +304,7 @@ export default async function CoachPage() {
 
         {/* Main chat panel */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border/70">
-          <CoachChat className="h-full" />
+          <CoachChat className="h-full" aiEnabled={aiEnabled} />
         </div>
 
         {/* ── Right context rail ── */}

@@ -160,6 +160,7 @@ function tagsFor(job: EnrichedJob): string[] {
 // ─── Job Row (dense table-style) ──────────────────────────────────────────────
 
 function JobRow({ job, isLast }: { job: EnrichedJob; isLast: boolean }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const action = nextActionFor(job)
   const stageLabel = DISPLAY_STAGE_LABEL[job.displayStage]
   const stageColor = DISPLAY_STAGE_COLOR[job.displayStage]
@@ -241,10 +242,42 @@ function JobRow({ job, isLast }: { job: EnrichedJob; isLast: boolean }) {
       </div>
 
       {/* Overflow menu */}
-      <div className="flex items-center justify-end">
-        <button className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors opacity-0 group-hover:opacity-100">
+      <div className="relative flex items-center justify-end">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label={`More actions for ${job.role_title ?? "job"}`}
+          onClick={() => setMenuOpen(v => !v)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setMenuOpen(false)
+          }}
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+        >
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 top-8 z-30 min-w-44 rounded-xl border border-border bg-card py-1 shadow-lg"
+          >
+            {[
+              { label: "View job", href: `/jobs/${job.id}` },
+              { label: "Review documents", href: `/jobs/${job.id}/documents` },
+              { label: "Evidence match", href: `/jobs/${job.id}/evidence-match` },
+            ].map(item => (
+              <Link
+                key={item.href}
+                href={item.href}
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="block px-3 py-2 text-xs text-foreground hover:bg-muted"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -598,20 +631,43 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  {jobs.length === 0 ? "No jobs tracked yet" : "No jobs match this view"}
+                  {jobs.length === 0
+                    ? "No jobs tracked yet"
+                    : activeView === "active" && viewCounts.active === 0
+                      ? "Your active queue is clear"
+                      : "No jobs match this view"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {jobs.length === 0 ? `Click "Add Job" to start your pipeline.` : "Try a different view tab or filter."}
+                  {jobs.length === 0
+                    ? `Click "Add Job" to start your pipeline.`
+                    : activeView === "active" && viewCounts.active === 0
+                      ? "View applied jobs or all jobs."
+                      : "Try a different view tab or filter."}
                 </p>
               </div>
-              {jobs.length === 0 && (
+              {jobs.length === 0 ? (
                 <button
                   onClick={() => setShowAddJob(true)}
                   className="mt-1 text-xs font-semibold text-primary hover:underline"
                 >
                   + Add your first job
                 </button>
-              )}
+              ) : activeView === "active" && viewCounts.active === 0 ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <button
+                    onClick={() => { setActiveView("applied"); setActiveFilter("all") }}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                  >
+                    View Applied
+                  </button>
+                  <button
+                    onClick={() => { setActiveView("all"); setActiveFilter("all") }}
+                    className="rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-background hover:opacity-90"
+                  >
+                    View All Jobs
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div>

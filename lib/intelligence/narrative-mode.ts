@@ -58,7 +58,7 @@ export interface NarrativeModeProfile {
     section_emphasis: {
       professional_summary: "prominent" | "standard" | "minimal"
       skills_section: "prominent" | "standard" | "minimal"
-      projects_section: "prominent" | "standard" | "suppress"
+      projects_section: "prominent" | "standard" | "minimal" | "suppress"
     }
   }
 }

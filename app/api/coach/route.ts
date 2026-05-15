@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { streamText } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/adapters/anthropic"
 import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
 import { buildCoachContext } from "@/lib/coach/context/build-context"
 import { detectCoachSignals } from "@/lib/coach/signals/engine"
@@ -50,6 +50,16 @@ export async function POST(request: Request) {
       const err = authError({ code: "NOT_AUTHENTICATED", correlationId })
       logErr(err, { route: "/api/coach" })
       return new Response(JSON.stringify(toApiErrorResponse(err)), { status: 401, headers: { "Content-Type": "application/json" } })
+    }
+
+    if (!isAnthropicConfigured()) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "AI Coach is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live coaching.",
+        }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      )
     }
 
     const body = await request.json()

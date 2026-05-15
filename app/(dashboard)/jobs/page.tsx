@@ -4,6 +4,25 @@ import { JobsPipelineClient, type PipelineJob } from "@/components/jobs/jobs-pip
 
 export const dynamic = "force-dynamic"
 
+type JobsRow = {
+  id: string
+  role_title: string | null
+  company_name: string | null
+  status: string | null
+  generation_status: string | null
+  generated_resume: string | null
+  generated_cover_letter: string | null
+  quality_passed: boolean | null
+  applied_at: string | null
+  evidence_map: Record<string, unknown> | null
+  score: number | null
+  score_gaps: string[] | null
+  intelligence: Record<string, unknown> | null
+  updated_at: string | null
+  created_at: string
+  job_scores: Array<{ overall_score?: number }> | null
+}
+
 export default async function JobsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -36,9 +55,8 @@ export default async function JobsPage() {
     .limit(200)
 
   // Normalize score — prefer job_scores.overall_score, fall back to jobs.score
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pipeline: PipelineJob[] = (jobs ?? []).map((j: any) => {
-    const scores = (j.job_scores as Array<{ overall_score?: number }> | null) ?? []
+  const pipeline: PipelineJob[] = ((jobs ?? []) as JobsRow[]).map((j) => {
+    const scores = j.job_scores ?? []
     const score = scores[0]?.overall_score ?? (j.score as number | null) ?? null
     return {
       id:                    j.id,

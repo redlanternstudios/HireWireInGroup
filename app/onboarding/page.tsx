@@ -186,7 +186,7 @@ export default function OnboardingPage() {
                 src="/brand/hirewire-logo.png"
                 alt="HireWire"
                 width={140}
-                height={63}
+                height={93}
                 style={{ width: "140px", height: "auto" }}
               />
             </div>

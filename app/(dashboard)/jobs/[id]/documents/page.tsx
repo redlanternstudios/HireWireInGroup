@@ -46,6 +46,13 @@ export default async function DocumentsPage({
 
   if (error || !job) notFound()
 
+  const { data: userProfile } = await supabase
+    .from('user_profile')
+    .select('full_name')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const candidateName = userProfile?.full_name ?? ''
+
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const versions = hasDocs ? await getResumeVersions(id) : []
 
@@ -110,7 +117,7 @@ export default async function DocumentsPage({
       </div>
       <div className="flex flex-col md:flex-row gap-8">
         <div className="flex-1 min-w-0">
-          <DocumentsEditor job={jobWithFormat} />
+          <DocumentsEditor job={jobWithFormat} candidateName={candidateName} />
         </div>
         <aside className="w-full md:w-96 shrink-0 space-y-4">
           <ApplicationPackagePreview job={jobWithFormat} readiness={readiness} userId={user.id} />

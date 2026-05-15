@@ -25,6 +25,7 @@ interface CoachChatProps {
   className?: string
   conversationId?: string
   compact?: boolean
+  aiEnabled?: boolean
   onClose?: () => void
   jobContext?: {
     jobId: string
@@ -84,7 +85,7 @@ const promptClusters = [
   },
 ]
 
-export function CoachChat({ className, compact = false, jobContext, gapContext, initialMessage }: CoachChatProps) {
+export function CoachChat({ className, compact = false, aiEnabled = true, jobContext, gapContext, initialMessage }: CoachChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialMessageSent = useRef(false)
@@ -100,9 +101,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
         ...(gapContext  ? { gapContext  } : {}),
       },
     }),
-    onError: (err: Error) => {
-      console.error("[coach] stream error:", err)
-    },
+    onError: () => {},
   })).current
 
   const { messages, status, sendMessage } = useChat({ chat })
@@ -111,7 +110,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
 
   // Fire initial message once on mount
   useEffect(() => {
-    if (initialMessage && !initialMessageSent.current && messages.length === 0) {
+    if (aiEnabled && initialMessage && !initialMessageSent.current && messages.length === 0) {
       initialMessageSent.current = true
       sendMessage({ role: "user", parts: [{ type: "text", text: initialMessage }] })
     }
@@ -125,13 +124,13 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
 
   const submit = () => {
     const text = input.trim()
-    if (!text || isLoading) return
+    if (!aiEnabled || !text || isLoading) return
     setInput("")
     sendMessage({ role: "user", parts: [{ type: "text", text }] })
   }
 
   const handleQuickAction = (prompt: string) => {
-    if (isLoading) return
+    if (!aiEnabled || isLoading) return
     sendMessage({ role: "user", parts: [{ type: "text", text: prompt }] })
   }
 
@@ -142,7 +141,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
     }
   }
 
-  const canSend = input.trim().length > 0 && !isLoading
+  const canSend = aiEnabled && input.trim().length > 0 && !isLoading
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -173,8 +172,8 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                     <p className="text-xs font-semibold text-white leading-none mt-0.5">HireWire Coach</p>
                   </div>
                   <div className="ml-auto flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                    <span className="text-[10px] text-white/30">Active</span>
+                    <span className={cn("h-1.5 w-1.5 rounded-full", aiEnabled ? "bg-primary animate-pulse" : "bg-amber-400")} />
+                    <span className="text-[10px] text-white/30">{aiEnabled ? "Active" : "Disconnected"}</span>
                   </div>
                 </div>
                 <p className="text-sm text-white/70 leading-relaxed">
@@ -196,6 +195,13 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                 {!jobContext && (
                   <p className="text-xs text-white/40 mt-2">What would you like to work on today?</p>
                 )}
+                {!aiEnabled && (
+                  <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2">
+                    <p className="text-xs leading-relaxed text-amber-100">
+                      AI Coach is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live coaching.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Grouped prompt clusters */}
@@ -213,7 +219,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                         <button
                           key={p.label}
                           onClick={() => handleQuickAction(p.prompt)}
-                          disabled={isLoading}
+                          disabled={!aiEnabled || isLoading}
                           className={cn(
                             "px-3 py-2 rounded-xl text-left transition-all text-xs font-medium",
                             "bg-background border border-border text-foreground shadow-sm",
@@ -329,7 +335,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask your coach anything..."
+              placeholder={aiEnabled ? "Ask your coach anything..." : "AI Coach is not connected in this environment."}
               className={cn(
                 "w-full min-h-[42px] max-h-[120px] resize-none",
                 "bg-card border border-border rounded-xl px-3.5 py-2.5",
@@ -338,7 +344,7 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
                 compact && "text-xs min-h-[36px]"
               )}
               rows={1}
-              disabled={isLoading}
+              disabled={!aiEnabled || isLoading}
             />
           </div>
           <Button
@@ -355,7 +361,9 @@ export function CoachChat({ className, compact = false, jobContext, gapContext, 
           </Button>
         </form>
         <p className="text-[10px] text-muted-foreground/60 mt-2 text-center">
-          Grounded in your verified evidence — Enter to send, Shift+Enter for new line
+          {aiEnabled
+            ? "Grounded in your verified evidence — Enter to send, Shift+Enter for new line"
+            : "Add AI_GATEWAY_API_KEY to enable live coaching."}
         </p>
       </div>
     </div>

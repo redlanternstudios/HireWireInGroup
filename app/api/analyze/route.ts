@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { job_url } = parseResult.data
+    const { job_url, job_description } = parseResult.data
 
     const supabase = await createClient()
     const {
@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
     }
 
-    const result = await analyzeJobCore(job_url, supabase, user, request)
+    // Pass both job_url and job_description to analyzeJobCore
+    const result = await analyzeJobCore(job_url ?? null, supabase, user, request, job_description ?? null)
 
     if (!result.success) {
       const status = "retryAfter" in result ? 429 : 500

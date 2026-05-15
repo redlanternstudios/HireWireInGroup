@@ -51,6 +51,10 @@ export type DomainEventType =
   | "coach_action_taken"
   // Export
   | "export_generated"
+  | "resume_preview_opened"
+  | "resume_docx_exported"
+  | "resume_txt_exported"
+  | "resume_print_started"
 
 // ─── Severity ─────────────────────────────────────────────────────────────────
 
@@ -67,6 +71,8 @@ export type DomainEventSource =
   | "analyze_job_route"
   | "coach_route"
   | "export_route"
+  | "preview_action"
+  | "resume_export_action"
   | "system"
   | "user"
 

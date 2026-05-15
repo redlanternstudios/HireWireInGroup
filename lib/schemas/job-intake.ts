@@ -7,6 +7,8 @@ import { z } from "zod"
  */
 
 // POST /api/analyze request body
+
+// Accept either a job_url or a job_description (at least one required)
 export const AnalyzeJobInputSchema = z.object({
   job_url: z
     .string()
@@ -21,8 +23,13 @@ export const AnalyzeJobInputSchema = z.object({
         }
       },
       { message: "URL must use http or https" }
-    ),
-})
+    )
+    .optional(),
+  job_description: z.string().min(30, "Job description is too short").optional(),
+}).refine(
+  (data) => data.job_url || data.job_description,
+  { message: "Either job_url or job_description is required" }
+)
 
 export type AnalyzeJobInput = z.infer<typeof AnalyzeJobInputSchema>
 

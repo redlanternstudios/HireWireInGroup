@@ -50,7 +50,7 @@ export interface JobSignalProfile {
 // ─── Signal Taxonomy ──────────────────────────────────────────────────────────
 // Each entry: [label, keywords that strongly indicate this signal]
 
-const SIGNAL_TAXONOMY: Array<{ label: string; keywords: string[] }> = [
+export const SIGNAL_TAXONOMY: Array<{ label: string; keywords: string[] }> = [
   {
     label: "AI/ML Systems",
     keywords: ["ai", "machine learning", "llm", "gpt", "claude", "openai", "anthropic",
