@@ -142,12 +142,17 @@ export default async function DashboardPage() {
       const gaps = (job.score_gaps as string[] | null) ?? []
       const gapCount = gaps.length
       const evidenceBlocked = readiness.stage === "evidence_blocked"
+      // Route to documents when materials are missing — evaluator returns /jobs/[id] as a
+      // placeholder for materials_missing but we always want the documents sub-route here.
+      const actionHref = evidenceBlocked
+        ? `${base}/evidence-match`
+        : `${base}/documents`
       return {
         label: evidenceBlocked
           ? gapCount > 0 ? `Match ${gapCount} missing proof point${gapCount !== 1 ? "s" : ""}` : "Add missing evidence"
           : "Generate your package",
         desc: readiness.blockedReasons[0] ?? "Complete the next readiness requirement.",
-        href: readiness.nextAction?.href ?? `${base}/evidence-match`,
+        href: actionHref,
         cta: evidenceBlocked ? "Fix now" : "Continue",
         timeEst: gapCount > 0 ? `Est. ${gapCount * 5}–${gapCount * 8} min` : null,
       }
@@ -534,13 +539,19 @@ export default async function DashboardPage() {
 
                       {/* CTA buttons */}
                       <div className="flex items-center gap-1 shrink-0">
-                        {tier === "action" && (
-                          <Link href={`/jobs/${job.id}/evidence-match`}>
-                            <Button size="sm" variant="outline" className="text-[11px] h-7 px-2.5 text-rose-600 border-rose-200 hover:bg-rose-50 font-semibold">
-                              Fix
-                            </Button>
-                          </Link>
-                        )}
+                        {tier === "action" && (() => {
+                          const r = evaluateReadiness(job)
+                          const fixHref = r.stage === "evidence_blocked"
+                            ? `/jobs/${job.id}/evidence-match`
+                            : `/jobs/${job.id}/documents`
+                          return (
+                            <Link href={fixHref}>
+                              <Button size="sm" variant="outline" className="text-[11px] h-7 px-2.5 text-rose-600 border-rose-200 hover:bg-rose-50 font-semibold">
+                                Fix
+                              </Button>
+                            </Link>
+                          )
+                        })()}
                         {tier === "review" && (
                           <Link href={`/jobs/${job.id}/documents`}>
                             <Button size="sm" variant="outline" className="text-[11px] h-7 px-2.5 text-amber-600 border-amber-200 hover:bg-amber-50 font-semibold">
