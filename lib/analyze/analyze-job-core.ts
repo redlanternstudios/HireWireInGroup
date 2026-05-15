@@ -12,8 +12,7 @@
  * client-supplied input.
  */
 
-import { Output } from "ai"
-import { generateText } from "@/lib/ai/gateway"
+import { generateObject, CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
 import { z } from "zod"
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
 import {
@@ -29,7 +28,6 @@ import {
   type ExplainableFitScore,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
 import { parseJobPage, detectSource } from "@/lib/parsers"
 import { findJobByUrl } from "@/lib/queries/jobs"
 import { linkJobToCompany } from "@/lib/company-utils"
@@ -324,11 +322,11 @@ Instructions: Extract whatever information is available. For any fields that can
   let analysis: z.infer<typeof JobAnalysisSchema>
 
   if (isAnthropicConfigured()) {
-    // Analyze with Claude
-    const analysisResult = await generateText({
-      model: CLAUDE_MODELS.SONNET,
-      output: Output.object({ schema: JobAnalysisSchema }),
-      prompt: `Analyze this job posting and extract structured information.
+    try {
+      const { object } = await generateObject({
+        model: CLAUDE_MODELS.SONNET,
+        schema: JobAnalysisSchema,
+        prompt: `Analyze this job posting and extract structured information as JSON.
 
 Be precise and extract only what is explicitly stated. Do not invent or assume information.
 
@@ -346,11 +344,15 @@ Role family options for categorization:
 - Other (doesn't fit above)
 
 Job posting content:
-${pageContent}
+${pageContent.slice(0, 12000)}
 
 Extract the job details following the schema.`,
-    })
-    analysis = analysisResult.experimental_output!
+      })
+      analysis = object
+    } catch (aiError) {
+      console.error("[analyze-job-core] AI extraction failed, using fallback:", aiError)
+      analysis = fallbackAnalyzeJob(pageContent)
+    }
   } else {
     analysis = fallbackAnalyzeJob(pageContent)
   }
