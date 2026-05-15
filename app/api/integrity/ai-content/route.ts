@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Missing resumeText" }, { status: 400 })
     }
     if (!isAnthropicConfigured()) {
-      return NextResponse.json({ success: false, error: "AI Gateway not configured. Integrity checks require an AI_GATEWAY_API_KEY." }, { status: 503 })
+      return NextResponse.json({ success: false, error: "AI not configured. Add GROQ_API_KEY to enable integrity checks." }, { status: 503 })
     }
     const flags = await detectAIContent(resumeText)
     return NextResponse.json({ success: true, flags })

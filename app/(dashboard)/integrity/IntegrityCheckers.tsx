@@ -2,7 +2,7 @@
 
 import React from "react"
 
-const DISABLED_MESSAGE = "Integrity tools require AI Gateway configuration. Add AI_GATEWAY_API_KEY to enable live checks."
+const DISABLED_MESSAGE = "Integrity tools require GROQ_API_KEY to enable live checks."
 
 function DisabledNotice({ aiEnabled }: { aiEnabled: boolean }) {
   if (aiEnabled) return null

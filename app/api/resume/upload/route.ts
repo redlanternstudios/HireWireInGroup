@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     if (!isAnthropicConfigured()) {
       await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
       return NextResponse.json(
-        { error: "AI Gateway not configured. Resume parsing requires an AI_GATEWAY_API_KEY." },
+        { error: "AI not configured. Add GROQ_API_KEY to enable resume parsing." },
         { status: 500 }
       )
     }

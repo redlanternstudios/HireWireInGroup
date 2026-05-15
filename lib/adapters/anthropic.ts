@@ -1,36 +1,39 @@
 /**
- * Anthropic/Claude adapter for AI SDK 6
- * 
- * Uses Vercel AI Gateway - just pass model strings directly.
- * Higher token limits than Groq, better for document generation.
- * 
- * Usage:
- *   import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
- *   const result = await generateText({
- *     model: CLAUDE_MODELS.SONNET,
- *     output: Output.object({ schema: MySchema }),
- *     prompt: "...",
- *   })
+ * AI provider adapter — backed by Groq (free tier).
+ *
+ * Exports the same CLAUDE_MODELS and isAnthropicConfigured() names so every
+ * call site (generate-documents, coach, integrity, re-analyze) works unchanged.
+ * Swap the model IDs below to change which Groq model each tier uses.
+ *
+ * Free-tier Groq models used:
+ *   SONNET → llama-3.3-70b-versatile  (high quality, 32k context)
+ *   OPUS   → llama-3.3-70b-versatile  (same, Groq has no larger free model)
+ *   HAIKU  → llama-3.1-8b-instant     (fast, used for quality checks)
+ *
+ * Required env var: GROQ_API_KEY
+ * Get one free at https://console.groq.com → API Keys
  */
 
-// Model constants - AI Gateway format (provider/model)
-// AI Gateway supports Anthropic zero-config
+import { createGroq } from "@ai-sdk/groq"
+
+function getGroqClient() {
+  return createGroq({ apiKey: process.env.GROQ_API_KEY })
+}
+
 export const CLAUDE_MODELS = {
-  /** Best balance of quality and speed - primary generation model */
-  SONNET: "anthropic/claude-sonnet-4-20250514",
-  /** Highest quality, use for complex reasoning */
-  OPUS: "anthropic/claude-opus-4-20250514",
-  /** Fastest, good for simple tasks */
-  HAIKU: "anthropic/claude-3-5-haiku-20241022",
+  get SONNET() {
+    return getGroqClient()("llama-3.3-70b-versatile")
+  },
+  get OPUS() {
+    return getGroqClient()("llama-3.3-70b-versatile")
+  },
+  get HAIKU() {
+    return getGroqClient()("llama-3.1-8b-instant")
+  },
 } as const
 
-export type ClaudeModel = (typeof CLAUDE_MODELS)[keyof typeof CLAUDE_MODELS]
+export type ClaudeModel = ReturnType<typeof getGroqClient>
 
-/**
- * Check if Anthropic is available.
- * The app uses Vercel AI Gateway model strings, so the gateway key must be
- * present before generation starts.
- */
 export function isAnthropicConfigured(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY?.trim())
+  return Boolean(process.env.GROQ_API_KEY?.trim())
 }

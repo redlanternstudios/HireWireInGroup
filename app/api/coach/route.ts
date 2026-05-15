@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "AI Coach is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live coaching.",
+          error: "AI Coach is not connected in this environment. Add GROQ_API_KEY to enable live coaching.",
         }),
         { status: 503, headers: { "Content-Type": "application/json" } }
       )

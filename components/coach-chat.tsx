@@ -198,7 +198,7 @@ export function CoachChat({ className, compact = false, aiEnabled = true, jobCon
                 {!aiEnabled && (
                   <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2">
                     <p className="text-xs leading-relaxed text-amber-100">
-                      AI Coach is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live coaching.
+                      AI Coach is not connected in this environment. Add GROQ_API_KEY to enable live coaching.
                     </p>
                   </div>
                 )}
@@ -363,7 +363,7 @@ export function CoachChat({ className, compact = false, aiEnabled = true, jobCon
         <p className="text-[10px] text-muted-foreground/60 mt-2 text-center">
           {aiEnabled
             ? "Grounded in your verified evidence — Enter to send, Shift+Enter for new line"
-            : "Add AI_GATEWAY_API_KEY to enable live coaching."}
+            : "Add GROQ_API_KEY to enable live coaching."}
         </p>
       </div>
     </div>
