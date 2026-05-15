@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
 //
 // Simpler approach: just call the shared extraction logic directly.
 
-import { generateObject } from "ai"
+import { generateObject } from "@/lib/ai/gateway"
 import { z } from "zod"
 import {
   normalizeEvidenceRecord,
@@ -204,13 +204,13 @@ async function reAnalyzeExistingJob(
     return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
   }
 
-  // Extract structured data using generateObject (works with Groq)
+  // Extract structured data using generateObject with mode:"json" (required for Groq)
   let analysis: z.infer<typeof JobAnalysisSchema>
   try {
     const { object } = await generateObject({
       model: CLAUDE_MODELS.SONNET,
       schema: JobAnalysisSchema,
-      prompt: `Analyze this job posting and extract structured information.\n\nJob posting:\n${pageContent}`,
+      prompt: `Analyze this job posting and extract structured information as JSON.\n\nJob posting:\n${pageContent.slice(0, 12000)}`,
     })
     analysis = object
   } catch (e) {

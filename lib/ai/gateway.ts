@@ -1,6 +1,7 @@
 import { createGroq } from "@ai-sdk/groq"
 import {
   generateText as aiGenerateText,
+  generateObject as aiGenerateObject,
   streamText as aiStreamText,
 } from "ai"
 
@@ -19,6 +20,7 @@ export class AiGatewayConfigurationError extends Error {
 }
 
 type GenerateTextOptions = Parameters<typeof aiGenerateText>[0]
+type GenerateObjectOptions = Parameters<typeof aiGenerateObject>[0]
 type StreamTextOptions = Parameters<typeof aiStreamText>[0]
 
 type AiTelemetry = {
@@ -88,6 +90,28 @@ export const CLAUDE_MODELS = {
 
 export function isAnthropicConfigured(): boolean {
   return isAiGatewayConfigured()
+}
+
+export async function generateObject<T>(
+  options: Omit<GenerateObjectOptions, "output"> & { schema: import("zod").ZodType<T>; mode?: "json" | "tool" | "grammar" },
+  telemetry?: Partial<AiTelemetry>
+): Promise<{ object: T }> {
+  const startedAt = Date.now()
+  const status = getAiGatewayStatus()
+  const source = telemetry?.route ?? inferCallerSource()
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (aiGenerateObject as any)({
+      mode: options.mode ?? "json",
+      ...options,
+      abortSignal: AbortSignal.timeout(status.timeoutMs),
+    })
+    recordAiTelemetry({ ...status, ...telemetry, route: source, success: true, latencyMs: Date.now() - startedAt })
+    return result as { object: T }
+  } catch (error) {
+    recordAiTelemetry({ ...status, ...telemetry, route: source, success: false, latencyMs: Date.now() - startedAt, failureReason: error instanceof Error ? error.message : "Unknown" })
+    throw error
+  }
 }
 
 export async function generateText(
