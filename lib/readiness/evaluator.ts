@@ -133,7 +133,7 @@ function getNextAction(
   if (!checklist.resume || !checklist.coverLetter) {
     return {
       label: "Generate materials",
-      href: jobHref,
+      href: job.id ? `/jobs/${job.id}/documents` : "/jobs",
       description: "Create the evidence-grounded resume and cover letter.",
     }
   }
