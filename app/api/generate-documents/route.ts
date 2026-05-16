@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { Output } from "ai"
-import { generateText } from "@/lib/ai/gateway"
+import { generateStructuredText, generateText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/ai/gateway"
@@ -851,10 +850,10 @@ NOTE: The candidate provided this additional context to address gaps. Use this i
 
   // Step 1: Create evidence map and determine strategy (with retry for rate limits)
   // Using Claude for higher token limits and better quality
-  const evidenceMapResult = await withRetry(() => generateText({
+  const generatedEvidenceMap = await withRetry(() => generateStructuredText({
     model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: EvidenceMapSchema }),
-    prompt: `Analyze the match between this candidate and job opportunity.
+    schema: EvidenceMapSchema,
+    contextPrompt: `Analyze the match between this candidate and job opportunity.
 
 ${profileContext}
 
@@ -870,8 +869,17 @@ Create an evidence map that:
 5. Calculate what percentage of REQUIRED qualifications are covered
 
 Be conservative - only include matches that are clearly supported by the evidence. Do not exaggerate or invent connections.`,
+    schemaDescription: `{
+  "matched_skills": string[],
+  "matched_tools": string[],
+  "matched_experiences": [{ "experience_title": string, "company": string, "relevance": string, "key_achievements": string[], "evidence_id": string | null }],
+  "matched_projects": [{ "project_name": string, "relevance": string, "evidence_id": string | null }],
+  "gaps": string[],
+  "fit_score": number (0-100),
+  "fit_rationale": string,
+  "requirement_coverage": number (0-100)
+}`,
   }))
-  const generatedEvidenceMap = evidenceMapResult.experimental_output!
 
     // Determine generation strategy based on fit
     const evidenceQuality = resumeEvidence.filter((e: { confidence_level: string }) => e.confidence_level === "high").length / (resumeEvidence.length || 1) * 100
@@ -925,10 +933,10 @@ Be conservative - only include matches that are clearly supported by the evidenc
     // Step 2: Generate resume with bullet-level provenance (with retry for rate limits)
   // SIMPLIFIED: Reduced prompt verbosity to produce more natural, human-sounding output
   // Using Claude for higher token limits and better quality
-  const resumeResult = await withRetry(() => generateText({
+  const resumeWithProvenance = await withRetry(() => generateStructuredText({
     model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: ResumeWithProvenanceSchema }),
-    prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
+    schema: ResumeWithProvenanceSchema,
+    contextPrompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
 
 ${profileContext}
 
@@ -977,8 +985,12 @@ KEEP IT SPECIFIC:
 - Preserve industry: "B2B fintech" not "software"
 
 Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to evidence.`,
+    schemaDescription: `{
+  "summary": string,
+  "experience_bullets": [{ "bullet_text": string, "source_evidence_id": string, "source_role": string, "source_company": string, "matched_requirement": string | undefined, "keywords_used": string[] }],
+  "skills_section": string[]
+}`,
   }))
-  const resumeWithProvenance = resumeResult.experimental_output!
 
     // Step 2.5: PRE-GENERATION ENHANCEMENT PASS
     // Strengthen bullets with known profile data before final formatting
@@ -1023,10 +1035,10 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
     // Step 3: Generate cover letter with paragraph provenance (with retry for rate limits)
   // SIMPLIFIED: More direct prompt for natural, human-sounding cover letters
   // Using Claude for higher token limits and better quality
-  const coverLetterResult = await withRetry(() => generateText({
+  const coverLetterWithProvenance = await withRetry(() => generateStructuredText({
     model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: CoverLetterWithProvenanceSchema }),
-    prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
+    schema: CoverLetterWithProvenanceSchema,
+    contextPrompt: `Write a cover letter for this role. Sound confident and human, not like a template.
 
 ${profileContext}
 
@@ -1049,8 +1061,10 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
 - Close briefly - no groveling or excessive enthusiasm
 - Never say "I am excited to apply" or "I would be thrilled"
 - 3-4 paragraphs total`,
+    schemaDescription: `{
+  "paragraphs": [{ "paragraph_text": string, "job_theme_addressed": string, "evidence_ids_used": string[], "claim_confidence": "high" | "medium" | "low" }]
+}`,
   }))
-  const coverLetterWithProvenance = coverLetterResult.experimental_output!
 
     // Build final formatted documents - Premium Clean Minimalist format
   const effectiveEmail = (profile as any)?.email || sourceResumeData?.email || ""
@@ -1290,29 +1304,26 @@ ${signatureBlock}`
     let qualityCheck: z.infer<typeof QualityCheckSchema>
   try {
     // Quality check uses faster model since it's a simpler task
-    const qualityResult = await withRetry(() => generateText({
+    qualityCheck = await withRetry(() => generateStructuredText({
       model: CLAUDE_MODELS.HAIKU,
-      output: Output.object({ schema: QualityCheckSchema }),
-      prompt: `You are a resume quality reviewer. Analyze the generated documents and return a JSON object with your findings.
+      schema: QualityCheckSchema,
+      contextPrompt: `You are a resume quality reviewer. Analyze the generated documents and return a JSON object with your findings.
 
 GENERATED RESUME:
 ${formattedResume.slice(0, 2000)}
 
 GENERATED COVER LETTER:
-${formattedCoverLetter.slice(0, 1500)}
-
-Return a JSON object with these exact fields:
-- invented_claims: array of strings (claims that seem fabricated)
-- vague_bullets: array of strings (bullets too generic)
-- ai_filler: array of strings (AI-sounding phrases)
-- repeated_structures: array of strings (repetitive patterns)
-- unsupported_claims: array of strings (unverifiable claims)
-- overall_passed: boolean (true if quality is acceptable)
-- improvement_suggestions: array of strings (suggestions to improve)
-
-If no issues found, return empty arrays and overall_passed: true.`,
+${formattedCoverLetter.slice(0, 1500)}`,
+      schemaDescription: `{
+  "invented_claims": string[],
+  "vague_bullets": string[],
+  "ai_filler": string[],
+  "repeated_structures": string[],
+  "unsupported_claims": string[],
+  "overall_passed": boolean,
+  "improvement_suggestions": string[]
+}`,
     }))
-    qualityCheck = qualityResult.experimental_output!
     } catch (qualityCheckError) {
       console.error("Quality check failed, using defaults:", qualityCheckError)
       // Default to passing quality check if the AI model fails

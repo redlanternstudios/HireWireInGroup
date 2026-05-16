@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
+import { GenerateButton } from '../GenerateButton'
 import DocumentsEditor from './DocumentsEditor'
 import ApplicationPackagePreview from '@/components/documents/ApplicationPackagePreview'
 import VoiceIntegritySection from '@/components/documents/VoiceIntegritySection'
@@ -59,14 +60,21 @@ export default async function DocumentsPage({
   if (!hasDocs) {
     return (
       <div className="hw-page max-w-2xl">
-        <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4">
-          <p className="text-sm font-semibold">No documents generated yet</p>
-          <p className="text-xs text-muted-foreground max-w-xs">
-            Return to the job detail page and run document generation to create your tailored resume and cover letter.
-          </p>
-          <Link href={`/jobs/${id}`} className="text-xs text-primary hover:underline">
-            Back to job
-          </Link>
+        <Link href={`/jobs/${id}`} className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-4 inline-flex items-center gap-1">
+          ← Back to job
+        </Link>
+        <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-5">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Generate your application package</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+              Create a tailored resume and cover letter for{" "}
+              {job.role_title ? <strong>{job.role_title}</strong> : "this role"}{" "}
+              {job.company_name ? <>at <strong>{job.company_name}</strong></> : ""}.
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <GenerateButton jobId={id} />
+          </div>
         </div>
       </div>
     )

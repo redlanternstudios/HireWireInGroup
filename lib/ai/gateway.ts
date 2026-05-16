@@ -5,7 +5,8 @@ import {
   streamText as aiStreamText,
 } from "ai"
 
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+// llama-4-scout supports json_schema structured output on Groq (current as of May 2026)
+const DEFAULT_GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 const DEFAULT_GROQ_FAST_MODEL = "llama-3.1-8b-instant"
 const DEFAULT_TIMEOUT_MS = 30000
 
@@ -29,7 +30,12 @@ type AiTelemetry = {
 }
 
 function getApiKey() {
-  return process.env.AI_GATEWAY_API_KEY?.trim() || process.env.GROQ_API_KEY?.trim() || ""
+  // AI_GATEWAY_API_KEY may be a Vercel AI Gateway key (vck_...) or a Groq key (gsk_...).
+  // createGroq() only accepts Groq keys — use it only when it looks like one.
+  const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim() ?? ""
+  const groqKey = process.env.GROQ_API_KEY?.trim() ?? ""
+  if (gatewayKey.startsWith("gsk_")) return gatewayKey
+  return groqKey || gatewayKey // fall back to groqKey, then gateway key as last resort
 }
 
 function getTimeoutMs() {
@@ -51,12 +57,29 @@ export function isAiGatewayConfigured(): boolean {
   return Boolean(getApiKey())
 }
 
+// Resolved model names — always use DEFAULT_GROQ_MODEL unless explicitly overridden
+// with a valid non-legacy model. This prevents stale GROQ_MODEL env vars from
+// silently switching back to decommissioned models like llama-3.3-70b-versatile.
+const LEGACY_MODELS = new Set([
+  "llama-3.3-70b-versatile",
+  "llama-3.1-70b-versatile",
+  "llama3-70b-8192",
+])
+
+function resolveModel(envVar: string | undefined, defaultModel: string): string {
+  const override = envVar?.trim()
+  if (override && !LEGACY_MODELS.has(override)) return override
+  return defaultModel
+}
+
 export function getAiGatewayStatus() {
+  const model = resolveModel(process.env.GROQ_MODEL, DEFAULT_GROQ_MODEL)
+  const fastModel = resolveModel(process.env.GROQ_FAST_MODEL, DEFAULT_GROQ_FAST_MODEL)
   return {
     configured: isAiGatewayConfigured(),
     provider: "groq",
-    model: process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL,
-    fastModel: process.env.GROQ_FAST_MODEL?.trim() || DEFAULT_GROQ_FAST_MODEL,
+    model,
+    fastModel,
     timeoutMs: getTimeoutMs(),
     keySource: process.env.AI_GATEWAY_API_KEY?.trim()
       ? "AI_GATEWAY_API_KEY"
@@ -68,10 +91,10 @@ export function getAiGatewayStatus() {
 
 export const AI_MODELS = {
   get PRIMARY() {
-    return getModel(process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL)
+    return getModel(resolveModel(process.env.GROQ_MODEL, DEFAULT_GROQ_MODEL))
   },
   get QUALITY() {
-    return getModel(process.env.GROQ_FAST_MODEL?.trim() || DEFAULT_GROQ_FAST_MODEL)
+    return getModel(resolveModel(process.env.GROQ_FAST_MODEL, DEFAULT_GROQ_FAST_MODEL))
   },
 } as const
 
@@ -112,6 +135,39 @@ export async function generateObject<T>(
     recordAiTelemetry({ ...status, ...telemetry, route: source, success: false, latencyMs: Date.now() - startedAt, failureReason: error instanceof Error ? error.message : "Unknown" })
     throw error
   }
+}
+
+/**
+ * generateStructuredText — reliable structured output for any Groq model.
+ *
+ * Uses generateText with a JSON-schema prompt instead of json_schema mode,
+ * which is only supported on a small subset of Groq models and rejects
+ * schemas with optional/nullable fields. Falls back gracefully on parse errors.
+ */
+export async function generateStructuredText<T>(
+  options: {
+    model: GenerateTextOptions["model"]
+    schema: import("zod").ZodType<T>
+    schemaDescription: string   // human-readable field list for the prompt
+    contextPrompt: string       // the actual task / content to analyze
+    system?: string
+  },
+  telemetry?: Partial<AiTelemetry>
+): Promise<T> {
+  const { schema, schemaDescription, contextPrompt, model, system } = options
+  const prompt = `${contextPrompt}
+
+Return ONLY valid JSON matching this schema (no markdown, no code fences, no explanation):
+${schemaDescription}`
+
+  const result = await generateText({ model, prompt, system }, telemetry)
+  const raw = result.text.replace(/^```(?:json)?\n?|```$/gm, "").trim()
+
+  const parsed = schema.safeParse(JSON.parse(raw))
+  if (!parsed.success) {
+    throw new Error(`AI response failed schema validation: ${parsed.error.issues.map(i => i.path.join(".") + ": " + i.message).join("; ")}`)
+  }
+  return parsed.data
 }
 
 export async function generateText(
