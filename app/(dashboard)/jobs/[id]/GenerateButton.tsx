@@ -21,23 +21,20 @@ export function GenerateButton({ jobId }: { jobId: string }) {
       const data = await res.json()
 
       if (!res.ok || !data.success) {
-        if (data.error === "evidence_required") {
-          setError(
-            data.user_message ??
-              "No evidence found in your library. Upload a resume or add evidence manually before generating."
-          )
-        } else if (data.error === "matching_incomplete") {
-          setError(
-            data.user_message ??
-              "Complete evidence matching before generating documents."
-          )
-        } else if (data.error === "generation_limit_reached") {
-          setError(
-            data.user_message ??
-              "You've reached your monthly limit of 5 document generations. Upgrade to Pro for unlimited generations."
-          )
+        // data.error may be a string (legacy) or a nested AppError object {code, category, message, ...}
+        const errorCode = typeof data.error === "object" ? data.error?.code : data.error
+        const errorMessage = typeof data.error === "object"
+          ? (data.error?.message ?? "Generation failed — please try again.")
+          : (data.error ?? "Generation failed — please try again.")
+
+        if (errorCode === "evidence_required") {
+          setError(data.user_message ?? "No evidence found in your library. Upload a resume or add evidence manually before generating.")
+        } else if (errorCode === "matching_incomplete") {
+          setError(data.user_message ?? "Complete evidence matching before generating documents.")
+        } else if (errorCode === "generation_limit_reached") {
+          setError(data.user_message ?? "You've reached your monthly limit of 5 document generations. Upgrade to Pro for unlimited generations.")
         } else {
-          setError(data.error ?? "Generation failed — please try again.")
+          setError(data.user_message ?? errorMessage)
         }
         return
       }
