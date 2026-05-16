@@ -24,7 +24,10 @@ export function ApplyButton({ jobId, disabled = false }: ApplyButtonProps) {
       if (result.success) {
         router.push("/applications")
       } else {
-        setError(result.error ?? "Could not submit application.")
+        const msg = typeof result.error === "object"
+          ? ((result.error as { message?: string })?.message ?? "Could not submit application.")
+          : (result.error ?? "Could not submit application.")
+        setError(msg)
         setPending(false)
       }
     } catch {
