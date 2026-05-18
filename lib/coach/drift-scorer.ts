@@ -79,6 +79,7 @@ function maxEvidenceNumber(evSet: GovernanceEvidence[]): number {
   const allText = evSet
     .flatMap((e) => [
       ...(e.outcomes ?? []),
+      ...(e.responsibilities ?? []),
       ...(e.approved_achievement_bullets ?? []),
       e.team_size != null ? String(e.team_size) : "",
       e.budget_scope ?? "",

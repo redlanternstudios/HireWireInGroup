@@ -612,6 +612,7 @@ ${name}`;
       source_title: e.source_title,
       source_type: e.source_type,
       confidence_level: e.confidence_level,
+      responsibilities: Array.isArray(e.responsibilities) ? e.responsibilities : [],
       outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
       tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
       team_size: (e as any).team_size ?? null,
@@ -1836,6 +1837,9 @@ ${signatureBlock}`;
         source_title: e.source_title,
         source_type: e.source_type,
         confidence_level: e.confidence_level,
+        responsibilities: Array.isArray(e.responsibilities)
+          ? e.responsibilities
+          : [],
         outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
         tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
         team_size: (e as any).team_size ?? null,

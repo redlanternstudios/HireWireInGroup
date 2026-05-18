@@ -10,6 +10,9 @@ const evidence: GovernanceEvidence[] = [
     source_title: "Lead Product Manager at Deloitte",
     source_type: "work_experience",
     confidence_level: "high",
+    responsibilities: [
+      "Troubleshot API, access, and platform-level issues",
+    ],
     outcomes: [
       "Led Agile product delivery for Salesforce reporting dashboards and executive visibility",
     ],
@@ -54,6 +57,22 @@ test("claim validator treats weak stale-id matches as reviewable instead of fabr
   assert.equal(validation.hasFabricated, false)
   assert.equal(validation.bulletVerdicts[0].confidence, "medium")
   assert.equal(validation.bulletVerdicts[0].cited_evidence_id, "ev_product_delivery")
+})
+
+test("claim validator treats responsibilities as source evidence", () => {
+  const validation = validateAllClaims(
+    [
+      {
+        text: "Troubleshot API, access, and platform-level issues",
+        cited_evidence_id: "ev_product_delivery",
+      },
+    ],
+    [],
+    evidence,
+  )
+
+  assert.equal(validation.hasFabricated, false)
+  assert.equal(validation.bulletVerdicts[0].confidence, "high")
 })
 
 test("drift scorer does not treat common business nouns as unsupported tools", () => {

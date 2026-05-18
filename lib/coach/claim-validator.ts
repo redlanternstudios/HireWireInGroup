@@ -35,6 +35,7 @@ function extractNumbers(text: string): number[] {
 
 function evidenceNumbers(ev: GovernanceEvidence): number[] {
   const texts = [
+    ...(ev.responsibilities ?? []),
     ...(ev.outcomes ?? []),
     ...(ev.approved_achievement_bullets ?? []),
     ev.team_size != null ? String(ev.team_size) : "",
@@ -94,6 +95,7 @@ function findBestEvidenceMatch(
 function buildEvidenceText(ev: GovernanceEvidence): string {
   return [
     ev.source_title,
+    ...(ev.responsibilities ?? []),
     ...(ev.outcomes ?? []),
     ...(ev.approved_achievement_bullets ?? []),
     ...(ev.tools_used ?? []),

@@ -200,6 +200,7 @@ export type GovernanceEvidence = {
   source_title: string
   source_type: string
   confidence_level: string
+  responsibilities?: string[]
   outcomes: string[]
   tools_used: string[]
   team_size?: number | null
