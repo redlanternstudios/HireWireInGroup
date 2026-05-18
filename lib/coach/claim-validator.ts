@@ -17,6 +17,9 @@
 
 import type { ClaimVerdict, ClaimConfidence, GovernanceEvidence } from "./types"
 
+const FABRICATION_OVERLAP_THRESHOLD = 0.03
+const MEDIUM_CONFIDENCE_OVERLAP_THRESHOLD = 0.12
+
 // ── Numeric extraction ────────────────────────────────────────────────────────
 
 const NUMBER_PATTERN = /(\d[\d,]*(?:\.\d+)?)\s*(%|k|m|b|x|\/)?/gi
@@ -83,7 +86,7 @@ function findBestEvidenceMatch(
     }
   }
 
-  return best && best.overlap >= 0.18 ? best : null
+  return best && best.overlap >= FABRICATION_OVERLAP_THRESHOLD ? best : null
 }
 
 // ── Core validator ────────────────────────────────────────────────────────────
@@ -114,7 +117,7 @@ function assessConfidence(params: {
     return { confidence: "fabricated", reason: "Cited evidence ID not found in evidence set." }
   }
 
-  if (overlap < 0.08) {
+  if (overlap < FABRICATION_OVERLAP_THRESHOLD) {
     return {
       confidence: "fabricated",
       reason: `Claim shares almost no keywords with cited evidence (overlap: ${(overlap * 100).toFixed(0)}%).`,
@@ -128,7 +131,7 @@ function assessConfidence(params: {
     }
   }
 
-  if (overlap < 0.18) {
+  if (overlap < MEDIUM_CONFIDENCE_OVERLAP_THRESHOLD) {
     return { confidence: "medium", reason: "Weak keyword overlap with cited evidence." }
   }
 
@@ -186,7 +189,7 @@ export function validateClaim(
   const evidenceKeywords = keywordsOf(evidenceText)
 
   const overlap = overlapRatio(claimKeywords, evidenceKeywords)
-  const claimGrounded = overlap >= 0.08
+  const claimGrounded = overlap >= FABRICATION_OVERLAP_THRESHOLD
 
   // Metric traceability
   const claimNums = extractNumbers(claim.text)

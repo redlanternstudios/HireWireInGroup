@@ -39,6 +39,23 @@ test("claim validator infers grounded evidence when provenance id is missing", (
   assert.equal(validation.bulletVerdicts[0].cited_evidence_id, "ev_product_delivery")
 })
 
+test("claim validator treats weak stale-id matches as reviewable instead of fabricated", () => {
+  const validation = validateAllClaims(
+    [
+      {
+        text: "Coordinated discovery workshops, prioritized roadmap themes, aligned stakeholders, and prepared Salesforce launch updates for leaders",
+        cited_evidence_id: "stale_retry_id",
+      },
+    ],
+    [],
+    evidence,
+  )
+
+  assert.equal(validation.hasFabricated, false)
+  assert.equal(validation.bulletVerdicts[0].confidence, "medium")
+  assert.equal(validation.bulletVerdicts[0].cited_evidence_id, "ev_product_delivery")
+})
+
 test("drift scorer does not treat common business nouns as unsupported tools", () => {
   const validation = validateAllClaims(
     [
