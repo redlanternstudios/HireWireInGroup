@@ -24,8 +24,12 @@ import {
   type WorkflowStage,
 } from "@/lib/job-workflow"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
+import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
+import { GapCoachDrawer } from "@/components/coach/GapCoachDrawer"
+import type { CoachRecommendation } from "@/lib/coach/recommendations"
 
 export const dynamic = "force-dynamic"
 
@@ -39,7 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
   ready: "Ready", applied: "Applied", interviewing: "Interviewing", offered: "Offered", rejected: "Rejected",
 }
 
-function ScoreBar({ label, value }: { label: string; value: number }) {
+function ScoreBar({ label, value, note }: { label: string; value: number; note?: string }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
@@ -49,8 +53,22 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
       <div className="quality-bar">
         <div className="quality-bar-fill" style={{ width: `${Math.min(100, Math.round(value))}%` }} />
       </div>
+      {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
     </div>
   )
+}
+
+function buildGapCoachRecommendations(gaps: string[], jobId: string): CoachRecommendation[] {
+  return gaps.slice(0, 3).map((gap, index) => {
+    const requirement = gap.replace(/^Gap:\s*/i, "").trim()
+    return {
+      id: `job-${jobId}-gap-${index}`,
+      message: `Can you share a concrete example, project, certification, or adjacent experience that covers "${requirement}"?`,
+      context: "fit_scored",
+      priority: index + 1,
+      type: "improvement",
+    }
+  })
 }
 
 /** Horizontal stage progress strip */
@@ -240,9 +258,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const workflow = getWorkflowState(jobWithAnalysis, id)
   const readiness = evaluateReadiness(job)
+  const coachStep = getCoachStepState(job)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
+  const gapCoachRecommendations = buildGapCoachRecommendations(knownGaps, id)
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const isAnalyzed = !!(
@@ -318,7 +338,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {!stillProcessing && (
         <>
           <div className="space-y-2">
-            <ReadinessChecklist checklist={readiness.checklist} />
+            <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
             {!readiness.isReady && (
               <div className="text-sm text-rose-600">
                 {readiness.blockedReasons.join(", ")}
@@ -376,6 +396,20 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 )}
               </div>
               <div className="space-y-3">
+                {coachStep.evidenceCoverage != null && (
+                  <ScoreBar
+                    label="Evidence coverage"
+                    value={coachStep.evidenceCoverage}
+                    note="How much of the role is backed by proof in your Career Context."
+                  />
+                )}
+                {coachStep.strategicFit != null && (
+                  <ScoreBar
+                    label="Strategic fit"
+                    value={coachStep.strategicFit}
+                    note="How well your current evidence lines up with this job after weighting role signals."
+                  />
+                )}
                 {scores?.skills_match != null && (
                   <ScoreBar label="Skills match" value={Number(scores.skills_match)} />
                 )}
@@ -427,6 +461,28 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
+          {coachStep.required && !hasDocs && (
+            <>
+              <GapCoachDrawer
+                jobId={id}
+                jobTitle={jobWithAnalysis.title}
+                company={jobWithAnalysis.company}
+                score={overallScore}
+                status={job.status}
+                gaps={coachStep.gaps}
+                autoOpen={!coachStep.complete}
+              />
+              {gapCoachRecommendations.length > 0 && (
+                <WorkflowCoachPanelClient
+                  recommendations={gapCoachRecommendations}
+                  blockers={["Address the highest-impact gaps before generating materials."]}
+                  insights={[]}
+                  momentum="Answer one prompt and HireWire can turn it into evidence for this role."
+                />
+              )}
+            </>
+          )}
+
           {!hasDocs && (
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-1">
@@ -436,7 +492,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 Generate a tailored resume and cover letter for this role.
               </p>
               <div className="space-y-2">
-                <GenerateButton jobId={job.id} />
+                <GenerateButton jobId={job.id} disabled={!readiness.canGenerate} disabledReason={readiness.nextAction?.description} />
                 {isFreePlan && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Lock className="h-3 w-3" />

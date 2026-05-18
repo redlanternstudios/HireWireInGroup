@@ -22,6 +22,12 @@ import {
   buildEducationEvidenceRows,
 } from "@/lib/resume/extractEducation";
 import { handleDomainEvent } from "@/lib/domain-events";
+import { detectEvidenceDuplicates } from "@/lib/evidence/duplicates";
+import {
+  buildProfileContext,
+  isContextEngineEnabled,
+  mirrorProfileContext,
+} from "@/lib/context-engine";
 
 export const maxDuration = 60;
 
@@ -174,6 +180,18 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", sourceResumeId);
 
+    if (isContextEngineEnabled()) {
+      const context = buildProfileContext({
+        userId,
+        sourceId: sourceResumeId,
+        sourceType: "resume",
+        sourceLabel: filename,
+        rawText,
+        parsedData: parsed as unknown as Record<string, unknown>,
+      });
+      void mirrorProfileContext({ supabase, userId, context });
+    }
+
     // ── 4b. Extract and insert education evidence rows ───────────────────────
     const educationEntries = await extractEducationFromResumeText(rawText);
 
@@ -293,7 +311,7 @@ export async function POST(request: NextRequest) {
     const { data: existing } = await supabase
       .from("evidence_library")
       .select(
-        "id, source_type, source_title, role_name, company_name, date_range",
+        "id, source_type, source_title, role_name, company_name, date_range, responsibilities, tools_used, outcomes, proof_snippet",
       )
       .eq("user_id", userId);
 
@@ -309,7 +327,7 @@ export async function POST(request: NextRequest) {
       existingMap.set(key, row.id);
     }
 
-    const rowsToInsert: typeof candidateRows = [];
+    let rowsToInsert: typeof candidateRows = [];
     const skillsToUpdate: Array<{ id: string; tools_used: string[] | null }> =
       [];
     let skippedCount = 0;
@@ -325,6 +343,13 @@ export async function POST(request: NextRequest) {
         skippedCount++;
       }
     }
+
+    const duplicateCandidates = detectEvidenceDuplicates(rowsToInsert, existing ?? []);
+    const duplicateIndexes = new Set(
+      duplicateCandidates.map((candidate) => candidate.group_id.replace("evidence-duplicate-", "")),
+    );
+    rowsToInsert = rowsToInsert.filter((_row, index) => !duplicateIndexes.has(String(index)));
+    skippedCount += duplicateCandidates.length;
 
     // ── 8a. Update existing skill rows ───────────────────────────────────────
     for (const update of skillsToUpdate) {
@@ -430,6 +455,8 @@ export async function POST(request: NextRequest) {
       inserted: inserted.length,
       updated: skillsToUpdate.length,
       skipped: skippedCount,
+      duplicates_found: duplicateCandidates.length,
+      duplicate_candidates: duplicateCandidates,
       education_count: educationEntries.length,
       evidence: inserted.map((e) => ({
         id: e.id,

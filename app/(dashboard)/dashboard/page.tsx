@@ -169,7 +169,7 @@ export default async function DashboardPage() {
       supabase
         .from("jobs")
         .select(
-          "id, role_title, company_name, status, score, quality_passed, generated_resume, generated_cover_letter, evidence_map, applied_at, created_at, updated_at, score_gaps",
+          "id, role_title, company_name, status, score, quality_passed, generated_resume, generated_cover_letter, evidence_map, applied_at, created_at, updated_at, score_gaps, gap_clarifications, gaps_addressed",
         )
         .eq("user_id", user.id)
         .is("deleted_at", null)

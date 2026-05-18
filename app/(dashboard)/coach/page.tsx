@@ -77,7 +77,7 @@ async function getCoachContext() {
         supabase
           .from("jobs")
           .select(
-            "id, role_title, company_name, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed, generation_status",
+            "id, role_title, company_name, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed, generation_status, score, score_gaps, gap_clarifications, gaps_addressed",
           )
           .eq("user_id", user.id)
           .is("deleted_at", null),

@@ -9,7 +9,7 @@ Use this system context whenever generating or modifying HireWire code with v0, 
 ```
 Browser
   └─ POST /api/analyze (job URL intake)
-       └─ Groq analysis (llama-3.3-70b)
+       └─ AI Gateway structured analysis
        └─ Insert job + job_analyses
        └─ runJobFlow() (in-process)
             └─ POST /api/generate-documents
@@ -30,7 +30,9 @@ Browser
 | `jobs` | Job listings, status, analysis results | `id`, `user_id`, `status`, `title`, `company`, `source_url`, `score`, `generated_resume`, `generated_cover_letter`, `generation_error` |
 | `user_profile` | Resume data (keyed per user) | `id`, `user_id`, `full_name` (NOT `name`), `email`, `location`, `summary`, `experience`, `education`, `skills`, `tools`, `domains` |
 | `evidence_library` | Extracted resume bullet provenance per job | `id`, `user_id`, `job_id`, `category`, `bullet_text`, `source_profile_section` |
-| `job_analyses` | Raw Groq analysis output | `id`, `user_id`, `job_id`, `keywords`, `parsed_description`, `raw_analysis` |
+| `job_analyses` | Raw AI Gateway analysis output | `id`, `user_id`, `job_id`, `keywords`, `parsed_description`, `raw_analysis` |
+| `generation_governance_runs` | Per-generation governance audit | `id`, `user_id`, `job_id`, `drift_score`, `governance_passed`, `drift_flags` |
+| `governance_claim_verdicts` | Per-claim grounding verdicts | `id`, `run_id`, `job_id`, `document_type`, `claim_text`, `confidence` |
 | `interview_prep` | STAR stories and angle cards | `id`, `user_id`, `job_id`, `star_stories`, `angle_cards`, `talking_points` |
 | `run_ledger` | Per-step observability log | `id`, `user_id`, `job_id`, `step_name`, `status`, `summary`, `error_details`, `created_at` |
 | `processing_events` | Legacy activity log (for compatibility) | `id`, `user_id`, `event_type`, `job_id`, `message`, `metadata` |
@@ -49,9 +51,10 @@ Browser
 - `NEXT_PUBLIC_SUPABASE_URL` — public Supabase URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — public Supabase key
 - `SUPABASE_SERVICE_ROLE_KEY` — secret service role key (server-only)
-- `GROQ_API_KEY` — Groq API key for all AI (analysis, generation, interview prep)
+- `AI_GATEWAY_API_KEY` or `OPENAI_API_KEY` — AI Gateway/OpenAI key for analysis, generation, and integrity checks
 
 **Optional/Deprecated:**
+- `GROQ_API_KEY` — deprecated; do not add new Groq code paths
 - N8N_JOB_INTAKE_WEBHOOK_URL, N8N_JOB_INTAKE_WEBHOOK_TOKEN — **IGNORE, not used**
 
 ## Job Lifecycle (Canonical Status Values)
@@ -90,7 +93,7 @@ const data = await supabase
 ```
 
 ### Generation Flow
-- `/api/analyze` — Entry point, calls Groq, inserts job, triggers `runJobFlow()`
+- `/api/analyze` — Entry point, calls AI Gateway, inserts job, triggers `runJobFlow()`
 - `/api/generate-documents` — Creates resume + cover letter, updates job status
 - `/api/generate-interview-prep` — Creates STAR stories and angles
 - `/api/jobs/[id]/run-flow` — Manual trigger for existing job (orchestrator)
@@ -141,11 +144,11 @@ interface UserProfile {
 1. **Always use `full_name`, never `name`** in user_profile queries and updates
 2. **Always filter by `user_id`** in multi-user operations — Supabase RLS will enforce this, but do it anyway
 3. **Status values are lowercase with underscores** (`ready_for_review` NOT `Ready For Review`)
-4. **Generation is Groq-based, not mock** — GROQ_API_KEY must be present; no fallback to stub responses
+4. **Generation is AI Gateway-based, not mock** — `AI_GATEWAY_API_KEY` or `OPENAI_API_KEY` must be present; no fallback to stub responses
 5. **Interview prep requires job analysis first** — cannot generate interview prep without job.analyzed_at
 6. **Evidence mapping is human-curated** — `/api/generate-documents` takes optional `selected_evidence_ids` to allow user override
 7. **Error logging is mandatory** — every API route must log to `run_ledger` on error; include `error_details`
-8. **Interview prep generation uses llama-3.1-8b-instant**, not 70b (cost optimization)
+8. **Structured JSON must use `generateStructuredText()`**, never `Output.object()` / `experimental_output`
 9. **No hardcoded URLs** — use `VERCEL_URL` at runtime or fallback to request origin
 10. **Profile must exist before generation** — `/auth/callback` redirects to `/onboarding` if `user_profile.full_name` is null
 
@@ -162,7 +165,8 @@ interface UserProfile {
 - ❌ Assume `generated_documents` table exists (it may not; use `jobs.generated_resume` instead)
 - ❌ Use `name` column in user_profile (always use `full_name`)
 - ❌ Trust client-provided user_id (always extract from auth session)
-- ❌ Generate documents without Groq API key present
+- ❌ Generate documents without AI Gateway/OpenAI credentials present
+- ❌ Add `@ai-sdk/groq`, `GROQ_API_KEY`, `Output.object()`, or `generateObject()` to active code
 - ❌ Skip error logging to run_ledger on API route errors
 - ❌ Assume `avatars` bucket exists (handle missing bucket gracefully)
 

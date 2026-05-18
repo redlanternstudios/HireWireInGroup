@@ -36,7 +36,7 @@ export async function recomputeReadiness({
   try {
     const { data: job, error } = await supabase
       .from("jobs")
-      .select("id, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed")
+      .select("id, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed, score, score_gaps, gap_clarifications, gaps_addressed")
       .eq("id", jobId)
       .eq("user_id", userId)
       .is("deleted_at", null)

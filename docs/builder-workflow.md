@@ -26,7 +26,7 @@ Before you ask v0 to generate code or write it yourself, answer these:
 
 ### 4. Integration Points
 - [ ] Does this touch the job lifecycle?
-- [ ] Will it generate content (requires Groq)?
+- [ ] Will it generate content (requires AI Gateway/OpenAI credentials)?
 - [ ] Does it log to run_ledger?
 - [ ] Will it call other API routes?
 
@@ -84,7 +84,7 @@ CREATE POLICY "users_can_update_own_feedback" ON interview_feedback
 1. **Endpoint**: `/api/[feature]/route.ts` OR `/api/[resource]/[id]/[action]/route.ts`
 2. **Method**: GET (read), POST (create/trigger), PUT/PATCH (update)
 3. **Auth Check**: Extract `user.id` from session, verify request owns data
-4. **Groq Call Needed**: If generating content, use Groq (NOT mock)
+4. **AI Call Needed**: If generating content, use `@/lib/ai/gateway` (NOT mock)
 5. **Logging**: Always call `recordRunStep()` or insert to `run_ledger` on error
 
 **Example minimal API route:**
@@ -251,7 +251,7 @@ I'm building [FEATURE NAME] for HireWire, a job application engine.
 **Technical Requirements:**
 - Integrates with Supabase table(s): [list tables]
 - Requires new columns: [yes/no, if yes what columns?]
-- Requires Groq API calls: [yes/no, what model?]
+- Requires AI Gateway calls: [yes/no, what model?]
 - Requires logging to run_ledger: [yes/no]
 - User-scoped data (needs auth check): [yes/no]
 
@@ -271,7 +271,7 @@ I'm building [FEATURE NAME] for HireWire, a job application engine.
 - [ ] Includes loading/error states (for client components)
 - [ ] Logs important steps to run_ledger
 
-This follows HireWire architecture: in-app orchestration (no n8n), Groq-based generation, Supabase RLS for multi-tenancy.
+This follows HireWire architecture: in-app orchestration (no n8n), AI Gateway-based generation, Supabase RLS for multi-tenancy.
 ```
 
 ## Common Patterns
@@ -297,15 +297,17 @@ const { data, error } = await supabase
   })
 ```
 
-### Calling Groq from API Route
+### Calling AI Gateway from API Route
 ```typescript
-import { generateText } from "ai"
-import { groq } from "@ai-sdk/groq"
+import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
 
-const result = await generateText({
-  model: groq("llama-3.3-70b-versatile"),
+const result = await generateStructuredText({
+  model: CLAUDE_MODELS.SONNET,
+  schema: MySchema,
+  schemaDescription: `{
+    "summary": string
+  }`,
   prompt: "Analyze this job description...",
-  temperature: 0.7,
 })
 ```
 
@@ -340,7 +342,7 @@ If something doesn't work:
 
 1. **Check migration status** — Are all scripts 001-011 applied in Supabase?
 2. **Check user_id filtering** — Is your query filtering by authenticated user?
-3. **Check Groq key** — Does GROQ_API_KEY exist in .env?
+3. **Check AI key** — Does AI_GATEWAY_API_KEY or OPENAI_API_KEY exist in .env?
 4. **Check table/column names** — Are they lowercase_with_underscores?
 5. **Check run_ledger** — Did errors get logged? What do they say?
 
@@ -349,4 +351,4 @@ If something doesn't work:
 **Last Updated**: March 30, 2026  
 **Architecture**: In-app API routes, no n8n  
 **Database**: Supabase Postgres with RLS  
-**AI Provider**: Groq (llama-3.3-70b for generation, llama-3.1-8b for quality checks)
+**AI Provider**: AI Gateway/OpenAI via `@/lib/ai/gateway`

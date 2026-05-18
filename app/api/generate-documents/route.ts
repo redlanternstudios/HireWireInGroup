@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Output } from "ai";
-import { generateText } from "@/lib/ai/gateway";
+import { generateStructuredText } from "@/lib/ai/gateway";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/ai/gateway";
@@ -39,6 +38,7 @@ import { sanitizeInput } from "@/lib/safety";
 import {
   validateAllClaims,
   scoreDrift,
+  type ClaimVerdict,
   type GovernanceEvidence,
 } from "@/lib/coach";
 import { handleDomainEvent } from "@/lib/domain-events";
@@ -47,6 +47,13 @@ import { selectVoiceMode, type VoiceMode } from "@/lib/voice/select-voice-mode";
 import { checkVoiceDrift } from "@/lib/voice/voice-drift-check";
 import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
+import { evaluateReadiness } from "@/lib/readiness/evaluator";
+import {
+  buildEvidenceLibraryContext,
+  isContextEngineEnabled,
+  mirrorClaimVerdicts,
+  validateGeneratedClaims,
+} from "@/lib/context-engine";
 
 // Helper for retry with exponential backoff (handles 429 rate limits)
 async function withRetry<T>(
@@ -78,6 +85,89 @@ async function withRetry<T>(
   throw lastError;
 }
 
+type SupabaseWriteError = {
+  message?: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+};
+
+function logSupabaseWriteError(
+  action: string,
+  error: SupabaseWriteError | null | undefined,
+  metadata: Record<string, unknown> = {},
+) {
+  if (!error) return;
+
+  console.error("[hirewire:supabase-write]", {
+    action,
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+    code: error.code,
+    ...metadata,
+  });
+}
+
+function asUuidOrNull(value: string | null | undefined) {
+  if (!value) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
+async function persistGovernanceClaimVerdicts(params: {
+  supabase: any;
+  runId: string | null;
+  userId: string;
+  jobId: string;
+  bulletVerdicts: ClaimVerdict[];
+  paragraphVerdicts: ClaimVerdict[];
+}) {
+  const { supabase, runId, userId, jobId, bulletVerdicts, paragraphVerdicts } =
+    params;
+  if (!runId) return;
+
+  const rows = [
+    ...bulletVerdicts.map((verdict) => ({
+      run_id: runId,
+      user_id: userId,
+      job_id: jobId,
+      document_type: "resume",
+      claim_text: verdict.claim_text,
+      cited_evidence_id: asUuidOrNull(verdict.cited_evidence_id),
+      evidence_exists: verdict.evidence_exists,
+      claim_grounded: verdict.claim_grounded,
+      metrics_traceable: verdict.metrics_traceable,
+      confidence: verdict.confidence,
+      failure_reason: verdict.failure_reason ?? null,
+    })),
+    ...paragraphVerdicts.map((verdict) => ({
+      run_id: runId,
+      user_id: userId,
+      job_id: jobId,
+      document_type: "cover_letter",
+      claim_text: verdict.claim_text,
+      cited_evidence_id: asUuidOrNull(verdict.cited_evidence_id),
+      evidence_exists: verdict.evidence_exists,
+      claim_grounded: verdict.claim_grounded,
+      metrics_traceable: verdict.metrics_traceable,
+      confidence: verdict.confidence,
+      failure_reason: verdict.failure_reason ?? null,
+    })),
+  ];
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabase.from("governance_claim_verdicts").insert(rows);
+  logSupabaseWriteError("insert_governance_claim_verdicts", error, {
+    job_id: jobId,
+    user_id: userId,
+    governance_run_id: runId,
+    verdict_count: rows.length,
+  });
+}
+
 // Schema for evidence mapping
 const EvidenceMapSchema = z.object({
   matched_skills: z
@@ -97,7 +187,6 @@ const EvidenceMapSchema = z.object({
         key_achievements: z.array(z.string()),
         evidence_id: z
           .string()
-          .optional()
           .nullable()
           .describe("ID of the source evidence if available"),
       }),
@@ -108,7 +197,7 @@ const EvidenceMapSchema = z.object({
       z.object({
         project_name: z.string(),
         relevance: z.string(),
-        evidence_id: z.string().optional().nullable(),
+        evidence_id: z.string().nullable(),
       }),
     )
     .describe("Projects that demonstrate relevant skills"),
@@ -142,7 +231,7 @@ const ResumeWithProvenanceSchema = z.object({
         source_company: z.string().describe("Company from the source evidence"),
         matched_requirement: z
           .string()
-          .optional()
+          .nullable()
           .describe("Which job requirement this bullet addresses"),
         keywords_used: z
           .array(z.string())
@@ -210,6 +299,67 @@ const QualityCheckSchema = z.object({
     .array(z.string())
     .describe("Specific suggestions to improve weak sections"),
 });
+
+const EVIDENCE_MAP_SCHEMA_DESCRIPTION = `{
+  "matched_skills": string[],
+  "matched_tools": string[],
+  "matched_experiences": [
+    {
+      "experience_title": string,
+      "company": string,
+      "relevance": string,
+      "key_achievements": string[],
+      "evidence_id": string | null
+    }
+  ],
+  "matched_projects": [
+    {
+      "project_name": string,
+      "relevance": string,
+      "evidence_id": string | null
+    }
+  ],
+  "gaps": string[],
+  "fit_score": number,
+  "fit_rationale": string,
+  "requirement_coverage": number
+}`;
+
+const RESUME_WITH_PROVENANCE_SCHEMA_DESCRIPTION = `{
+  "summary": string,
+  "experience_bullets": [
+    {
+      "bullet_text": string,
+      "source_evidence_id": string,
+      "source_role": string,
+      "source_company": string,
+      "matched_requirement": string | null,
+      "keywords_used": string[]
+    }
+  ],
+  "skills_section": string[]
+}`;
+
+const COVER_LETTER_WITH_PROVENANCE_SCHEMA_DESCRIPTION = `{
+  "paragraphs": [
+    {
+      "paragraph_text": string,
+      "job_theme_addressed": string,
+      "evidence_ids_used": string[],
+      "claim_confidence": "high" | "medium" | "low"
+    }
+  ]
+}`;
+
+const QUALITY_CHECK_SCHEMA_DESCRIPTION = `{
+  "invented_claims": string[],
+  "vague_bullets": string[],
+  "ai_filler": string[],
+  "repeated_structures": string[],
+  "unsupported_claims": string[],
+  "overall_passed": boolean,
+  "improvement_suggestions": string[]
+}`;
 
 async function loadUserProfile(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -472,7 +622,12 @@ ${name}`;
       score_strengths: evidenceMap.matched_skills,
       score_gaps: evidenceMap.gaps,
       resume_strategy: "direct_match",
-      evidence_map: evidenceMap,
+      evidence_map: {
+        ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
+          ? jobData.evidence_map as Record<string, unknown>
+          : {}),
+        ...evidenceMap,
+      },
       generation_status: "ready",
       generation_error: null,
       scored_at: new Date().toISOString(),
@@ -489,6 +644,10 @@ ${name}`;
     .eq("user_id", userId);
 
   if (updateError) {
+    logSupabaseWriteError("fallback_update_generated_documents", updateError, {
+      job_id,
+      user_id: userId,
+    });
     return NextResponse.json(
       { success: false, error: updateError.message },
       { status: 500 },
@@ -725,20 +884,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Set status to 'generating' immediately
-    await supabase
-      .from("jobs")
-      .update({
-        status: "generating",
-        generation_status: "generating",
-        generation_error: null,
-        generation_attempts: _retry_count + 1,
-        last_generation_at: new Date().toISOString(),
-      })
-      .eq("id", job_id)
-      .eq("user_id", userId)
-      .is("deleted_at", null);
-
     // Load all required data in parallel
     const [profile, allEvidence, jobData, sourceResume] = await Promise.all([
       loadUserProfile(supabase, userId),
@@ -808,6 +953,49 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+
+    const readiness = evaluateReadiness(jobData);
+    if (!readiness.checklist.coach) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "coach_step_required",
+          user_message:
+            "Answer the coach prompts, or explicitly skip them, before generating materials for this role.",
+          next_action: readiness.nextAction,
+        },
+        { status: 409 },
+      );
+    }
+
+    // Set status to 'generating' after hard gates pass.
+    const generationStartUpdate = await supabase
+      .from("jobs")
+      .update({
+        status: "generating",
+        generation_status: "generating",
+        generation_error: null,
+      })
+      .eq("id", job_id)
+      .eq("user_id", userId)
+      .is("deleted_at", null);
+
+    logSupabaseWriteError(
+      "mark_generation_started",
+      generationStartUpdate.error,
+      { job_id, user_id: userId },
+    );
+
+    // Optional counters — swallow errors in envs where these columns aren't yet migrated
+    void supabase
+      .from("jobs")
+      .update({
+        generation_attempts: _retry_count + 1,
+        last_generation_at: new Date().toISOString(),
+      })
+      .eq("id", job_id)
+      .eq("user_id", userId)
+      .then(() => {}, () => {});
 
     if (!aiConfigured) {
       return generateFallbackDocuments({
@@ -1091,10 +1279,11 @@ NOTE: The candidate provided this additional context to address gaps. Use this i
 
     // Step 1: Create evidence map and determine strategy (with retry for rate limits)
     // Using Claude for higher token limits and better quality
-    const evidenceMapResult = await withRetry(() =>
-      generateText({
+    const generatedEvidenceMap = await withRetry(() =>
+      generateStructuredText({
         model: CLAUDE_MODELS.SONNET,
-        output: Output.object({ schema: EvidenceMapSchema }),
+        schema: EvidenceMapSchema,
+        schemaDescription: EVIDENCE_MAP_SCHEMA_DESCRIPTION,
         prompt: `Analyze the match between this candidate and job opportunity.
 
 ${profileContext}
@@ -1113,7 +1302,6 @@ Create an evidence map that:
 Be conservative - only include matches that are clearly supported by the evidence. Do not exaggerate or invent connections.`,
       }),
     );
-    const generatedEvidenceMap = evidenceMapResult.experimental_output!;
 
     // Determine generation strategy based on fit
     const evidenceQuality =
@@ -1131,15 +1319,18 @@ Be conservative - only include matches that are clearly supported by the evidenc
 
     // Block generation if strategy is "do_not_generate"
     if (strategy === "do_not_generate") {
-      await supabase
+      const doNotGenerateUpdate = await supabase
         .from("jobs")
         .update({
-          status: "error",
           generation_status: "failed",
           generation_error: "Generation blocked: role too much of a stretch",
         })
         .eq("id", job_id)
         .eq("user_id", userId);
+      logSupabaseWriteError("mark_do_not_generate_blocked", doNotGenerateUpdate.error, {
+        job_id,
+        user_id: userId,
+      });
 
       return NextResponse.json(
         {
@@ -1177,10 +1368,11 @@ Be conservative - only include matches that are clearly supported by the evidenc
     // Step 2: Generate resume with bullet-level provenance (with retry for rate limits)
     // SIMPLIFIED: Reduced prompt verbosity to produce more natural, human-sounding output
     // Using Claude for higher token limits and better quality
-    const resumeResult = await withRetry(() =>
-      generateText({
+    const resumeWithProvenance = await withRetry(() =>
+      generateStructuredText({
         model: CLAUDE_MODELS.SONNET,
-        output: Output.object({ schema: ResumeWithProvenanceSchema }),
+        schema: ResumeWithProvenanceSchema,
+        schemaDescription: RESUME_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
         prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
 
 ${profileContext}
@@ -1232,29 +1424,18 @@ KEEP IT SPECIFIC:
 Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to evidence.`,
       }),
     );
-    const resumeWithProvenance = resumeResult.experimental_output!;
-
     // Step 2.5: PRE-GENERATION ENHANCEMENT PASS
     // Strengthen bullets with known profile data before final formatting
     const { enhancedBullets, report: enhancementReport } =
       await runPreGenerationEnhancement(
-        resumeWithProvenance.experience_bullets.map(
-          (b: {
-            bullet_text: string;
-            source_evidence_id: string;
-            source_role: string;
-            source_company: string;
-            matched_requirement?: string;
-            keywords_used: string[];
-          }) => ({
-            bullet_text: b.bullet_text,
-            source_evidence_id: b.source_evidence_id,
-            source_role: b.source_role,
-            source_company: b.source_company,
-            matched_requirement: b.matched_requirement,
-            keywords_used: b.keywords_used,
-          }),
-        ),
+        resumeWithProvenance.experience_bullets.map((b) => ({
+          bullet_text: b.bullet_text,
+          source_evidence_id: b.source_evidence_id,
+          source_role: b.source_role,
+          source_company: b.source_company,
+          matched_requirement: b.matched_requirement ?? undefined,
+          keywords_used: b.keywords_used,
+        })),
         {
           full_name: effectiveName,
           email: (profile as any)?.email || sourceResumeData?.email || "",
@@ -1286,10 +1467,11 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
     // Step 3: Generate cover letter with paragraph provenance (with retry for rate limits)
     // SIMPLIFIED: More direct prompt for natural, human-sounding cover letters
     // Using Claude for higher token limits and better quality
-    const coverLetterResult = await withRetry(() =>
-      generateText({
+    const coverLetterWithProvenance = await withRetry(() =>
+      generateStructuredText({
         model: CLAUDE_MODELS.SONNET,
-        output: Output.object({ schema: CoverLetterWithProvenanceSchema }),
+        schema: CoverLetterWithProvenanceSchema,
+        schemaDescription: COVER_LETTER_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
         prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
 
 ${profileContext}
@@ -1319,8 +1501,6 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
 - 3-4 paragraphs total`,
       }),
     );
-    const coverLetterWithProvenance = coverLetterResult.experimental_output!;
-
     // Build final formatted documents - Premium Clean Minimalist format
     const effectiveEmail =
       (profile as any)?.email || sourceResumeData?.email || "";
@@ -1478,27 +1658,73 @@ ${signatureBlock}`;
       evidenceSet: governanceEvidence,
     });
 
+    const contextProfile = isContextEngineEnabled()
+      ? buildEvidenceLibraryContext({
+          userId,
+          records: allEvidence as Array<Record<string, any>>,
+        })
+      : null;
+    const contextClaimVerdicts = contextProfile
+      ? validateGeneratedClaims({
+          userId,
+          jobId: job_id,
+          claims: [
+            ...bulletClaimInputs.map((claim, index) => ({
+              id: `resume_bullet_${index}`,
+              claim_text: claim.text,
+              evidence_ids: claim.cited_evidence_id ? [claim.cited_evidence_id] : [],
+              document_type: "resume" as const,
+            })),
+            ...paragraphClaimInputs.map((claim, index) => ({
+              id: `cover_letter_paragraph_${index}`,
+              claim_text: claim.text,
+              evidence_ids: claim.cited_evidence_id ? [claim.cited_evidence_id] : [],
+              document_type: "cover_letter" as const,
+            })),
+          ],
+          evidenceItems: contextProfile.evidenceItems,
+        })
+      : [];
+    const contextBlocked = contextClaimVerdicts.some((verdict) => verdict.verdict === "blocked");
+    if (contextClaimVerdicts.length > 0) {
+      void mirrorClaimVerdicts({
+        supabase,
+        userId,
+        jobId: job_id,
+        verdicts: contextClaimVerdicts,
+      });
+    }
+
     // 3. Governance hard block: fabricated claims or drift above threshold
     const governancePassed =
-      !claimValidation.hasFabricated && !driftResult.is_blocking;
+      !claimValidation.hasFabricated && !driftResult.is_blocking && !contextBlocked;
 
     if (!governancePassed) {
       const blockReason = driftResult.is_blocking
         ? `Generation blocked by drift score (${driftResult.score}/100): ${driftResult.summary}`
-        : `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
+        : contextBlocked
+          ? `Generation blocked: ContextEngine found ${contextClaimVerdicts.filter((verdict) => verdict.verdict === "blocked").length} unsupported claim(s).`
+          : `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
 
-      await supabase
+      const governanceBlockedUpdate = await supabase
         .from("jobs")
         .update({
-          status: "error",
           generation_status: "failed",
           generation_error: blockReason,
+          governance_version: "1.0.0",
+          governance_passed: false,
+          governance_drift_score: driftResult.score,
         })
         .eq("id", job_id)
         .eq("user_id", userId);
+      logSupabaseWriteError("mark_governance_blocked", governanceBlockedUpdate.error, {
+        job_id,
+        user_id: userId,
+        drift_score: driftResult.score,
+      });
 
       // Persist the governance run record for auditing
-      await supabase
+      const blockedGovernanceRunInsert = await supabase
         .from("generation_governance_runs")
         .insert({
           user_id: userId,
@@ -1523,12 +1749,37 @@ ${signatureBlock}`;
             ? "drift_scoring"
             : "claim_validation",
           governance_version: "1.0.0",
-          // Governance table may not exist yet — do not block the response
         })
-        .then(
-          () => {},
-          () => {},
+        .select("id")
+        .maybeSingle();
+      logSupabaseWriteError(
+        "insert_blocked_generation_governance_run",
+        blockedGovernanceRunInsert.error,
+        { job_id, user_id: userId },
+      );
+      const blockedGovernanceRunId = blockedGovernanceRunInsert.data?.id ?? null;
+
+      await persistGovernanceClaimVerdicts({
+        supabase,
+        runId: blockedGovernanceRunId,
+        userId,
+        jobId: job_id,
+        bulletVerdicts: claimValidation.bulletVerdicts,
+        paragraphVerdicts: claimValidation.paragraphVerdicts,
+      });
+
+      if (blockedGovernanceRunId) {
+        const blockedGovernanceReferenceUpdate = await supabase
+          .from("jobs")
+          .update({ last_governance_run_id: blockedGovernanceRunId })
+          .eq("id", job_id)
+          .eq("user_id", userId);
+        logSupabaseWriteError(
+          "update_blocked_last_governance_run_id",
+          blockedGovernanceReferenceUpdate.error,
+          { job_id, user_id: userId, governance_run_id: blockedGovernanceRunId },
         );
+      }
 
       void handleDomainEvent({
         supabase,
@@ -1548,7 +1799,10 @@ ${signatureBlock}`;
       return NextResponse.json(
         {
           success: false,
-          error: blockReason,
+          error: "governance_blocked",
+          user_message:
+            "Generation was blocked because the draft made claims that drifted too far from your verified evidence. Add or confirm stronger evidence for this role, then try again.",
+          detail: blockReason,
           governance: {
             passed: false,
             fabricated_count: claimValidation.fabricatedCount,
@@ -1614,10 +1868,11 @@ ${signatureBlock}`;
     let qualityCheck: z.infer<typeof QualityCheckSchema>;
     try {
       // Quality check uses faster model since it's a simpler task
-      const qualityResult = await withRetry(() =>
-        generateText({
+      qualityCheck = await withRetry(() =>
+        generateStructuredText({
           model: CLAUDE_MODELS.HAIKU,
-          output: Output.object({ schema: QualityCheckSchema }),
+          schema: QualityCheckSchema,
+          schemaDescription: QUALITY_CHECK_SCHEMA_DESCRIPTION,
           prompt: `You are a resume quality reviewer. Analyze the generated documents and return a JSON object with your findings.
 
 GENERATED RESUME:
@@ -1638,7 +1893,6 @@ Return a JSON object with these exact fields:
 If no issues found, return empty arrays and overall_passed: true.`,
         }),
       );
-      qualityCheck = qualityResult.experimental_output!;
     } catch (qualityCheckError) {
       console.error("Quality check failed, using defaults:", qualityCheckError);
       // Default to passing quality check if the AI model fails
@@ -1668,7 +1922,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
           source_role: b.source_role,
           source_company: b.source_company,
           matched_requirement_id: undefined,
-          matched_requirement_text: b.matched_requirement,
+          matched_requirement_text: b.matched_requirement ?? undefined,
           claim_confidence: "high" as const,
           keywords_covered: b.keywords_used,
           risk_flags: [],
@@ -1741,6 +1995,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
     const { error: updateError } = await supabase
       .from("jobs")
       .update({
+        status: qualityPassed ? "ready" : "needs_review",
         generated_resume: formattedResume,
         generated_cover_letter: formattedCoverLetter,
         fit:
@@ -1761,6 +2016,9 @@ If no issues found, return empty arrays and overall_passed: true.`,
         score_gaps: generatedEvidenceMap.gaps,
         resume_strategy: strategy,
         evidence_map: {
+          ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
+            ? jobData.evidence_map as Record<string, unknown>
+            : {}),
           matching_complete: true, // Set by generate-documents so stage derivation advances past evidence_mapped
           selected_evidence_ids: resumeEvidence.map(
             (e: { id: string }) => e.id,
@@ -1797,16 +2055,26 @@ If no issues found, return empty arrays and overall_passed: true.`,
           ...qualityCheck.ai_filler,
         ],
         quality_passed: qualityPassed,
-        // Store bullet-level provenance for traceability
+        // Voice integrity (columns confirmed in schema)
+        voice_mode: voiceMode,
+        voice_profile_snapshot: originalVoiceProfile ?? undefined,
+        voice_drift_result: voiceDriftResult ?? undefined,
+        governance_version: "1.0.0",
+        governance_passed: true,
+        governance_drift_score: driftResult.score,
+      })
+      .eq("id", job_id)
+      .eq("user_id", userId);
+
+    // Optional provenance/voice columns — swallow errors in envs where they aren't yet migrated
+    void supabase
+      .from("jobs")
+      .update({
         resume_provenance: bulletProvenance.map((b) => ({
           bullet_text: b.bullet_text,
           source_evidence_id: b.source_evidence_id,
           evidence_title: b.source_evidence_title,
         })),
-        // Voice integrity
-        voice_mode: voiceMode,
-        voice_profile_snapshot: originalVoiceProfile ?? undefined,
-        voice_drift_result: voiceDriftResult ?? undefined,
         voice_integrity_passed: voiceDriftResult?.passed ?? true,
         voice_review_status: voiceDriftResult
           ? voiceDriftResult.driftLevel === "none"
@@ -1815,12 +2083,18 @@ If no issues found, return empty arrays and overall_passed: true.`,
           : "pending",
       })
       .eq("id", job_id)
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .then(() => {}, () => {});
 
     if (updateError) {
+      logSupabaseWriteError("update_generated_documents", updateError, {
+        job_id,
+        user_id: userId,
+      });
       const err = supabaseError({
         code: "JOB_UPDATE_FAILED",
         message: updateError.message,
+        details: updateError,
         correlationId,
       });
       logErr(err, { route: "/api/generate-documents" });
@@ -2016,20 +2290,38 @@ If no issues found, return empty arrays and overall_passed: true.`,
       })
       .select("id")
       .maybeSingle();
+    logSupabaseWriteError("insert_generation_governance_run", governanceRunInsert.error, {
+      job_id,
+      user_id: userId,
+    });
 
     const governanceRunId = governanceRunInsert.data?.id ?? null;
 
+    await persistGovernanceClaimVerdicts({
+      supabase,
+      runId: governanceRunId,
+      userId,
+      jobId: job_id,
+      bulletVerdicts: claimValidation.bulletVerdicts,
+      paragraphVerdicts: claimValidation.paragraphVerdicts,
+    });
+
     // Update job with governance run reference
     if (governanceRunId) {
-      await supabase
+      const governanceRunReferenceUpdate = await supabase
         .from("jobs")
         .update({ last_governance_run_id: governanceRunId })
         .eq("id", job_id)
         .eq("user_id", userId);
+      logSupabaseWriteError(
+        "update_last_governance_run_id",
+        governanceRunReferenceUpdate.error,
+        { job_id, user_id: userId, governance_run_id: governanceRunId },
+      );
     }
 
     // Save quality check
-    await supabase.from("generation_quality_checks").insert({
+    const qualityCheckInsert = await supabase.from("generation_quality_checks").insert({
       user_id: userId,
       job_id,
       document_type: "resume",
@@ -2044,6 +2336,10 @@ If no issues found, return empty arrays and overall_passed: true.`,
         qualityCheck.vague_bullets.length +
         qualityCheck.ai_filler.length +
         allBannedPhrases.length,
+    });
+    logSupabaseWriteError("insert_generation_quality_check", qualityCheckInsert.error, {
+      job_id,
+      user_id: userId,
     });
 
     void handleDomainEvent({
@@ -2171,16 +2467,19 @@ If no issues found, return empty arrays and overall_passed: true.`,
           data: { user },
         } = await supabase.auth.getUser();
         if (user) {
-          await supabase
+          const failedGenerationUpdate = await supabase
             .from("jobs")
             .update({
-              status: "error",
               generation_status: "failed",
               generation_error:
                 error instanceof Error ? error.message : "Generation failed",
             })
             .eq("id", job_id)
             .eq("user_id", user.id);
+          logSupabaseWriteError("mark_generation_failed", failedGenerationUpdate.error, {
+            job_id,
+            user_id: user.id,
+          });
         }
       }
     } catch {}

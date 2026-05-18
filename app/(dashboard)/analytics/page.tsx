@@ -26,7 +26,7 @@ export default async function AnalyticsPage() {
     supabase
       .from("jobs")
       .select(
-        "id, status, created_at, quality_passed, generated_resume, generated_cover_letter, evidence_map, applied_at, job_scores(overall_score)",
+        "id, status, created_at, quality_passed, generated_resume, generated_cover_letter, evidence_map, applied_at, score, score_gaps, gap_clarifications, gaps_addressed, job_scores(overall_score)",
       )
       .eq("user_id", user.id)
       .is("deleted_at", null)

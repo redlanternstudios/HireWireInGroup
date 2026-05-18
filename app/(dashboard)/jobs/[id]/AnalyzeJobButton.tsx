@@ -60,6 +60,7 @@ export function AnalyzeJobButton({ jobId, hasUrl, label = "Analyze Job", size = 
       router.refresh()
     } catch {
       setError("Network error. Please try again.")
+    } finally {
       setLoading(false)
     }
   }

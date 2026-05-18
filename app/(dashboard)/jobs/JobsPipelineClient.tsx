@@ -31,7 +31,7 @@ export function JobsPipelineClientLocal({ jobs }: { jobs: any[] }) {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ job_url: url }),
       })
       if (!res.ok) throw new Error("Failed to analyze job")
       // Optionally, refresh jobs from server

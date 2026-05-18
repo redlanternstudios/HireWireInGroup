@@ -77,6 +77,11 @@ export default function ApplicationPackagePreview({
               {readiness.checklist.evidence ? "✔" : "✗"} Evidence coverage
             </span>
           </li>
+          <li>
+            <span className={readiness.checklist.coach ? "text-emerald-600" : "text-rose-600"}>
+              {readiness.checklist.coach ? "✔" : "✗"} Coach step
+            </span>
+          </li>
           <li className="flex items-center gap-2 flex-wrap">
             <span className={readiness.checklist.quality ? "text-emerald-600" : "text-rose-600"}>
               {readiness.checklist.quality ? "✔" : "✗"} Quality check

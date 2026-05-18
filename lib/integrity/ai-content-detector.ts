@@ -1,21 +1,33 @@
 // AI-Generated Content Detector
 import { z } from "zod"
-import { Output } from "ai"
-import { generateText } from "@/lib/ai/gateway"
+import { generateStructuredText } from "@/lib/ai/gateway"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 export const AIContentFlagSchema = z.object({
   section: z.string(),
   ai_confidence_score: z.number().min(0).max(1),
-  flagged_phrases: z.array(z.string()).optional(),
+  flagged_phrases: z.array(z.string()).nullable(),
 })
 
+const AIContentFlagsSchema = z.object({
+  flags: z.array(AIContentFlagSchema),
+})
+
+const AI_CONTENT_FLAGS_SCHEMA_DESCRIPTION = `{
+  "flags": Array<{
+    "section": string,
+    "ai_confidence_score": number,
+    "flagged_phrases": string[] | null
+  }>
+}`
+
 export async function detectAIContent(resumeText: string) {
-  const prompt = `Analyze the following resume text. For each section, return an AI confidence score (0-1) and any phrases that appear AI-generated or generic.`
-  const result = await generateText({
+  const prompt = `Analyze the following resume text. For each section, return an AI confidence score (0-1) and any phrases that appear AI-generated or generic. Return an object with a flags array.`
+  const result = await generateStructuredText({
     model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: z.array(AIContentFlagSchema) }),
+    schema: AIContentFlagsSchema,
+    schemaDescription: AI_CONTENT_FLAGS_SCHEMA_DESCRIPTION,
     prompt: `${prompt}\n\n${resumeText}`,
   })
-  return result.experimental_output
+  return result.flags ?? []
 }

@@ -3,6 +3,8 @@ import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb } from "lucide-react"
+import { GapCoachDrawer } from "@/components/coach/GapCoachDrawer"
+import { getCoachStepState } from "@/lib/coach-step"
 
 export const dynamic = "force-dynamic"
 
@@ -14,7 +16,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
 
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name")
+    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -43,6 +45,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
   const evidenceCount = evidenceItems?.length ?? 0
+  const coachStep = getCoachStepState({ ...job, score_gaps: job.score_gaps ?? gaps })
 
   return (
     <div className="hw-page max-w-3xl">
@@ -109,9 +112,9 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
           {/* Gaps */}
           {gaps.length > 0 && (
             <div className="hw-card px-5 py-4">
-              <h2 className="hw-section-label mb-3">Gaps to Address</h2>
+              <h2 className="hw-section-label mb-3">Coachable Gaps</h2>
               <p className="text-xs text-muted-foreground mb-3">
-                These requirements have no strong evidence match yet. Add proof points to your Career Context to fill them.
+                These requirements have no strong evidence match yet. Answer the coach prompt with direct or adjacent experience, then HireWire can use that context safely.
               </p>
               <ul className="space-y-2">
                 {gaps.map((gap, i) => (
@@ -122,11 +125,14 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                 ))}
               </ul>
               <div className="mt-4 pt-3 border-t border-border">
-                <Link href="/evidence">
-                  <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                    Add to Career Context <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </Link>
+                <GapCoachDrawer
+                  jobId={id}
+                  jobTitle={job.role_title ?? "this role"}
+                  company={job.company_name ?? "this company"}
+                  score={job.score}
+                  status={job.status}
+                  gaps={coachStep.remainingGaps.length > 0 ? coachStep.remainingGaps : gaps}
+                />
               </div>
             </div>
           )}

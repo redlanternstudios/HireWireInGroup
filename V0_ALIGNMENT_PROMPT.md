@@ -52,28 +52,33 @@ any code that reads from it and overrides `jobs.*` values will null out
 all generated content downstream.
 
 ### 2. AI SDK Pattern
-This codebase uses Vercel AI SDK v6 with Anthropic via AI Gateway.
+This codebase uses Vercel AI SDK v6 through `@/lib/ai/gateway`.
+For structured JSON, use `generateStructuredText()` so providers that reject
+`json_schema` never receive schema-mode requests.
 
 ```typescript
 // CORRECT
-import { generateText, Output } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
 
-const result = await generateText({
+const data = await generateStructuredText({
   model: CLAUDE_MODELS.SONNET,
-  output: Output.object({ schema: MyZodSchema }),
+  schema: MyZodSchema,
+  schemaDescription: `{
+    "items": string[]
+  }`,
   prompt: "...",
 })
-const data = result.experimental_output
 
 // FORBIDDEN — these patterns break the build
 import { generateObject } from "ai"                    // ❌ does not exist in v6
 import { anthropic } from "@ai-sdk/anthropic"          // ❌ use CLAUDE_MODELS instead
+import { Output } from "ai"                            // ❌ do not use Output.object
 import { createGroq } from "@ai-sdk/groq"              // ❌ Groq is dead code
 model: anthropic("claude-sonnet-4-20250514")           // ❌ wrong pattern
+output: Output.object({ schema: MyZodSchema })         // ❌ can trigger json_schema 400s
 ```
 
-Model constants live in `lib/adapters/anthropic.ts`:
+Model constants live in `lib/ai/gateway.ts`:
 - `CLAUDE_MODELS.SONNET` — primary generation model
 - `CLAUDE_MODELS.OPUS` — complex reasoning
 - `CLAUDE_MODELS.HAIKU` — fast/simple tasks
@@ -262,7 +267,7 @@ always go through `@/lib/analytics`.
 ### 1. Reality Check — Ask These Questions
 - Does my code read document content from `jobs.generated_resume` (not `generated_documents`)?
 - Do I have `Array.isArray()` guards on every JSONB column I'm mapping?
-- Am I using `generateText + Output.object()` not `generateObject`?
+- Am I using `generateStructuredText()` for structured JSON, never `Output.object()` or `generateObject()`?
 - Did I include `user_id` and `deleted_at` filters on every jobs query?
 - Am I using `CLAUDE_MODELS.SONNET` not a raw model string?
 - Did any Groq reference slip in?
@@ -288,6 +293,7 @@ always go through `@/lib/analytics`.
 |---|---|
 | Import from `@ai-sdk/groq` or `lib/adapters/groq` | Groq removed; breaks imports |
 | Use `generateObject()` | Does not exist in AI SDK v6 |
+| Use `Output.object()` / `experimental_output` | Can trigger provider `json_schema` failures |
 | Read content from `generated_documents` relation | Always empty; nulls downstream |
 | Override `jobs.generated_resume` with null from dead relation | Breaks entire review spine |
 | Write `status: "ready"` to gate quality approval | Readiness is derived, not written |

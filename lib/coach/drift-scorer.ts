@@ -12,7 +12,7 @@
  *   - Produces an outcome claim with zero matching evidence support
  *
  * Drift score: 0 = perfect fidelity, 100 = fully fabricated.
- * Anything above DRIFT_BLOCK_THRESHOLD (40) causes a hard generation block.
+ * Anything above DRIFT_BLOCK_THRESHOLD (65) causes a hard generation block.
  *
  * GOVERNANCE INVARIANT: drift.is_blocking = true MUST prevent the document
  * from being persisted, regardless of quality_check.overall_passed.
@@ -23,7 +23,7 @@ import type { ClaimVerdict } from "./types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DRIFT_BLOCK_THRESHOLD = 40
+const DRIFT_BLOCK_THRESHOLD = 65
 
 const BANNED_PHRASES: [string, DriftCategory][] = [
   ["results-driven", "banned_phrase"],
@@ -196,7 +196,9 @@ function checkUnsupportedTools(
   const universalTools = new Set([
     "excel", "word", "powerpoint", "google docs", "google sheets", "slack",
     "email", "zoom", "teams", "notion", "confluence", "jira", "trello",
-    "gmail", "outlook", "linkedin", "github", "git",
+    "gmail", "outlook", "linkedin", "github", "git", "salesforce",
+    "tableau", "powerbi", "power bi", "looker", "figma", "asana",
+    "airtable", "hubspot", "marketo", "agile", "scrum", "kanban",
   ])
 
   // Extract tool-like terms from bullet (capitalized words or known patterns)
@@ -212,7 +214,11 @@ function checkUnsupportedTools(
     const lower = tool.toLowerCase()
     if (!universalTools.has(lower) && !allTools.has(lower) && lower.length > 3) {
       // Only flag if the tool looks like it could be a tech tool (not just a proper noun)
-      const looksLikeTool = /^[A-Z][a-z]*[A-Z]|^[A-Z]{2,}|js$|\.js$|ts$|db$|sql$/i.test(tool)
+      const looksLikeTool =
+        /^[A-Z]{2,}\b/.test(tool) ||
+        /^[A-Z][a-z0-9+#.]*[A-Z][a-zA-Z0-9+#.]*$/.test(tool) ||
+        /(?:js|\.js|ts|db|sql)$/i.test(tool) ||
+        /[+#.]/.test(tool)
       if (looksLikeTool) {
         flags.push({
           category: "unsupported_tool",

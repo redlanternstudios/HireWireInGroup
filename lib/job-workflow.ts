@@ -16,6 +16,7 @@
  */
 
 import type { Job, EvidenceRecord } from "./types"
+import { getCoachStepState, isEvidenceMapMetadataKey } from "@/lib/coach-step"
 
 // ============================================================================
 // WORKFLOW STAGE TYPES
@@ -193,7 +194,7 @@ export function hasEvidenceMap(job: Job | null): boolean {
   if (typeof evidenceMap === 'object') {
     const keys = Object.keys(evidenceMap)
     // Filter out metadata keys
-    const requirementKeys = keys.filter(k => !k.startsWith('_') && k !== 'matching_complete' && k !== 'gaps_acknowledged')
+    const requirementKeys = keys.filter(k => !isEvidenceMapMetadataKey(k))
     return requirementKeys.length > 0
   }
   
@@ -286,13 +287,14 @@ export function getNextAction(stage: WorkflowStage, jobId?: string): WorkflowAct
         description: "Generate tailored resume and cover letter",
       }
     
-    case "fit_scored":
+    case "fit_scored": {
       return {
-        label: "Generate Materials",
-        href: `${baseHref}/documents`,
+        label: "Start Coach",
+        href: `${baseHref}/evidence-match`,
         variant: "default",
-        description: "Generate tailored resume and cover letter",
+        description: "Resolve or skip fit gaps before generating materials",
       }
+    }
     
     case "materials_generated":
       return {
@@ -336,8 +338,9 @@ function getBlockers(job: Job | null, progress: WorkflowState['progress']): stri
   }
   
   // Check for critical gaps that need addressing
-  if (job.score_gaps && job.score_gaps.length > 0 && !areGapsAcknowledged(job)) {
-    blockers.push(`${job.score_gaps.length} gap(s) need attention`)
+  const coachStep = getCoachStepState(job)
+  if (coachStep.required && !coachStep.complete) {
+    blockers.push(`${coachStep.remainingGaps.length || coachStep.gaps.length || 1} gap(s) need attention`)
   }
   
   return blockers
@@ -431,7 +434,7 @@ export function calculateEvidenceCoverage(
   
   const map = job.evidence_map as Record<string, unknown>
   const mappedKeys = Object.keys(map).filter(
-    k => !k.startsWith('_') && k !== 'matching_complete' && k !== 'gaps_acknowledged'
+    k => !isEvidenceMapMetadataKey(k)
   )
   
   if (!totalRequirements || totalRequirements === 0) {

@@ -1,177 +1,139 @@
-# HireWire Supabase Setup & Verification
+# HireWire Supabase Setup And Verification
 
-## Current Status: COMPLETE
+## Current Status
 
-All required tables exist with proper RLS policies. No additional Supabase configuration needed for V1 launch.
+The canonical database path is `supabase/migrations`.
 
----
+Do not treat the older root `scripts/*.sql` files as the source of truth for
+new environments unless a maintainer explicitly promotes one. Many of those
+files are historical bootstrap or one-off repair scripts from earlier product
+iterations.
 
-## Database Schema Verification
-
-### Core HireWire Tables (All Exist)
-
-| Table | RLS | Policies | Status |
-|-------|-----|----------|--------|
-| `jobs` | Enabled | 4 (CRUD) | READY |
-| `job_analyses` | Enabled | 4 (CRUD) | READY |
-| `evidence_library` | Enabled | 4 (CRUD) | READY |
-| `user_profile` | Enabled | 4 (CRUD) | READY |
-| `generated_documents` | Enabled | 4 (CRUD) | READY |
-| `interview_prep` | Enabled | 4 (CRUD) | READY |
-| `interview_bank` | Enabled | 4 (CRUD) | READY |
-| `generation_quality_checks` | Enabled | 2 (SELECT, INSERT) | READY |
-| `processing_events` | Enabled | 2 (SELECT, INSERT) | READY |
-| `profile_snapshots` | Enabled | 2 (SELECT, INSERT) | READY |
-| `run_ledger` | Enabled | 2 (SELECT, INSERT) | READY |
-| `silent_engine_logs` | Enabled | 2 (SELECT, INSERT) | READY |
-| `companion_conversations` | Enabled | 6 | READY |
-| `companion_messages` | Enabled | 2 (SELECT, INSERT) | READY |
-| `resumes` | Enabled | 4 (CRUD) | READY |
-| `profile_insights` | Enabled | 3 | READY |
-
-### Environment Variables (All Set)
+The linked remote Supabase project has been pushed through:
 
 ```
-SUPABASE_URL              
-NEXT_PUBLIC_SUPABASE_URL  
-SUPABASE_ANON_KEY         
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY 
-SUPABASE_JWT_SECRET       
-POSTGRES_URL              
-POSTGRES_HOST             
-POSTGRES_USER             
-POSTGRES_PASSWORD         
-POSTGRES_DATABASE         
+20260518120000_harden_generation_governance_persistence
 ```
 
----
+## Apply Migrations
 
-## What's Already Done
+For a fresh or drifted Supabase project:
 
-### 1. Authentication
-- Supabase Auth configured via environment variables
-- Auth callback route exists at `/app/auth/callback/route.ts`
-- Login/Register pages use `@supabase/ssr` correctly
-- Middleware protects dashboard routes
+```bash
+supabase migration list
+supabase db push --include-all
+```
 
-### 2. Row Level Security (RLS)
-All tables have RLS enabled with `user_id` filtering:
+Use `--include-all` when the remote has migration-history entries that were
+created before newer local migrations. Keep placeholder migrations for remote
+history versions that already exist remotely.
+
+## Required Tables
+
+Core tables expected by the app:
+
+| Table | Purpose |
+|---|---|
+| `jobs` | Job records, generated documents, generation lifecycle, readiness inputs, latest governance summary |
+| `job_analyses` | Structured job analysis output |
+| `job_scores` | Normalized score snapshots |
+| `evidence_library` | Verified user evidence for matching and generation |
+| `user_profile` | User profile and resume-derived context |
+| `generation_governance_runs` | Per-generation governance audit |
+| `governance_claim_verdicts` | Per-claim grounding verdicts |
+| `generation_quality_checks` | Quality check audit rows |
+| `context_sources` | ContextEngine source records |
+| `context_evidence_items` | ContextEngine evidence graph items |
+| `context_gap_matches` | Requirement/evidence gap matching |
+| `context_claim_verdicts` | ContextEngine generated claim verdicts |
+| `domain_events` | Workflow/domain event log |
+| `run_ledger` | Legacy per-step observability log |
+| `job_resume_versions` | Generated package version snapshots |
+
+Legacy/compatibility tables may still exist, including `generated_documents`,
+`processing_events`, and `profile_snapshots`. Do not read active generated
+resume or cover letter content from `generated_documents`; use `jobs`.
+
+## Required Job Columns
+
+The app expects these generation/governance columns on `jobs`:
+
+- `generation_status`
+- `generation_error`
+- `generated_resume`
+- `generated_cover_letter`
+- `quality_passed`
+- `evidence_map`
+- `resume_provenance`
+- `voice_drift_result`
+- `governance_version`
+- `governance_passed`
+- `governance_drift_score`
+- `last_governance_run_id`
+
+## RLS Pattern
+
+User-scoped tables must enforce `auth.uid() = user_id` for reads and writes.
+Server-side writes still include `user_id` explicitly so RLS and application
+logic agree.
 
 ```sql
--- Example policy pattern (already applied to all tables)
 CREATE POLICY "users_select_own" ON table_name
   FOR SELECT USING (auth.uid() = user_id);
 
 CREATE POLICY "users_insert_own" ON table_name
   FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "users_update_own" ON table_name
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "users_delete_own" ON table_name
-  FOR DELETE USING (auth.uid() = user_id);
 ```
 
-### 3. Storage Buckets
-- `avatars` bucket exists for profile images (if using avatar uploads)
+## Verification
 
----
+Run:
 
-## NO ACTION REQUIRED
+```bash
+supabase migration list
+npm run test:api
+npm run test:context
+npx tsc --noEmit --pretty false
+```
 
-The following are already complete:
-
-1. All 16+ HireWire tables created
-2. RLS enabled on all tables
-3. CRUD policies applied
-4. Environment variables configured
-5. Auth flow working
-6. Server/client Supabase utilities exist in `/lib/supabase/`
-
----
-
-## Optional: Verify in Supabase Dashboard
-
-If you want to manually verify, check these in your Supabase Dashboard:
-
-### 1. Table Editor
-Navigate to **Table Editor** and confirm these tables exist:
-- `jobs`
-- `job_analyses`
-- `evidence_library`
-- `user_profile`
-- `generated_documents`
-- `interview_prep`
-- `companion_conversations`
-- `companion_messages`
-
-### 2. Authentication > Policies
-Navigate to **Authentication > Policies** and confirm:
-- Each table shows "RLS Enabled"
-- Each table has at least 2-4 policies
-
-### 3. Authentication > Users
-Navigate to **Authentication > Users** and:
-- Create a test user if none exists
-- Verify email confirmation is disabled for testing (optional)
-
-### 4. Project Settings > API
-Confirm these match your environment variables:
-- Project URL = `SUPABASE_URL`
-- Anon Key = `SUPABASE_ANON_KEY`
-- Service Role Key = `SUPABASE_SERVICE_ROLE_KEY`
-
----
+Expected migration state: local and remote should both include
+`20260518120000`.
 
 ## Troubleshooting
 
-### "Permission denied" errors
-1. Check RLS policies exist for the table
-2. Verify `user_id` column matches `auth.uid()`
-3. Use `createAdminClient()` for service operations (bypasses RLS)
+### Remote migration versions not found locally
 
-### "Table not found" errors
-1. Run any missing migration scripts from `/scripts/`
-2. Check you're connected to the correct Supabase project
+If `supabase db push` reports remote versions missing from local migrations,
+add no-op placeholder files matching those versions or repair migration history
+only when you are certain the remote entry should be marked reverted.
 
-### Auth not working
-1. Verify `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set
-2. Check auth callback route exists at `/app/auth/callback/route.ts`
-3. Verify email provider is configured in Supabase Dashboard
+### Table or column not found
 
----
+Check `supabase migration list` first. If the remote is behind, run
+`supabase db push --include-all`.
 
-## Scripts Already Executed
+### Governance writes fail
 
-These migration scripts have been run (no need to re-run):
+Confirm:
 
-```
-scripts/001_create_evidence_library.sql
-scripts/002-create-profile-table.sql
-scripts/002_truthserum_evidence_library.sql
-scripts/003_seed_ro_evidence.sql
-scripts/004_fix_jobs_rls.sql
-scripts/005_create_interview_prep.sql
-scripts/006_add_generation_status.sql
-scripts/007_add_user_id_to_tables.sql
-scripts/add-avatar-url-to-profile.sql
-scripts/create-avatars-bucket.sql
-```
+- `generation_governance_runs` exists.
+- `governance_claim_verdicts` exists.
+- `jobs.last_governance_run_id` has an FK to `generation_governance_runs`.
+- RLS insert policies exist for authenticated user-scoped writes.
 
----
+## Environment Variables
 
-## Summary
+Required for Supabase:
 
-**Supabase is fully configured for HireWire V1.**
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-No additional database setup, migrations, or configuration is required. All tables, policies, and environment variables are in place.
+AI credentials are handled separately by `@/lib/ai/gateway`:
 
-Focus remaining effort on:
-1. Code convergence tasks (see V1_EXECUTION_HANDOFF.md)
-2. End-to-end testing
-3. Bug fixes
+- `AI_GATEWAY_API_KEY` or `OPENAI_API_KEY`
 
----
+Deprecated:
 
-**Document Generated:** March 30, 2026
+- `GROQ_API_KEY`
+- n8n webhook env vars
