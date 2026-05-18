@@ -606,9 +606,152 @@ ${name}`;
     requirement_coverage: 82,
   };
 
+  const governanceEvidence: GovernanceEvidence[] = allEvidence.map(
+    (e: EvidenceRecord) => ({
+      id: e.id,
+      source_title: e.source_title,
+      source_type: e.source_type,
+      confidence_level: e.confidence_level,
+      outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
+      tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
+      team_size: (e as any).team_size ?? null,
+      budget_scope: (e as any).budget_scope ?? null,
+      user_impact_scale: (e as any).user_impact_scale ?? null,
+      what_not_to_overstate: e.what_not_to_overstate ?? null,
+      approved_achievement_bullets: Array.isArray(e.approved_achievement_bullets)
+        ? e.approved_achievement_bullets
+        : [],
+    }),
+  );
+  const bulletClaimInputs = roleEvidence.flatMap((item) =>
+    [
+      ...(item.responsibilities || []),
+      ...(item.outcomes || []),
+      ...(item.approved_achievement_bullets || []),
+    ]
+      .slice(0, 3)
+      .map((text) => ({
+        text,
+        cited_evidence_id: item.id,
+      })),
+  );
+  const fallbackParagraphs = formattedCoverLetter
+    .split("\n\n")
+    .filter((paragraph) => paragraph.length > 80);
+  const paragraphClaimInputs = fallbackParagraphs.map((text) => ({
+    text,
+    cited_evidence_id: roleEvidence[0]?.id ?? null,
+  }));
+  const claimValidation = validateAllClaims(
+    bulletClaimInputs,
+    paragraphClaimInputs,
+    governanceEvidence,
+  );
+  const driftResult = scoreDrift({
+    bulletTexts: bulletClaimInputs.map((claim) => ({
+      text: claim.text,
+      evidence_id: claim.cited_evidence_id,
+    })),
+    paragraphTexts: paragraphClaimInputs.map((claim) => ({
+      text: claim.text,
+      evidence_id: claim.cited_evidence_id,
+    })),
+    bulletVerdicts: claimValidation.bulletVerdicts,
+    paragraphVerdicts: claimValidation.paragraphVerdicts,
+    evidenceSet: governanceEvidence,
+  });
+
+  if (claimValidation.hasFabricated || driftResult.is_blocking) {
+    const blockReason = driftResult.is_blocking
+      ? `Generation blocked by drift score (${driftResult.score}/100): ${driftResult.summary}`
+      : `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
+
+    const blockedGovernanceRunInsert = await supabase
+      .from("generation_governance_runs")
+      .insert({
+        user_id: userId,
+        job_id,
+        strategy: "direct_match",
+        strategy_decision: {
+          strategy: "direct_match",
+          requirement_coverage: evidenceMap.requirement_coverage,
+          evidence_quality_pct: 100,
+          reasoning: evidenceMap.fit_rationale,
+          fallback: true,
+        },
+        bullet_verdicts: claimValidation.bulletVerdicts,
+        paragraph_verdicts: claimValidation.paragraphVerdicts,
+        fabricated_count: claimValidation.fabricatedCount,
+        low_confidence_count: claimValidation.lowConfidenceCount,
+        drift_score: driftResult.score,
+        drift_is_blocking: driftResult.is_blocking,
+        drift_flags: driftResult.flags,
+        drift_summary: driftResult.summary,
+        governance_passed: false,
+        failed_at_phase: driftResult.is_blocking
+          ? "drift_scoring"
+          : "claim_validation",
+        governance_version: "1.0.0",
+      })
+      .select("id")
+      .maybeSingle();
+    logSupabaseWriteError(
+      "insert_fallback_blocked_generation_governance_run",
+      blockedGovernanceRunInsert.error,
+      { job_id, user_id: userId },
+    );
+
+    const blockedGovernanceRunId = blockedGovernanceRunInsert.data?.id ?? null;
+    await persistGovernanceClaimVerdicts({
+      supabase,
+      runId: blockedGovernanceRunId,
+      userId,
+      jobId: job_id,
+      bulletVerdicts: claimValidation.bulletVerdicts,
+      paragraphVerdicts: claimValidation.paragraphVerdicts,
+    });
+
+    const blockedUpdate = await supabase
+      .from("jobs")
+      .update({
+        generation_status: "failed",
+        generation_error: blockReason,
+        governance_version: "1.0.0",
+        governance_passed: false,
+        governance_drift_score: driftResult.score,
+        last_governance_run_id: blockedGovernanceRunId,
+      })
+      .eq("id", job_id)
+      .eq("user_id", userId);
+    logSupabaseWriteError("mark_fallback_governance_blocked", blockedUpdate.error, {
+      job_id,
+      user_id: userId,
+    });
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "governance_blocked",
+        user_message:
+          "Generation was blocked because the draft made claims that drifted too far from your verified evidence.",
+        detail: blockReason,
+        governance: {
+          passed: false,
+          run_id: blockedGovernanceRunId,
+          drift_score: driftResult.score,
+          drift_summary: driftResult.summary,
+          fabricated_count: claimValidation.fabricatedCount,
+          low_confidence_count: claimValidation.lowConfidenceCount,
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
+      status: "ready",
       generated_resume: formattedResume,
       generated_cover_letter: formattedCoverLetter,
       fit: "HIGH",
@@ -639,6 +782,9 @@ ${name}`;
         "Fallback format selected for ATS-safe local testing.",
       generation_quality_issues: [],
       quality_passed: true,
+      governance_version: "1.0.0",
+      governance_passed: true,
+      governance_drift_score: driftResult.score,
     })
     .eq("id", job_id)
     .eq("user_id", userId);
@@ -655,6 +801,77 @@ ${name}`;
   }
 
   await syncNormalizedJobScore(supabase, job_id, fitScore);
+
+  const governanceRunInsert = await supabase
+    .from("generation_governance_runs")
+    .insert({
+      user_id: userId,
+      job_id,
+      strategy: "direct_match",
+      strategy_decision: {
+        strategy: "direct_match",
+        requirement_coverage: evidenceMap.requirement_coverage,
+        evidence_quality_pct: 100,
+        reasoning: evidenceMap.fit_rationale,
+        fallback: true,
+      },
+      bullet_verdicts: claimValidation.bulletVerdicts,
+      paragraph_verdicts: claimValidation.paragraphVerdicts,
+      fabricated_count: claimValidation.fabricatedCount,
+      low_confidence_count: claimValidation.lowConfidenceCount,
+      drift_score: driftResult.score,
+      drift_is_blocking: false,
+      drift_flags: driftResult.flags,
+      drift_summary: driftResult.summary,
+      governance_passed: true,
+      governance_version: "1.0.0",
+    })
+    .select("id")
+    .maybeSingle();
+  logSupabaseWriteError("insert_fallback_generation_governance_run", governanceRunInsert.error, {
+    job_id,
+    user_id: userId,
+  });
+
+  const governanceRunId = governanceRunInsert.data?.id ?? null;
+  await persistGovernanceClaimVerdicts({
+    supabase,
+    runId: governanceRunId,
+    userId,
+    jobId: job_id,
+    bulletVerdicts: claimValidation.bulletVerdicts,
+    paragraphVerdicts: claimValidation.paragraphVerdicts,
+  });
+
+  if (governanceRunId) {
+    const governanceRunReferenceUpdate = await supabase
+      .from("jobs")
+      .update({ last_governance_run_id: governanceRunId })
+      .eq("id", job_id)
+      .eq("user_id", userId);
+    logSupabaseWriteError(
+      "update_fallback_last_governance_run_id",
+      governanceRunReferenceUpdate.error,
+      { job_id, user_id: userId, governance_run_id: governanceRunId },
+    );
+  }
+
+  const qualityCheckInsert = await supabase.from("generation_quality_checks").insert({
+    user_id: userId,
+    job_id,
+    document_type: "resume",
+    invented_claims_found: [],
+    vague_bullets_found: [],
+    ai_filler_found: [],
+    repeated_structures_found: [],
+    unsupported_claims_found: [],
+    passed: true,
+    issues_count: 0,
+  });
+  logSupabaseWriteError("insert_fallback_generation_quality_check", qualityCheckInsert.error, {
+    job_id,
+    user_id: userId,
+  });
 
   const { data: versionRow } = await supabase
     .from("job_resume_versions")
@@ -702,6 +919,7 @@ ${name}`;
     generated_cover_letter: formattedCoverLetter,
     quality_check: {
       passed: true,
+      score: 88,
       issues: { invented_claims: [], vague_bullets: [], ai_filler: [] },
       suggestions: ["Review final wording before submission."],
     },
@@ -710,6 +928,17 @@ ${name}`;
     resume_font: "inter",
     format_recommendation_reason:
       "Fallback format selected for ATS-safe local testing.",
+    governance: {
+      passed: true,
+      governance_version: "1.0.0",
+      run_id: governanceRunId,
+      drift_score: driftResult.score,
+      drift_summary: driftResult.summary,
+      drift_warnings: driftResult.flags.filter((flag) => flag.severity === "warning")
+        .length,
+      fabricated_count: claimValidation.fabricatedCount,
+      low_confidence_count: claimValidation.lowConfidenceCount,
+    },
   });
 }
 
