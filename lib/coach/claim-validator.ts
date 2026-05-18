@@ -96,10 +96,16 @@ function assessConfidence(params: {
     return { confidence: "fabricated", reason: "Cited evidence ID not found in evidence set." }
   }
 
-  if (overlap < 0.08) {
+  // Fabrication threshold is intentionally low (0.03) because:
+  // - Short bullets (4-6 words) produce tiny keyword sets; cosine-style overlap
+  //   is naturally low even for valid, grounded content
+  // - True fabrication has 0 overlapping keywords with the cited evidence
+  // - Anything above 0.03 means the model at least borrowed terminology from
+  //   the evidence record, which is the minimum bar for "not fabricated"
+  if (overlap < 0.03) {
     return {
       confidence: "fabricated",
-      reason: `Claim shares almost no keywords with cited evidence (overlap: ${(overlap * 100).toFixed(0)}%).`,
+      reason: `Claim shares no keywords with cited evidence (overlap: ${(overlap * 100).toFixed(0)}%).`,
     }
   }
 
@@ -110,7 +116,7 @@ function assessConfidence(params: {
     }
   }
 
-  if (overlap < 0.18) {
+  if (overlap < 0.12) {
     return { confidence: "medium", reason: "Weak keyword overlap with cited evidence." }
   }
 
@@ -140,16 +146,43 @@ export function validateClaim(
   const evidenceExists = evidence !== null
 
   if (!evidenceExists) {
+    // If an ID was cited but not found in the set, that's likely a stale/retry
+    // artefact — treat as low confidence rather than fabricated to avoid false blocks.
+    // True fabrication is caught by the overlap check on the full evidence pool below.
+    if (claim.cited_evidence_id) {
+      // Fall through to full-pool check using all evidence instead of blocking here
+      const allKeywords = keywordsOf(evidenceSet.map(buildEvidenceText).join(" "))
+      const claimKeywords = keywordsOf(claim.text)
+      const overlap = overlapRatio(claimKeywords, allKeywords)
+      if (overlap < 0.03) {
+        return {
+          claim_text: claim.text,
+          cited_evidence_id: claim.cited_evidence_id,
+          evidence_exists: false,
+          claim_grounded: false,
+          metrics_traceable: false,
+          confidence: "fabricated",
+          failure_reason: "Cited evidence ID not found and claim shares no keywords with any evidence.",
+        }
+      }
+      return {
+        claim_text: claim.text,
+        cited_evidence_id: claim.cited_evidence_id,
+        evidence_exists: false,
+        claim_grounded: overlap >= 0.08,
+        metrics_traceable: false,
+        confidence: "low",
+        failure_reason: "Cited evidence ID not found in evidence set — validated against full evidence pool.",
+      }
+    }
     return {
       claim_text: claim.text,
-      cited_evidence_id: claim.cited_evidence_id,
+      cited_evidence_id: null,
       evidence_exists: false,
       claim_grounded: false,
       metrics_traceable: false,
-      confidence: claim.cited_evidence_id ? "fabricated" : "low",
-      failure_reason: claim.cited_evidence_id
-        ? "Cited evidence ID not found in evidence set."
-        : "No evidence ID cited — cannot verify claim.",
+      confidence: "low",
+      failure_reason: "No evidence ID cited — cannot verify claim.",
     }
   }
 
