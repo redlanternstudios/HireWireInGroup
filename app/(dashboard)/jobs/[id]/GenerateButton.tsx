@@ -27,9 +27,17 @@ export function GenerateButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ job_id: jobId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
 
       if (!res.ok || !data.success) {
+        const message =
+          data.reason ??
+          data.detail ??
+          data.user_message ??
+          data.error ??
+          data.message ??
+          "Generation failed"
+
         if (data.error === "evidence_required") {
           setError(
             data.user_message ??
@@ -51,13 +59,9 @@ export function GenerateButton({
               "You've reached your monthly limit of 5 document generations. Upgrade to Pro for unlimited generations."
           )
         } else if (data.error === "governance_blocked") {
-          setError(
-            data.detail ??
-              data.user_message ??
-              "Generation was blocked because the draft drifted too far from your verified evidence. Add or confirm stronger evidence, then try again."
-          )
+          setError(message)
         } else {
-          setError(data.user_message ?? data.error ?? "Generation failed — please try again.")
+          setError(message)
         }
         return
       }

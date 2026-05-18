@@ -315,9 +315,16 @@ function GenerateTrigger({ jobId, hasDocuments }: { jobId: string; hasDocuments:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ job_id: jobId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.success) {
-        setError(data.user_message || data.error || "Generation failed")
+        setError(
+          data.reason ??
+            data.detail ??
+            data.user_message ??
+            data.error ??
+            data.message ??
+            "Generation failed"
+        )
       } else {
         setDone(true)
         setTimeout(() => window.location.reload(), 1200)
