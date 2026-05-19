@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "NODE_ENV=production next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "test:evidence": "node --env-file-if-exists=.env.test --import tsx --test tests/evidence/matchRequirementToEvidence.test.ts",
+    "test:e2e:api": "node --env-file-if-exists=.env.test --import tsx --test tests/real-api-e2e.test.ts",
+    "test:e2e:all": "node --env-file-if-exists=.env.test --import tsx --test 'tests/**/*.test.ts'"
   },
   "dependencies": {
     "@ai-sdk/groq": "^3.0.39",
@@ -90,6 +94,7 @@
     "eslint-config-next": "^13.4.19",
     "postcss": "^8.5",
     "tailwindcss": "^4.2.0",
+    "tsx": "^4.22.3",
     "tw-animate-css": "1.3.3",
     "typescript": "^5.7.3"
   }
