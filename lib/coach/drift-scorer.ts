@@ -23,7 +23,14 @@ import type { ClaimVerdict } from "./types"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DRIFT_BLOCK_THRESHOLD = 40
+// Threshold rationale:
+// - 1 hard block (fabricated claim with a metric) = 20pts
+// - 7 banned-phrase warnings = 35pts  → total 55 — should NOT block
+// - 2 hard blocks = 40pts — unambiguously fabricated, should block
+// - Real fabrication with moderate warnings (2×20 + 3×5 = 55) — should block
+// Setting to 65 means: 3+ blocking issues OR 2 blockers + several warnings must
+// accumulate before a hard stop. Single-blocker runs get a warning, not a block.
+const DRIFT_BLOCK_THRESHOLD = 65
 
 const BANNED_PHRASES: [string, DriftCategory][] = [
   ["results-driven", "banned_phrase"],
@@ -211,8 +218,15 @@ function checkUnsupportedTools(
   for (const tool of mentioned) {
     const lower = tool.toLowerCase()
     if (!universalTools.has(lower) && !allTools.has(lower) && lower.length > 3) {
-      // Only flag if the tool looks like it could be a tech tool (not just a proper noun)
-      const looksLikeTool = /^[A-Z][a-z]*[A-Z]|^[A-Z]{2,}|js$|\.js$|ts$|db$|sql$/i.test(tool)
+      // Only flag if the word looks like a software/tech tool:
+      //   - CamelCase compound (e.g. PowerBI, TypeScript, GitHub)
+      //   - All-caps acronym of 2–6 chars (e.g. SQL, API, AWS)
+      //   - Ends in a tech suffix (js, ts, db, sql)
+      // Excludes plain title-case proper nouns like "Deloitte", "Agile", "Google"
+      const looksLikeTool =
+        /[a-z][A-Z]/.test(tool) ||                    // camelCase interior
+        /^[A-Z]{2,6}$/.test(tool) ||                  // all-caps acronym
+        /(?:js|ts|db|sql|py|rb|go)$/i.test(tool)      // tech suffix
       if (looksLikeTool) {
         flags.push({
           category: "unsupported_tool",

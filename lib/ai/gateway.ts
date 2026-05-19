@@ -1,7 +1,6 @@
 import { createGroq } from "@ai-sdk/groq"
 import {
   generateText as aiGenerateText,
-  generateObject as aiGenerateObject,
   streamText as aiStreamText,
 } from "ai"
 
@@ -21,7 +20,6 @@ export class AiGatewayConfigurationError extends Error {
 }
 
 type GenerateTextOptions = Parameters<typeof aiGenerateText>[0]
-type GenerateObjectOptions = Parameters<typeof aiGenerateObject>[0]
 type StreamTextOptions = Parameters<typeof aiStreamText>[0]
 
 type AiTelemetry = {
@@ -115,26 +113,26 @@ export function isAnthropicConfigured(): boolean {
   return isAiGatewayConfigured()
 }
 
+/**
+ * generateObject — kept for backwards compatibility but always routes through
+ * generateStructuredText so no Groq json_schema 400 can occur.
+ * Callers that need structured output should prefer generateStructuredText directly.
+ */
 export async function generateObject<T>(
-  options: Omit<GenerateObjectOptions, "output"> & { schema: import("zod").ZodType<T>; mode?: "json" | "tool" | "grammar" },
+  options: { model: GenerateTextOptions["model"]; schema: import("zod").ZodType<T>; prompt?: string; system?: string; schemaDescription?: string },
   telemetry?: Partial<AiTelemetry>
 ): Promise<{ object: T }> {
-  const startedAt = Date.now()
-  const status = getAiGatewayStatus()
-  const source = telemetry?.route ?? inferCallerSource()
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await (aiGenerateObject as any)({
-      mode: options.mode ?? "json",
-      ...options,
-      abortSignal: AbortSignal.timeout(status.timeoutMs),
-    })
-    recordAiTelemetry({ ...status, ...telemetry, route: source, success: true, latencyMs: Date.now() - startedAt })
-    return result as { object: T }
-  } catch (error) {
-    recordAiTelemetry({ ...status, ...telemetry, route: source, success: false, latencyMs: Date.now() - startedAt, failureReason: error instanceof Error ? error.message : "Unknown" })
-    throw error
-  }
+  const object = await generateStructuredText(
+    {
+      model: options.model,
+      schema: options.schema,
+      contextPrompt: options.prompt ?? "",
+      schemaDescription: options.schemaDescription ?? "(Extract all fields from the schema)",
+      system: options.system,
+    },
+    telemetry
+  )
+  return { object }
 }
 
 /**
