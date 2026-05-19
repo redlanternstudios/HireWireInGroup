@@ -31,8 +31,8 @@ Browser
 | `user_profile` | Resume data (keyed per user) | `id`, `user_id`, `full_name` (NOT `name`), `email`, `location`, `summary`, `experience`, `education`, `skills`, `tools`, `domains` |
 | `evidence_library` | Extracted resume bullet provenance per job | `id`, `user_id`, `job_id`, `category`, `bullet_text`, `source_profile_section` |
 | `job_analyses` | Raw AI Gateway analysis output | `id`, `user_id`, `job_id`, `keywords`, `parsed_description`, `raw_analysis` |
-| `generation_governance_runs` | Per-generation governance audit | `id`, `user_id`, `job_id`, `drift_score`, `governance_passed`, `drift_flags` |
-| `governance_claim_verdicts` | Per-claim grounding verdicts | `id`, `run_id`, `job_id`, `document_type`, `claim_text`, `confidence` |
+| `generation_governance_runs` | Per-generation governance audit | `id`, `user_id`, `job_id`, `strategy`, `drift_score`, `drift_is_blocking`, `governance_passed`, `failed_at_phase`, `governance_version`, `evaluated_at` |
+| `governance_claim_verdicts` | Per-claim grounding verdicts | `id`, `run_id`, `user_id`, `job_id`, `document_type`, `claim_text`, `cited_evidence_id`, `evidence_exists`, `claim_grounded`, `confidence`, `failure_reason` |
 | `interview_prep` | STAR stories and angle cards | `id`, `user_id`, `job_id`, `star_stories`, `angle_cards`, `talking_points` |
 | `run_ledger` | Per-step observability log | `id`, `user_id`, `job_id`, `step_name`, `status`, `summary`, `error_details`, `created_at` |
 | `processing_events` | Legacy activity log (for compatibility) | `id`, `user_id`, `event_type`, `job_id`, `message`, `metadata` |
@@ -107,13 +107,21 @@ interface Job {
   id: string
   user_id: string
   status: 'queued' | 'analyzing' | 'analyzed' | 'generating' | 'ready' | 'needs_review' | 'error' | 'applied' | 'interviewing' | 'offered' | 'rejected' | 'archived'
-  title: string
-  company: string
+  role_title: string       // NOT "title"
+  company_name: string     // NOT "company"
   source_url: string
   score?: number
   generated_resume?: string
   generated_cover_letter?: string
   generation_error?: string
+  generation_status?: string
+  quality_passed?: boolean
+  quality_passed_at?: string
+  // Governance columns (written by generate-documents, never write manually)
+  governance_passed?: boolean
+  governance_drift_score?: number   // 0–100; ≥65 blocks persistence
+  governance_version?: string       // e.g. "1.0.0"
+  last_governance_run_id?: string   // FK → generation_governance_runs.id
   created_at: string
   updated_at: string
 }
@@ -169,6 +177,9 @@ interface UserProfile {
 - ❌ Add `@ai-sdk/groq`, `GROQ_API_KEY`, `Output.object()`, or `generateObject()` to active code
 - ❌ Skip error logging to run_ledger on API route errors
 - ❌ Assume `avatars` bucket exists (handle missing bucket gracefully)
+- ❌ Bypass governance writes in generate-documents (governance must persist on every generation path including fallback)
+- ❌ Recompute drift score or claim validation outside `lib/coach/drift-scorer.ts` and `lib/coach/claim-validator.ts`
+- ❌ Suppress `fabricated` confidence verdicts in `governance_claim_verdicts` — always surface them to the user
 
 ## Migration State
 
@@ -180,5 +191,5 @@ If a table exists but seems to be missing columns, check migration status in Sup
 
 ---
 
-**Last Updated**: March 30, 2026  
-**Status**: Production-ready, in-app orchestration (no n8n)
+**Last Updated**: May 19, 2026  
+**Status**: Production-ready, in-app orchestration (no n8n). Governance pipeline E2E verified.
