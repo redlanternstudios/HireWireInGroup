@@ -7,8 +7,7 @@
  * Called from app/api/resume/upload/route.ts after parseResumeText().
  */
 
-import { Output } from "ai"
-import { generateText } from "@/lib/ai/gateway"
+import { generateStructuredText } from "@/lib/ai/gateway"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { z } from "zod"
 
@@ -79,10 +78,12 @@ export async function extractEducationFromResumeText(
   rawText: string
 ): Promise<EducationEntry[]> {
   try {
-    const result = await generateText({
-      model: CLAUDE_MODELS.SONNET,
-      output: Output.object({ schema: EducationResultSchema }),
-      prompt: `Extract ALL education credentials and certifications from the resume text below.
+    const data = await generateStructuredText(
+      {
+        model: CLAUDE_MODELS.SONNET,
+        schema: EducationResultSchema,
+        schemaDescription: `{ "entries": [{ "normalized_label": string, "credential_type": "degree"|"certification"|"license"|"course", "institution": string, "field": string, "start_date": string|null, "end_date": string|null, "honors": string|null }] }`,
+        contextPrompt: `Extract ALL education credentials and certifications from the resume text below.
 Include every degree, certification, license, and course. Do not invent information not present in the text.
 
 For each entry return:
@@ -96,8 +97,9 @@ For each entry return:
 
 RESUME TEXT:
 ${rawText}`,
-    })
-    const data = result.experimental_output
+      },
+      { route: "extract-education" }
+    ) as { entries: EducationEntry[] }
     return Array.isArray(data?.entries) ? data.entries : []
   } catch (err) {
     console.error("[extractEducation] Failed:", err)

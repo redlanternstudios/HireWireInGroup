@@ -1,7 +1,6 @@
-import { Output } from "ai"
-import { generateText } from "@/lib/ai/gateway"
-import { z } from "zod"
+import { generateStructuredText } from "@/lib/ai/gateway"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
+import { z } from "zod"
 import type { VoiceProfile } from "./voice-types"
 
 const VoiceProfileSchema = z.object({
@@ -76,10 +75,22 @@ export async function extractVoiceProfile(resumeText: string): Promise<VoiceProf
   }
 
   try {
-    const result = await generateText({
-      model: CLAUDE_MODELS.HAIKU,
-      output: Output.object({ schema: VoiceProfileSchema }),
-      prompt: `Analyze this resume text and extract the author's professional voice profile.
+    return await generateStructuredText(
+      {
+        model: CLAUDE_MODELS.HAIKU,
+        schema: VoiceProfileSchema,
+        schemaDescription: `{
+  "tone": { "primary": "plainspoken"|"technical"|"executive"|"analytical"|"warm"|"direct", "secondary": string[] },
+  "formality": "low"|"medium"|"high",
+  "sentencePattern": { "averageLength": "short"|"medium"|"long", "structure": "concise_bullets"|"narrative_bullets"|"metric_first"|"responsibility_first" },
+  "bulletStyle": { "startsWithActionVerb": boolean, "metricDensity": "low"|"medium"|"high", "typicalPattern": "action_context_result"|"responsibility_tool_outcome"|"task_based"|"achievement_based" },
+  "vocabulary": { "level": "simple"|"professional"|"technical"|"executive", "industryTerms": string[], "repeatedTerms": string[], "commonActionVerbs": string[] },
+  "confidence": { "level": "reserved"|"balanced"|"assertive", "evidenceOfOverstatement": boolean },
+  "quality": { "grammarRisk": "low"|"medium"|"high", "spellingRisk": "low"|"medium"|"high", "clarityRisk": "low"|"medium"|"high" },
+  "preserve": { "phrases": string[], "styleNotes": string[] },
+  "avoid": { "phrases": string[], "risks": string[] }
+}`,
+        contextPrompt: `Analyze this resume text and extract the author's professional voice profile.
 
 RESUME TEXT:
 ${resumeText.slice(0, 3000)}
@@ -97,9 +108,9 @@ Return a JSON voice profile that captures:
 - avoid: patterns that would sound wrong for this person (e.g. "do not use synergy-type buzzwords")
 
 Be specific — extract actual verbs, terms, and phrases from the text. If the text is too short or generic to reliably assess a field, use the most neutral/default value.`,
-    })
-
-    return result.experimental_output as VoiceProfile
+      },
+      { route: "extract-voice-profile" }
+    ) as VoiceProfile
   } catch {
     return FALLBACK_PROFILE
   }
