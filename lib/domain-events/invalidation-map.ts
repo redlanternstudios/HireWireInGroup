@@ -221,9 +221,9 @@ export const INVALIDATION_MAP: PropagationMap = {
   // ── Coach ─────────────────────────────────────────────────────────────────
 
   coach_action_taken: {
-    invalidates: ["coach_state"],
-    recomputes: [],
-    routeTemplates: [],
+    invalidates: ["coach_state", "readiness"],
+    recomputes: ["readiness"],
+    routeTemplates: ["/dashboard", "/jobs/[id]", "/ready-to-apply"],
     severity: "info",
   },
 
