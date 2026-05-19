@@ -25,7 +25,7 @@ export async function POST(
     } catch { /* body is optional */ }
 
     const { data: draft } = await supabase.from("coach_evidence_drafts")
-      .select("id,source_title,source_type,proof_snippet,confidence_level,skills,status")
+      .select("id,session_id,source_title,source_type,proof_snippet,confidence_level,skills,status")
       .eq("id", draftId).eq("user_id", userId).maybeSingle()
 
     if (!draft) return NextResponse.json({ success: false, error: "not_found" }, { status: 404 })
@@ -37,6 +37,12 @@ export async function POST(
     }
 
     const finalSnippet = userEditedSnippet ?? draft.proof_snippet
+
+    const { data: session } = await supabase.from("coach_sessions")
+      .select("id,job_id,gap_requirement")
+      .eq("id", draft.session_id)
+      .eq("user_id", userId)
+      .maybeSingle()
 
     const { data: evidenceRow, error: evidenceError } = await supabase
       .from("evidence_library")
@@ -64,14 +70,53 @@ export async function POST(
       .update({ status: "confirmed", confirmed_row_id: evidenceRow.id, proof_snippet: finalSnippet })
       .eq("id", draftId).eq("user_id", userId)
 
+    if (session?.job_id && session.gap_requirement) {
+      const { data: job } = await supabase.from("jobs")
+        .select("evidence_map")
+        .eq("id", session.job_id)
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .maybeSingle()
+
+      const existingMap =
+        job?.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
+          ? job.evidence_map as Record<string, unknown>
+          : {}
+      const existingRequirementMap =
+        existingMap[session.gap_requirement] &&
+        typeof existingMap[session.gap_requirement] === "object" &&
+        !Array.isArray(existingMap[session.gap_requirement])
+          ? existingMap[session.gap_requirement] as Record<string, unknown>
+          : {}
+      const evidenceIds = Array.isArray(existingRequirementMap.evidence_ids)
+        ? existingRequirementMap.evidence_ids.map(String)
+        : []
+
+      await supabase.from("jobs")
+        .update({
+          evidence_map: {
+            ...existingMap,
+            [session.gap_requirement]: {
+              ...existingRequirementMap,
+              evidence_ids: Array.from(new Set([...evidenceIds, evidenceRow.id])),
+              source: "coach_gap_dialogue",
+              updated_at: new Date().toISOString(),
+            },
+          },
+        })
+        .eq("id", session.job_id)
+        .eq("user_id", userId)
+    }
+
     void handleDomainEvent({
       supabase,
       event_type: "evidence_added",
-      job_id: null,
+      job_id: session?.job_id ?? null,
       user_id: userId,
       source: "coach_route",
       payload: {
         evidence_id: evidenceRow.id,
+        gap_requirement: session?.gap_requirement ?? null,
         source_type: draft.source_type,
         source_title: draft.source_title,
         via: "coach_draft_confirm",

@@ -1,5 +1,6 @@
--- TruthSerum Evidence Library Schema Update
--- Adds role_family_tags, user approval workflow, confidence levels, and visibility
+-- Legacy bootstrap script.
+-- Canonical migrations live in supabase/migrations.
+-- Adds role_family_tags, user approval workflow, confidence levels, and visibility.
 
 -- Add missing columns to evidence_library if they don't exist
 ALTER TABLE evidence_library 
@@ -23,7 +24,7 @@ ADD COLUMN IF NOT EXISTS industry_guess TEXT,
 ADD COLUMN IF NOT EXISTS seniority_level TEXT,
 ADD COLUMN IF NOT EXISTS evidence_map JSONB,
 ADD COLUMN IF NOT EXISTS quality_issues TEXT[] DEFAULT '{}',
-ADD COLUMN IF NOT EXISTS quality_passed BOOLEAN DEFAULT true,
+ADD COLUMN IF NOT EXISTS quality_passed BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS resume_strategy TEXT,
 ADD COLUMN IF NOT EXISTS cover_letter_strategy TEXT;
 

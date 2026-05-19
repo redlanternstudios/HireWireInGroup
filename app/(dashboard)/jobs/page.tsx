@@ -17,6 +17,8 @@ type JobsRow = {
   evidence_map: Record<string, unknown> | null
   score: number | null
   score_gaps: string[] | null
+  gap_clarifications: unknown
+  gaps_addressed: string[] | null
   intelligence: Record<string, unknown> | null
   updated_at: string | null
   created_at: string
@@ -44,6 +46,8 @@ export default async function JobsPage() {
       evidence_map,
       score,
       score_gaps,
+      gap_clarifications,
+      gaps_addressed,
       intelligence,
       updated_at,
       created_at,
@@ -71,6 +75,8 @@ export default async function JobsPage() {
       evidence_map:          (j.evidence_map as Record<string, unknown> | null) ?? null,
       score,
       score_gaps:            (j.score_gaps as string[] | null) ?? null,
+      gap_clarifications:    j.gap_clarifications ?? null,
+      gaps_addressed:        (j.gaps_addressed as string[] | null) ?? null,
       intelligence:          (j.intelligence as Record<string, unknown> | null) ?? null,
       updated_at:            j.updated_at ?? null,
       created_at:            j.created_at,

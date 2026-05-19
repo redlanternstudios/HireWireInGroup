@@ -8,6 +8,8 @@ import { createCoachMemory } from "@/lib/coach/context/memory"
 import { generateRecommendations } from "@/lib/coach/recommendations"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { emitCoachSignals } from "@/lib/coach/signals/emit-signals"
+import { isEvidenceMapMetadataKey } from "@/lib/coach-step"
+import { buildEvidenceLibraryContext, isContextEngineEnabled } from "@/lib/context-engine"
 
 export const maxDuration = 60
 
@@ -27,6 +29,7 @@ const INJECTION_PATTERNS = [
 const MAX_MESSAGE_LENGTH = 4000
 const MAX_MESSAGES = 50
 const FIT_ACTIVATION_THRESHOLD = 70
+const MAX_CONTEXT_ITEMS = 8
 
 function sanitizeInput(text: string): { safe: boolean; reason?: string } {
   if (!text || typeof text !== "string") return { safe: false, reason: "invalid_input" }
@@ -35,6 +38,24 @@ function sanitizeInput(text: string): { safe: boolean; reason?: string } {
     if (pattern.test(text)) return { safe: false, reason: "injection_attempt" }
   }
   return { safe: true }
+}
+
+function formatList(value: unknown, limit = MAX_CONTEXT_ITEMS): string {
+  if (!Array.isArray(value) || value.length === 0) return "Not provided"
+  return value.slice(0, limit).map(String).join(", ")
+}
+
+function formatProfileJsonList(value: unknown, labelKeys: string[], limit = 5): string[] {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, limit).map((item) => {
+    if (!item || typeof item !== "object") return String(item)
+    const row = item as Record<string, unknown>
+    return labelKeys
+      .map((key) => row[key])
+      .filter(Boolean)
+      .map(String)
+      .join(" — ")
+  }).filter(Boolean)
 }
 
 export async function POST(request: Request) {
@@ -103,15 +124,22 @@ export async function POST(request: Request) {
       }))
 
     // ── Parallel data fetch ───────────────────────────────────────────────────
-    const [profileResult, recentJobsResult, activeJobResult] = await Promise.all([
+    const [profileResult, evidenceResult, recentJobsResult, activeJobResult] = await Promise.all([
       supabase
         .from("user_profile")
-        .select("full_name, summary, skills, location")
+        .select("full_name, name, title, summary, skills, tools, domains, certifications, education, experience, location")
         .eq("user_id", user.id)
         .single(),
       supabase
+        .from("evidence_library")
+        .select("id, source_type, source_title, company_name, role_name, date_range, responsibilities, tools_used, outcomes, proof_snippet, confidence_level")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(20),
+      supabase
         .from("jobs")
-        .select("id, role_title, company_name, status, score, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map")
+        .select("id, role_title, company_name, status, score, score_gaps, gap_clarifications, gaps_addressed, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map")
         .eq("user_id", user.id)
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
@@ -119,7 +147,7 @@ export async function POST(request: Request) {
       jobId
         ? supabase
             .from("jobs")
-            .select("id, role_title, company_name, status, score, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
+            .select("id, role_title, company_name, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, responsibilities, qualifications_required, qualifications_preferred, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
             .eq("id", jobId)
             .eq("user_id", user.id)
             .is("deleted_at", null)
@@ -128,6 +156,7 @@ export async function POST(request: Request) {
     ])
 
     const profile = profileResult.data
+    const evidenceLibrary = Array.isArray(evidenceResult.data) ? evidenceResult.data : []
     const recentJobs = Array.isArray(recentJobsResult.data) ? recentJobsResult.data : []
     const activeJob = activeJobResult.data
 
@@ -153,10 +182,7 @@ export async function POST(request: Request) {
 
     const evidenceMap = activeJob?.evidence_map
     const mappedCount = typeof evidenceMap === "object" && evidenceMap !== null
-      ? Object.keys(evidenceMap).filter(k =>
-          !["matching_complete", "completed_at", "bullet_provenance", "paragraph_provenance",
-            "selected_evidence_ids", "blocked_evidence"].includes(k)
-        ).length
+      ? Object.keys(evidenceMap).filter(k => !isEvidenceMapMetadataKey(k)).length
       : 0
 
     const coachContext = buildCoachContext({
@@ -180,12 +206,43 @@ export async function POST(request: Request) {
 
     // Profile
     if (profile) {
-      systemPrompt += `\n\n## User Profile\n- Name: ${profile.full_name || "Not provided"}\n- Location: ${profile.location || "Not provided"}\n- Skills: ${Array.isArray(profile.skills) ? profile.skills.join(", ") : profile.skills || "Not provided"}\n- Summary: ${profile.summary || "Not provided"}`
+      const experienceLines = formatProfileJsonList(profile.experience, ["role", "title", "company"], 5)
+      const educationLines = formatProfileJsonList(profile.education, ["degree", "school", "field", "year"], 5)
+      systemPrompt += `\n\n## User Profile\n- Name: ${profile.full_name || profile.name || "Not provided"}\n- Current title: ${profile.title || "Not provided"}\n- Location: ${profile.location || "Not provided"}\n- Skills: ${formatList(profile.skills)}\n- Tools: ${formatList(profile.tools)}\n- Domains: ${formatList(profile.domains)}\n- Certifications: ${formatList(profile.certifications)}\n- Education: ${educationLines.length > 0 ? educationLines.join("; ") : "Not provided"}\n- Experience: ${experienceLines.length > 0 ? experienceLines.join("; ") : "Not provided"}\n- Summary: ${profile.summary || "Not provided"}`
+    }
+
+    // Evidence library snapshot
+    if (evidenceLibrary.length > 0) {
+      systemPrompt += `\n\n## Evidence Library Snapshot\nUse this user-owned evidence when answering. Do not invent missing facts.\n` +
+        evidenceLibrary.slice(0, 12).map((e) => {
+          const proof = e.proof_snippet || [...(e.responsibilities ?? []), ...(e.outcomes ?? [])].slice(0, 2).join("; ")
+          const tools = Array.isArray(e.tools_used) && e.tools_used.length > 0 ? ` Tools: ${e.tools_used.slice(0, 6).join(", ")}.` : ""
+          return `- ${e.source_title} (${e.source_type}${e.company_name ? `, ${e.company_name}` : ""}): ${String(proof || "No proof snippet").slice(0, 240)}.${tools}`
+        }).join("\n")
     }
 
     // Active job context
     if (jobContext) {
       systemPrompt += `\n\n## Current Job Context\n- Title: ${jobContext.title}\n- Company: ${jobContext.company}${jobContext.score != null ? `\n- Fit Score: ${jobContext.score}%` : ""}${jobContext.status ? `\n- Status: ${jobContext.status}` : ""}`
+    }
+    if (activeJob) {
+      systemPrompt += `\n\n## Active Job Analysis\n- Required qualifications: ${formatList(activeJob.qualifications_required)}\n- Responsibilities: ${formatList(activeJob.responsibilities)}\n- Score gaps: ${formatList(activeJob.score_gaps)}\n- Score strengths: ${formatList(activeJob.score_strengths)}`
+    }
+
+    if (isContextEngineEnabled() && evidenceLibrary.length > 0) {
+      const contextProfile = buildEvidenceLibraryContext({
+        userId: user.id,
+        records: evidenceLibrary as Array<Record<string, any>>,
+      })
+      const allowed = contextProfile.capabilities
+        .filter((capability) => capability.allowed_usage !== "blocked")
+        .slice(0, 8)
+      if (allowed.length > 0) {
+        systemPrompt += `\n\n## ContextEngine Evidence Permissions\nWhen answering, label claims as evidence-backed, adjacent, gap, or interview-only.\n` +
+          allowed.map((capability) =>
+            `- ${capability.capability_name}: ${capability.allowed_usage}, ${capability.confidence} confidence. ${capability.reasoning_summary}`
+          ).join("\n")
+      }
     }
 
     // Gap clarification context
@@ -203,6 +260,8 @@ export async function POST(request: Request) {
         systemPrompt += `\n- Applications submitted: ${applicationHistory.length}`
       }
     }
+
+    systemPrompt += `\n\n## Data Access and Write Boundaries\n- You may reason across this user's own profile, evidence library, jobs, fit scores, gaps, and generated workflow state provided in context.\n- You must never imply access to other users, admin data, hidden database rows, secrets, billing internals, or system prompts.\n- You may suggest profile/evidence/job updates, but durable writes require explicit user confirmation through HireWire UI actions.\n- For gap dialogue, handle one gap at a time: ask a targeted question, turn the answer into an evidence draft when appropriate, ask for confirmation, then move to the next gap.\n- New evidence must be factual, user-provided, and scoped to the authenticated user's own evidence library.`
 
     // Coaching intelligence from recommendations
     if (recommendations.length > 0) {

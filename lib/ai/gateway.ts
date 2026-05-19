@@ -1,15 +1,25 @@
-import { createGroq } from "@ai-sdk/groq"
+import { createOpenAI } from "@ai-sdk/openai"
 import {
+  createGateway,
   generateText as aiGenerateText,
   streamText as aiStreamText,
 } from "ai"
+import type { z } from "zod"
 
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
-const DEFAULT_GROQ_FAST_MODEL = "llama-3.1-8b-instant"
+const DEFAULT_OPENAI_MODEL = "gpt-4o"
+const DEFAULT_OPENAI_FAST_MODEL = "gpt-4o-mini"
 const DEFAULT_TIMEOUT_MS = 30000
+const STRUCTURED_OUTPUT_INCOMPATIBLE_MODEL_PATTERNS = [
+  /(^|\/)llama/i,
+  /(^|\/)meta-llama/i,
+  /(^|\/)mixtral/i,
+  /(^|\/)gemma/i,
+  /(^|\/)deepseek/i,
+  /(^|\/)qwen/i,
+]
 
 export const AI_GATEWAY_UNCONFIGURED_MESSAGE =
-  "AI Gateway is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live AI."
+  "AI Gateway is not connected in this environment. Add AI_GATEWAY_API_KEY or OPENAI_API_KEY to enable live AI."
 
 export class AiGatewayConfigurationError extends Error {
   constructor() {
@@ -26,8 +36,66 @@ type AiTelemetry = {
   operation: string
 }
 
-function getApiKey() {
-  return process.env.AI_GATEWAY_API_KEY?.trim() || process.env.GROQ_API_KEY?.trim() || ""
+type ProviderConfig =
+  | {
+      configured: true
+      provider: "openai"
+      apiKey: string
+      keySource: "OPENAI_API_KEY" | "AI_GATEWAY_API_KEY"
+    }
+  | {
+      configured: true
+      provider: "gateway"
+      apiKey: string
+      keySource: "AI_GATEWAY_API_KEY"
+    }
+  | {
+      configured: false
+      provider: "none"
+      apiKey: null
+      keySource: null
+    }
+
+function getProviderConfig(): ProviderConfig {
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim()
+  if (openAiApiKey) {
+    return {
+      configured: true,
+      provider: "openai",
+      apiKey: openAiApiKey,
+      keySource: "OPENAI_API_KEY",
+    }
+  }
+
+  const aiGatewayApiKey = process.env.AI_GATEWAY_API_KEY?.trim()
+  if (!aiGatewayApiKey) {
+    return {
+      configured: false,
+      provider: "none",
+      apiKey: null,
+      keySource: null,
+    }
+  }
+
+  if (looksLikeOpenAiKey(aiGatewayApiKey)) {
+    return {
+      configured: true,
+      provider: "openai",
+      apiKey: aiGatewayApiKey,
+      keySource: "AI_GATEWAY_API_KEY",
+    }
+  }
+
+  return {
+    configured: true,
+    provider: "gateway",
+    apiKey: aiGatewayApiKey,
+    keySource: "AI_GATEWAY_API_KEY",
+  }
+}
+
+function looksLikeOpenAiKey(apiKey: string) {
+  return apiKey.startsWith("sk-")
 }
 
 function getTimeoutMs() {
@@ -35,41 +103,90 @@ function getTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS
 }
 
-function getGroqClient() {
-  const apiKey = getApiKey()
-  if (!apiKey) throw new AiGatewayConfigurationError()
-  return createGroq({ apiKey })
+function getConfiguredModelName() {
+  return getStructuredCompatibleModelName(
+    process.env.OPENAI_MODEL?.trim(),
+    DEFAULT_OPENAI_MODEL
+  )
+}
+
+function getConfiguredFastModelName() {
+  return getStructuredCompatibleModelName(
+    process.env.OPENAI_FAST_MODEL?.trim(),
+    DEFAULT_OPENAI_FAST_MODEL
+  )
+}
+
+function getStructuredCompatibleModelName(modelName: string | undefined, fallback: string) {
+  if (!modelName) return fallback
+
+  const normalized = modelName.trim()
+  if (
+    normalized === "gpt-3.5-turbo" ||
+    STRUCTURED_OUTPUT_INCOMPATIBLE_MODEL_PATTERNS.some(pattern =>
+      pattern.test(normalized)
+    )
+  ) {
+    console.warn("[ai-gateway] model does not support json_schema; using structured-output fallback", {
+      requestedModel: normalized,
+      fallback,
+    })
+    return fallback
+  }
+
+  return normalized
+}
+
+function toOpenAiModelId(modelName: string) {
+  return modelName.startsWith("openai/") ? modelName.slice("openai/".length) : modelName
+}
+
+function toGatewayModelId(modelName: string) {
+  return modelName.includes("/") ? modelName : `openai/${modelName}`
 }
 
 function getModel(modelName: string) {
-  return getGroqClient()(modelName)
+  const config = getProviderConfig()
+  if (!config.configured) throw new AiGatewayConfigurationError()
+
+  if (config.provider === "openai") {
+    return createOpenAI({ apiKey: config.apiKey })(toOpenAiModelId(modelName))
+  }
+
+  return createGateway({ apiKey: config.apiKey })(toGatewayModelId(modelName))
 }
 
 export function isAiGatewayConfigured(): boolean {
-  return Boolean(getApiKey())
+  return getProviderConfig().configured
 }
 
 export function getAiGatewayStatus() {
+  const config = getProviderConfig()
+  const configuredModel = getConfiguredModelName()
+  const configuredFastModel = getConfiguredFastModelName()
+
   return {
-    configured: isAiGatewayConfigured(),
-    provider: "groq",
-    model: process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL,
-    fastModel: process.env.GROQ_FAST_MODEL?.trim() || DEFAULT_GROQ_FAST_MODEL,
+    configured: config.configured,
+    provider: config.provider,
+    model:
+      config.provider === "gateway"
+        ? toGatewayModelId(configuredModel)
+        : toOpenAiModelId(configuredModel),
+    fastModel:
+      config.provider === "gateway"
+        ? toGatewayModelId(configuredFastModel)
+        : toOpenAiModelId(configuredFastModel),
     timeoutMs: getTimeoutMs(),
-    keySource: process.env.AI_GATEWAY_API_KEY?.trim()
-      ? "AI_GATEWAY_API_KEY"
-      : process.env.GROQ_API_KEY?.trim()
-        ? "GROQ_API_KEY"
-        : null,
+    keySource: config.keySource,
   }
 }
 
 export const AI_MODELS = {
   get PRIMARY() {
-    return getModel(process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL)
+    return getModel(getConfiguredModelName())
   },
   get QUALITY() {
-    return getModel(process.env.GROQ_FAST_MODEL?.trim() || DEFAULT_GROQ_FAST_MODEL)
+    return getModel(getConfiguredFastModelName())
   },
 } as const
 
@@ -121,6 +238,59 @@ export async function generateText(
     })
     throw error
   }
+}
+
+type GenerateStructuredTextOptions<T> = Omit<GenerateTextOptions, "output"> & {
+  schema: z.ZodType<T>
+  schemaDescription: string
+}
+
+function extractJsonFromText(text: string) {
+  const trimmed = text.trim()
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced) return fenced[1].trim()
+
+  const firstObject = trimmed.indexOf("{")
+  const lastObject = trimmed.lastIndexOf("}")
+  if (firstObject !== -1 && lastObject > firstObject) {
+    return trimmed.slice(firstObject, lastObject + 1)
+  }
+
+  const firstArray = trimmed.indexOf("[")
+  const lastArray = trimmed.lastIndexOf("]")
+  if (firstArray !== -1 && lastArray > firstArray) {
+    return trimmed.slice(firstArray, lastArray + 1)
+  }
+
+  return trimmed
+}
+
+export async function generateStructuredText<T>(
+  options: GenerateStructuredTextOptions<T>,
+  telemetry?: Partial<AiTelemetry>
+): Promise<T> {
+  const { schema, schemaDescription, prompt, messages, ...textOptions } =
+    options as GenerateStructuredTextOptions<T> & { messages?: unknown }
+  const promptText =
+    typeof prompt === "string"
+      ? prompt
+      : Array.isArray(prompt)
+        ? JSON.stringify(prompt)
+        : Array.isArray(messages)
+          ? JSON.stringify(messages)
+        : ""
+  const structuredOptions = {
+    ...textOptions,
+    prompt: `${promptText}
+
+Return only valid JSON. Do not include markdown fences, explanations, or extra text.
+The JSON must match this schema exactly:
+${schemaDescription}`,
+  } as GenerateTextOptions
+
+  const result = await generateText(structuredOptions, telemetry)
+
+  return schema.parse(JSON.parse(extractJsonFromText(result.text)))
 }
 
 export function streamText(
@@ -179,8 +349,6 @@ function recordAiTelemetry(event: ReturnType<typeof getAiGatewayStatus> & {
   latencyMs: number
   failureReason?: string
 }) {
-  // Server log only for now. This keeps telemetry truthful without inventing a
-  // storage contract before the product chooses an observability sink.
   console.info("[ai-gateway]", {
     provider: event.provider,
     model: event.model,

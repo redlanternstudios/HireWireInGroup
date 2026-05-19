@@ -14,8 +14,7 @@
  *   - No data is invented — missing fields get status "missing", value null.
  */
 
-import { Output } from "ai"
-import { generateText } from "@/lib/ai/gateway"
+import { generateStructuredText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
@@ -181,6 +180,20 @@ export const LinkedInCaptureResultSchema = z.object({
   noise_removed: z.array(z.string()),
   validation: ValidationSchema,
 })
+
+const LINKEDIN_CAPTURE_RESULT_SCHEMA_DESCRIPTION = `{
+  "identity": object,
+  "experience": object[],
+  "career_progression": object[],
+  "education": object[],
+  "certifications": object[],
+  "skills": object,
+  "about": object,
+  "social_proof": object,
+  "activity": object[],
+  "noise_removed": string[],
+  "validation": object
+}`
 
 export type LinkedInCaptureResult = z.infer<typeof LinkedInCaptureResultSchema>
 
@@ -350,13 +363,12 @@ export async function extractLinkedInProfile(
 ${contextBlock}LINKEDIN PROFILE TEXT:
 ${cleanedText}`
 
-  const result = await generateText({
+  const raw = await generateStructuredText({
     model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: LinkedInCaptureResultSchema }),
+    schema: LinkedInCaptureResultSchema,
+    schemaDescription: LINKEDIN_CAPTURE_RESULT_SCHEMA_DESCRIPTION,
     prompt,
   })
-
-  const raw = result.experimental_output
 
   if (!raw || typeof raw !== "object") {
     throw new Error(

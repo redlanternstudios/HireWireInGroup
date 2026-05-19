@@ -31,7 +31,7 @@ export default async function ReadyToApplyPage() {
   const [{ data: jobs }, { data: recentReadyEvents }] = await Promise.all([
     supabase
       .from("jobs")
-      .select("id, role_title, company_name, status, generated_resume, generated_cover_letter, quality_passed, evidence_map, generation_timestamp, created_at, applied_at")
+      .select("id, role_title, company_name, status, generated_resume, generated_cover_letter, quality_passed, evidence_map, generation_timestamp, created_at, applied_at, score, score_gaps, gap_clarifications, gaps_addressed")
       .eq("user_id", user.id)
       .is("deleted_at", null)
       .not("status", "in", "(applied,interviewing,offered,rejected,archived)")

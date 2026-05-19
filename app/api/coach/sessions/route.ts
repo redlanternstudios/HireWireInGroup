@@ -23,6 +23,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const { data: ownedJob } = await supabase.from("jobs").select("id,role_title,company_name")
+      .eq("id", jobId).eq("user_id", userId).is("deleted_at", null).maybeSingle()
+
+    if (!ownedJob) {
+      return NextResponse.json(
+        { success: false, error: "job_not_found", user_message: "That job was not found in your workspace." },
+        { status: 404 }
+      )
+    }
+
     const { data: existing } = await supabase
       .from("coach_sessions")
       .select("id")
@@ -61,9 +71,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data: job } = await supabase.from("jobs").select("role_title,company_name")
-      .eq("id", jobId).eq("user_id", userId).maybeSingle()
-    const jobTitle = job?.role_title ?? "this role"
+    const jobTitle = ownedJob.role_title ?? "this role"
     const openingContent = buildOpeningPrompt(gapRequirement, jobTitle)
 
     const { data: openingMsg } = await supabase.from("coach_messages")

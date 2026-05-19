@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS public.job_scores (
   job_id uuid PRIMARY KEY REFERENCES public.jobs(id) ON DELETE CASCADE,
-  overall_score integer NOT NULL,
+  overall_score numeric(5,2) NOT NULL,
   skills_match numeric(5,2) NOT NULL,
   experience_relevance numeric(5,2) NOT NULL,
   evidence_quality numeric(5,2) NOT NULL,

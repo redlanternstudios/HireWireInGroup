@@ -12,10 +12,19 @@
  * client-supplied input.
  */
 
-import { Output } from "ai";
-import { generateText } from "@/lib/ai/gateway";
+import { generateStructuredText } from "@/lib/ai/gateway";
 import { z } from "zod";
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow";
+import { withCoachStepMeta } from "@/lib/coach-step";
+import {
+  buildEvidenceLibraryContext,
+  buildJobContext,
+  isContextEngineEnabled,
+  mirrorGapMatches,
+  mirrorJobContext,
+  mirrorProfileContext,
+  runContextGapMatch,
+} from "@/lib/context-engine";
 import {
   inferRoleFromJobTitle,
   getWeightsForRole,
@@ -114,6 +123,33 @@ const JobAnalysisSchema = z.object({
     product_ownership_level: z.enum(["low", "medium", "high"]),
   }),
 });
+
+const JOB_ANALYSIS_SCHEMA_DESCRIPTION = `{
+  "title": string | null,
+  "company": string | null,
+  "location": string | null,
+  "employment_type": string | null,
+  "salary_text": string | null,
+  "description_summary": string | null,
+  "responsibilities": string[],
+  "qualifications_required": string[],
+  "qualifications_preferred": string[],
+  "keywords": string[],
+  "ats_phrases": string[],
+  "tech_stack": string[],
+  "role_family": "AI Technical Product Manager" | "Technical Product Manager" | "AI Product Manager" | "Product Manager" | "Senior Product Manager" | "Systems Product Manager" | "Workflow Product Manager" | "Analytics Product Manager" | "Product Owner" | "Program Manager" | "Other",
+  "industry_guess": string | null,
+  "seniority_level": string | null,
+  "fit_signals": {
+    "has_ai_focus": boolean,
+    "has_technical_requirements": boolean,
+    "has_workflow_focus": boolean,
+    "has_startup_culture": boolean,
+    "has_pure_engineering": boolean,
+    "has_people_management": boolean,
+    "product_ownership_level": "low" | "medium" | "high"
+  }
+}`;
 
 export interface AnalyzeCoreResult {
   success: true;
@@ -437,9 +473,10 @@ Instructions: Extract whatever information is available. For any fields that can
 
   if (isAnthropicConfigured()) {
     // Analyze with Claude
-    const analysisResult = await generateText({
+    analysis = await generateStructuredText({
       model: CLAUDE_MODELS.SONNET,
-      output: Output.object({ schema: JobAnalysisSchema }),
+      schema: JobAnalysisSchema,
+      schemaDescription: JOB_ANALYSIS_SCHEMA_DESCRIPTION,
       prompt: `Analyze this job posting and extract structured information.
 
 Be precise and extract only what is explicitly stated. Do not invent or assume information.
@@ -462,7 +499,6 @@ ${pageContent}
 
 Extract the job details following the schema.`,
     });
-    analysis = analysisResult.experimental_output!;
   } else {
     analysis = fallbackAnalyzeJob(pageContent);
   }
@@ -735,18 +771,57 @@ Extract the job details following the schema.`,
     .update({
       role_title: validatedAnalysis.title,
       company_name: validatedAnalysis.company,
+      responsibilities: validatedAnalysis.responsibilities,
+      qualifications_required: validatedAnalysis.qualifications_required,
+      qualifications_preferred: validatedAnalysis.qualifications_preferred,
+      ats_keywords: validatedAnalysis.keywords,
+      keywords_extracted: validatedAnalysis.keywords,
       score: fitResult.score,
       fit: fitResult.fit,
       // Ensure fit and score are always written
       score_gaps: gaps,
       score_strengths: strengths,
+      evidence_map: withCoachStepMeta({}, gaps.length > 0 || fitResult.score < 70 ? "required" : "completed", {
+        reason: "job_analyzed",
+      }),
       seniority_level: normalizedSeniority,
       role_family: validatedAnalysis.role_family,
       industry_guess: validatedAnalysis.industry_guess,
+      analyzed_at: new Date().toISOString(),
     })
     .eq("id", job.id)
     .eq("user_id", user.id);
   if (backfillError) console.error("Jobs backfill error:", backfillError);
+
+  if (isContextEngineEnabled()) {
+    const jobContext = buildJobContext({
+      jobId: job.id,
+      jobText: pageContent,
+      title: validatedAnalysis.title,
+      company: validatedAnalysis.company,
+      requirements: validatedAnalysis.qualifications_required,
+      responsibilities: validatedAnalysis.responsibilities,
+      keywords: validatedAnalysis.keywords,
+    });
+    const profileContext = buildEvidenceLibraryContext({
+      userId: user.id,
+      records: (evidenceResult.data ?? []) as Array<Record<string, any>>,
+    });
+    const gapContext = runContextGapMatch({
+      userId: user.id,
+      jobId: job.id,
+      profile: profileContext,
+      requirements: jobContext.requirements,
+    });
+    void mirrorProfileContext({ supabase, userId: user.id, context: profileContext });
+    void mirrorJobContext({ supabase, jobId: job.id, jobContext });
+    void mirrorGapMatches({
+      supabase,
+      userId: user.id,
+      jobId: job.id,
+      matches: gapContext.gapReport.matches,
+    });
+  }
 
   // Run orchestration flow
   const orchestration = await runJobFlow({

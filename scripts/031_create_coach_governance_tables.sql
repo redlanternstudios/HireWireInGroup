@@ -1,5 +1,10 @@
--- Coach Governance Tables Proposal
--- Check existing tables before running. Add compatibility bridges if needed.
+-- Legacy proposal, not the canonical migration path.
+-- Canonical governance tables are managed by:
+--   supabase/migrations/20260516100000_fix_generation_pipeline_schema.sql
+--   supabase/migrations/20260518120000_harden_generation_governance_persistence.sql
+--
+-- Do not apply this file to current environments unless deliberately designing
+-- a separate experimental schema.
 
 -- job_requirements
 CREATE TABLE IF NOT EXISTS job_requirements (

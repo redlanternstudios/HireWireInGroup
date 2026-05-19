@@ -14,6 +14,8 @@ import {
   recommendResumeFormat,
 } from "@/lib/resume-formats";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
+import { getCoachStepState } from "@/lib/coach-step";
+import { GenerateButton } from "../GenerateButton";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +41,9 @@ export default async function DocumentsPage({
       edited_resume, edited_cover_letter,
       resume_format, resume_font, format_recommendation_reason,
       generation_timestamp, last_edited_at,
-      quality_passed, evidence_map, status, applied_at,
-      generation_status, voice_drift_result, voice_mode, voice_profile_snapshot
+      quality_passed, evidence_map, status, applied_at, score, score_gaps,
+      gap_clarifications, gaps_addressed,
+      generation_status, generation_error, voice_drift_result, voice_mode, voice_profile_snapshot
     `,
     )
     .eq("id", id)
@@ -59,16 +62,41 @@ export default async function DocumentsPage({
 
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter);
   const versions = hasDocs ? await getResumeVersions(id) : [];
+  const coachStep = getCoachStepState(job);
+  const readiness = evaluateReadiness(job);
 
   if (!hasDocs) {
+    const wasBlocked = job.generation_status === "failed" && !!job.generation_error;
     return (
       <div className="hw-page max-w-2xl">
         <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4">
-          <p className="text-sm font-semibold">No documents generated yet</p>
-          <p className="text-xs text-muted-foreground max-w-xs">
-            Return to the job detail page and run document generation to create
-            your tailored resume and cover letter.
+          <p className="text-sm font-semibold">
+            {wasBlocked ? "Generation needs evidence review" : "No documents generated yet"}
           </p>
+          <p className="text-xs text-muted-foreground max-w-xs">
+            {!readiness.canGenerate
+              ? "Answer the coach prompts first, or explicitly skip them, before generating application materials."
+              : wasBlocked
+              ? "HireWire blocked the draft before saving because it drifted from your verified evidence. Add or confirm evidence for this role, then generate again."
+              : "Return to the job detail page and run document generation to create your tailored resume and cover letter."}
+          </p>
+          {coachStep.warning && (
+            <p className="max-w-md rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {coachStep.warning}
+            </p>
+          )}
+          {wasBlocked && (
+            <p className="max-w-md rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {job.generation_error}
+            </p>
+          )}
+          <div className="w-full max-w-sm">
+            <GenerateButton
+              jobId={id}
+              disabled={!readiness.canGenerate}
+              disabledReason={readiness.nextAction?.description}
+            />
+          </div>
           <Link
             href={`/jobs/${id}`}
             className="text-xs text-primary hover:underline"
@@ -106,7 +134,7 @@ export default async function DocumentsPage({
     recommended_resume_font: recommendation.font,
     recommended_resume_reason: recommendation.reason,
   };
-  const readiness = evaluateReadiness(jobWithFormat);
+  const packageReadiness = evaluateReadiness(jobWithFormat);
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -141,9 +169,14 @@ export default async function DocumentsPage({
         <aside className="w-full md:w-96 shrink-0 space-y-4">
           <ApplicationPackagePreview
             job={jobWithFormat}
-            readiness={readiness}
+            readiness={packageReadiness}
             userId={user.id}
           />
+          {coachStep.warning && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {coachStep.warning}
+            </div>
+          )}
           <VoiceIntegritySection
             mode={job.voice_mode ?? null}
             profile={
@@ -160,7 +193,7 @@ export default async function DocumentsPage({
             }
           />
           <ResumeVersionHistory jobId={id} versions={versions} />
-          <ApplyButton jobId={id} disabled={!readiness.canApply} />
+          <ApplyButton jobId={id} disabled={!packageReadiness.canApply} />
         </aside>
       </div>
     </div>

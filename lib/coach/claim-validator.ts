@@ -17,6 +17,9 @@
 
 import type { ClaimVerdict, ClaimConfidence, GovernanceEvidence } from "./types"
 
+const FABRICATION_OVERLAP_THRESHOLD = 0.03
+const MEDIUM_CONFIDENCE_OVERLAP_THRESHOLD = 0.12
+
 // ── Numeric extraction ────────────────────────────────────────────────────────
 
 const NUMBER_PATTERN = /(\d[\d,]*(?:\.\d+)?)\s*(%|k|m|b|x|\/)?/gi
@@ -32,6 +35,7 @@ function extractNumbers(text: string): number[] {
 
 function evidenceNumbers(ev: GovernanceEvidence): number[] {
   const texts = [
+    ...(ev.responsibilities ?? []),
     ...(ev.outcomes ?? []),
     ...(ev.approved_achievement_bullets ?? []),
     ev.team_size != null ? String(ev.team_size) : "",
@@ -68,11 +72,30 @@ function overlapRatio(a: Set<string>, b: Set<string>): number {
   return hits / Math.min(a.size, b.size)
 }
 
+function findBestEvidenceMatch(
+  claimText: string,
+  evidenceSet: GovernanceEvidence[]
+): { evidence: GovernanceEvidence; overlap: number } | null {
+  const claimKeywords = keywordsOf(claimText)
+  let best: { evidence: GovernanceEvidence; overlap: number } | null = null
+
+  for (const evidence of evidenceSet) {
+    const evidenceKeywords = keywordsOf(buildEvidenceText(evidence))
+    const overlap = overlapRatio(claimKeywords, evidenceKeywords)
+    if (!best || overlap > best.overlap) {
+      best = { evidence, overlap }
+    }
+  }
+
+  return best && best.overlap >= FABRICATION_OVERLAP_THRESHOLD ? best : null
+}
+
 // ── Core validator ────────────────────────────────────────────────────────────
 
 function buildEvidenceText(ev: GovernanceEvidence): string {
   return [
     ev.source_title,
+    ...(ev.responsibilities ?? []),
     ...(ev.outcomes ?? []),
     ...(ev.approved_achievement_bullets ?? []),
     ...(ev.tools_used ?? []),
@@ -96,7 +119,7 @@ function assessConfidence(params: {
     return { confidence: "fabricated", reason: "Cited evidence ID not found in evidence set." }
   }
 
-  if (overlap < 0.08) {
+  if (overlap < FABRICATION_OVERLAP_THRESHOLD) {
     return {
       confidence: "fabricated",
       reason: `Claim shares almost no keywords with cited evidence (overlap: ${(overlap * 100).toFixed(0)}%).`,
@@ -110,7 +133,7 @@ function assessConfidence(params: {
     }
   }
 
-  if (overlap < 0.18) {
+  if (overlap < MEDIUM_CONFIDENCE_OVERLAP_THRESHOLD) {
     return { confidence: "medium", reason: "Weak keyword overlap with cited evidence." }
   }
 
@@ -133,13 +156,22 @@ export function validateClaim(
 ): ClaimVerdict {
   const evidenceMap = new Map(evidenceSet.map((e) => [e.id, e]))
 
-  const evidence = claim.cited_evidence_id
+  let evidence = claim.cited_evidence_id
     ? evidenceMap.get(claim.cited_evidence_id) ?? null
     : null
+  let inferredEvidenceReason: string | null = null
 
-  const evidenceExists = evidence !== null
+  if (!evidence) {
+    const inferred = findBestEvidenceMatch(claim.text, evidenceSet)
+    if (inferred) {
+      evidence = inferred.evidence
+      inferredEvidenceReason = claim.cited_evidence_id
+        ? `Cited evidence ID was not found; claim matched evidence ${evidence.id} by content (${(inferred.overlap * 100).toFixed(0)}% keyword overlap).`
+        : `No evidence ID cited; claim matched evidence ${evidence.id} by content (${(inferred.overlap * 100).toFixed(0)}% keyword overlap).`
+    }
+  }
 
-  if (!evidenceExists) {
+  if (!evidence) {
     return {
       claim_text: claim.text,
       cited_evidence_id: claim.cited_evidence_id,
@@ -153,16 +185,17 @@ export function validateClaim(
     }
   }
 
+  const groundedEvidence = evidence
   const claimKeywords = keywordsOf(claim.text)
-  const evidenceText = buildEvidenceText(evidence)
+  const evidenceText = buildEvidenceText(groundedEvidence)
   const evidenceKeywords = keywordsOf(evidenceText)
 
   const overlap = overlapRatio(claimKeywords, evidenceKeywords)
-  const claimGrounded = overlap >= 0.08
+  const claimGrounded = overlap >= FABRICATION_OVERLAP_THRESHOLD
 
   // Metric traceability
   const claimNums = extractNumbers(claim.text)
-  const evNums = evidenceNumbers(evidence)
+  const evNums = evidenceNumbers(groundedEvidence)
   const hasMetrics = claimNums.length > 0
   const metricsTraceable =
     !hasMetrics ||
@@ -174,7 +207,7 @@ export function validateClaim(
     )
 
   const { confidence, reason } = assessConfidence({
-    evidenceExists,
+    evidenceExists: true,
     overlapRatio: overlap,
     metricsTraceable,
     hasMetrics,
@@ -182,12 +215,14 @@ export function validateClaim(
 
   return {
     claim_text: claim.text,
-    cited_evidence_id: claim.cited_evidence_id,
+    cited_evidence_id: groundedEvidence.id,
     evidence_exists: true,
     claim_grounded: claimGrounded,
     metrics_traceable: metricsTraceable,
     confidence,
-    ...(reason ? { failure_reason: reason } : {}),
+    ...(reason || inferredEvidenceReason
+      ? { failure_reason: [inferredEvidenceReason, reason].filter(Boolean).join(" ") }
+      : {}),
   }
 }
 

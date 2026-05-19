@@ -2,6 +2,7 @@ export type ReadinessChecklistState = {
   resume: boolean;
   coverLetter: boolean;
   evidence: boolean;
+  coach: boolean;
   quality: boolean;
   voiceIntegrity?: boolean;
 };
@@ -10,6 +11,7 @@ export type ReadinessStage =
   | "outcome"
   | "ready"
   | "quality_review"
+  | "coach_blocked"
   | "evidence_blocked"
   | "materials_missing";
 
@@ -46,8 +48,13 @@ export type ReadinessJob = {
   generated_cover_letter?: string | null;
   evidence_map?: unknown;
   quality_passed?: boolean | null;
+  score?: number | null;
+  score_gaps?: string[] | null;
+  gap_clarifications?: unknown;
+  gaps_addressed?: string[] | null;
 };
 
+import { getCoachStepState, isEvidenceMapMetadataKey } from "@/lib/coach-step";
 import {
   isVoiceIntegrityPassed,
   getVoiceBlockedReason,
@@ -57,10 +64,12 @@ export function evaluateReadiness(
   job: ReadinessJob & { voice_drift_result?: any },
 ): ReadinessResult {
   const voiceIntegrity = isVoiceIntegrityPassed(job.voice_drift_result ?? null);
+  const coachStep = getCoachStepState(job);
   const checklist = {
     resume: !!job.generated_resume,
     coverLetter: !!job.generated_cover_letter,
     evidence: hasMinimumEvidence(job),
+    coach: coachStep.complete,
     quality: job.quality_passed === true,
     voiceIntegrity,
   };
@@ -70,7 +79,7 @@ export function evaluateReadiness(
   const hasMaterials = checklist.resume && checklist.coverLetter;
   const isReady = Object.values(checklist).every(Boolean);
   const canApply = isReady && !isOutcome;
-  const canGenerate = checklist.evidence && !hasMaterials && !isOutcome;
+  const canGenerate = checklist.evidence && checklist.coach && !hasMaterials && !isOutcome;
   const stage = getReadinessStage(checklist, outcome);
   const nextAction = getNextAction(job, checklist, stage, outcome);
 
@@ -78,6 +87,7 @@ export function evaluateReadiness(
   if (!checklist.resume) blockedReasons.push("Resume not generated");
   if (!checklist.coverLetter) blockedReasons.push("Cover letter not generated");
   if (!checklist.evidence) blockedReasons.push("Insufficient evidence match");
+  if (!checklist.coach) blockedReasons.push("Coach step required before generation");
   if (!checklist.quality) blockedReasons.push("Quality check failed");
   if (!checklist.voiceIntegrity) {
     const reason = getVoiceBlockedReason(job.voice_drift_result ?? null);
@@ -113,6 +123,7 @@ function getReadinessStage(
   if (outcome !== "active") return "outcome";
   if (Object.values(checklist).every(Boolean)) return "ready";
   if (!checklist.resume || !checklist.coverLetter) return "materials_missing";
+  if (!checklist.coach) return "coach_blocked";
   if (!checklist.evidence) return "evidence_blocked";
   return "quality_review";
 }
@@ -131,6 +142,14 @@ function getNextAction(
       label: "Fix evidence",
       href: job.id ? `/jobs/${job.id}/evidence-match` : "/evidence",
       description: "Add or map proof points before this job can move forward.",
+    };
+  }
+
+  if (!checklist.coach) {
+    return {
+      label: "Start coach",
+      href: job.id ? `/jobs/${job.id}/evidence-match` : "/coach",
+      description: "Answer or skip the coach prompts before generating materials.",
     };
   }
 
@@ -182,16 +201,7 @@ function hasMinimumEvidence(job: ReadinessJob) {
 
   const mappedRequirementKeys = Object.keys(evidenceMap).filter(
     (key) =>
-      ![
-        "matching_complete",
-        "completed_at",
-        "bullet_provenance",
-        "paragraph_provenance",
-        "selected_evidence_ids",
-        "blocked_evidence",
-        "mapped_items",
-        "score_gaps",
-      ].includes(key),
+      !isEvidenceMapMetadataKey(key),
   );
 
   return mappedRequirementKeys.length >= 2;

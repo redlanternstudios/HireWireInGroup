@@ -128,6 +128,7 @@ export interface ReadinessSnapshot {
     resume: boolean
     coverLetter: boolean
     evidence: boolean
+    coach: boolean
     quality: boolean
   }
   nextAction: { label: string; href: string } | null

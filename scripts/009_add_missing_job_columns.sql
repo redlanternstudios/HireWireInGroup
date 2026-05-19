@@ -1,5 +1,6 @@
--- Add missing columns to jobs table that were expected but not migrated
--- These columns are needed for the evidence matching and document generation features
+-- Legacy bootstrap script.
+-- Canonical migrations live in supabase/migrations.
+-- Keep this file conservative for older manual setup flows only.
 
 ALTER TABLE jobs
 ADD COLUMN IF NOT EXISTS role_family TEXT,
@@ -7,7 +8,7 @@ ADD COLUMN IF NOT EXISTS industry_guess TEXT,
 ADD COLUMN IF NOT EXISTS seniority_level TEXT,
 ADD COLUMN IF NOT EXISTS evidence_map JSONB,
 ADD COLUMN IF NOT EXISTS quality_issues TEXT[] DEFAULT '{}',
-ADD COLUMN IF NOT EXISTS quality_passed BOOLEAN DEFAULT true,
+ADD COLUMN IF NOT EXISTS quality_passed BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS resume_strategy TEXT,
 ADD COLUMN IF NOT EXISTS cover_letter_strategy TEXT;
 

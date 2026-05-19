@@ -34,6 +34,7 @@ import {
 } from "@/lib/jobs/priority";
 import { JobInputForm } from "@/app/(dashboard)/jobs/JobInputForm";
 import { cn } from "@/lib/utils";
+import { getCoachStepState } from "@/lib/coach-step";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ export interface PipelineJob {
   evidence_map: Record<string, unknown> | null;
   score: number | null;
   score_gaps: string[] | null;
+  gap_clarifications?: unknown;
+  gaps_addressed?: string[] | null;
   intelligence: Record<string, unknown> | null;
   updated_at: string | null;
   created_at: string;
@@ -126,15 +129,6 @@ const VIEW_TABS: { key: ViewTab; label: string }[] = [
   { key: "all", label: "All" },
 ];
 
-// Score label
-function scoreLabel(score: number | null): string {
-  if (score === null) return "In progress";
-  if (score >= 80) return "Strong match";
-  if (score >= 65) return "High potential";
-  if (score >= 50) return "Medium match";
-  return "Medium match";
-}
-
 function scoreColor(score: number | null): string {
   if (score === null) return "text-muted-foreground";
   if (score >= 80) return "text-emerald-600";
@@ -149,7 +143,8 @@ function enrichJob(job: PipelineJob) {
   const displayStage = deriveDisplayStage(job, staleness.isStale);
   const view = STAGE_TO_VIEW[displayStage];
   const priority = derivePriority(job, staleness.level === "archive_candidate");
-  return { ...job, staleness, displayStage, view, priority };
+  const coachStep = getCoachStepState(job);
+  return { ...job, staleness, displayStage, view, priority, coachStep };
 }
 
 type EnrichedJob = ReturnType<typeof enrichJob>;
@@ -161,6 +156,14 @@ function nextActionFor(job: EnrichedJob): {
   desc: string;
   href: string;
 } {
+  if (job.coachStep.required && !job.coachStep.complete) {
+    return {
+      label: "Start coach",
+      desc: "Resolve fit gaps",
+      href: `/jobs/${job.id}/evidence-match`,
+    };
+  }
+
   switch (job.displayStage) {
     case "inbox":
     case "analyzed":
@@ -227,6 +230,8 @@ function tagsFor(job: EnrichedJob): string[] {
   }
   if (job.displayStage === "needs_review") tags.push("Review resume");
   if (job.displayStage === "ready_to_generate") tags.push("Needs materials");
+  if (job.coachStep.required && !job.coachStep.complete) tags.push("Coach needed");
+  if (job.coachStep.skipped) tags.push("Coach skipped");
   if (job.staleness.isStale) tags.push("Stale");
   const ageMs = Date.now() - new Date(job.created_at).getTime();
   if (ageMs < 2 * 86400000) tags.push("Just added");
@@ -243,7 +248,7 @@ function JobRow({ job, isLast }: { job: EnrichedJob; isLast: boolean }) {
   const tags = tagsFor(job);
   const time = timeAgo(job.updated_at || job.created_at);
   const fitColor = scoreColor(job.score);
-  const label = scoreLabel(job.score);
+  const evidenceCoverage = job.coachStep.evidenceCoverage;
 
   return (
     <div
@@ -312,9 +317,14 @@ function JobRow({ job, isLast }: { job: EnrichedJob; isLast: boolean }) {
         {job.score !== null ? (
           <>
             <p className={cn("text-sm font-bold tabular-nums", fitColor)}>
-              {job.score}%
+              {Math.round(job.score)}%
             </p>
-            <p className={cn("text-[10px]", fitColor)}>{label}</p>
+            <p className={cn("text-[10px]", fitColor)}>Strategic fit</p>
+            {evidenceCoverage != null && (
+              <p className="text-[10px] text-muted-foreground">
+                {Math.round(evidenceCoverage)}% evidence
+              </p>
+            )}
           </>
         ) : (
           <p className="text-xs text-muted-foreground">In progress</p>
