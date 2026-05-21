@@ -54,9 +54,10 @@ export async function handleDomainEvent(input: HandleEventInput): Promise<void> 
       metadata: input.metadata ?? {},
     })
 
-    // Trigger readiness recomputation if required
-    if (rule.recomputes.includes("readiness") && input.job_id) {
-      void recomputeReadiness({
+    if (!rule.recomputes.includes("readiness")) return
+
+    if (input.job_id) {
+      await recomputeReadiness({
         supabase: input.supabase,
         jobId: input.job_id,
         userId: input.user_id,
@@ -64,8 +65,40 @@ export async function handleDomainEvent(input: HandleEventInput): Promise<void> 
         emitEvent: (eventInput) =>
           emitDomainEventWithClient(input.supabase, eventInput),
       })
+      return
+    }
+
+    if (isUserWideReadinessEvent(input.event_type)) {
+      const { data: jobs } = await input.supabase
+        .from("jobs")
+        .select("id")
+        .eq("user_id", input.user_id)
+        .is("deleted_at", null)
+        .not("status", "in", "(applied,interviewing,offered,rejected,archived)")
+        .limit(100)
+
+      await Promise.all(
+        (jobs ?? []).map((job) =>
+          recomputeReadiness({
+            supabase: input.supabase,
+            jobId: job.id,
+            userId: input.user_id,
+            triggeredBy: input.event_type,
+            emitEvent: (eventInput) =>
+              emitDomainEventWithClient(input.supabase, eventInput),
+          }),
+        ),
+      )
     }
   } catch {
     // Domain event handling must never throw into the mutation path
   }
+}
+
+function isUserWideReadinessEvent(eventType: DomainEventType) {
+  return (
+    eventType === "evidence_added" ||
+    eventType === "evidence_updated" ||
+    eventType === "evidence_deleted"
+  )
 }

@@ -21,9 +21,10 @@ export function MarkAsAppliedButton({ jobId, disabled }: { jobId: string, disabl
   const [overrideReason, setOverrideReason] = useState("")
   const [acknowledged, setAcknowledged] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const router = useRouter()
 
-  async function handleApply() {
+  async function performApply() {
     startTransition(async () => {
       const result = await applyToJob(jobId)
       if (result.error === "APPLICATION_BLOCKED") {
@@ -31,7 +32,11 @@ export function MarkAsAppliedButton({ jobId, disabled }: { jobId: string, disabl
         setIsDialogOpen(true)
         return
       }
-      router.refresh()
+      if (result.success) {
+        router.push("/applications")
+      } else {
+        router.refresh()
+      }
     })
   }
 
@@ -50,11 +55,38 @@ export function MarkAsAppliedButton({ jobId, disabled }: { jobId: string, disabl
       <Button
         className="hw-btn-primary"
         disabled={isPending || disabled}
-        onClick={handleApply}
+        onClick={() => setConfirmOpen(true)}
         type="button"
       >
         {isPending ? "Marking..." : "Mark as Applied"}
       </Button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark this job as applied?</DialogTitle>
+            <DialogDescription>
+              HireWire will create an application record, move this job into Applications, and start outcome tracking.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="hw-btn-primary"
+              disabled={isPending}
+              onClick={() => {
+                setConfirmOpen(false)
+                void performApply()
+              }}
+            >
+              Confirm Applied
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>

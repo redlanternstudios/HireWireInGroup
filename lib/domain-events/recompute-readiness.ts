@@ -10,6 +10,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { evaluateReadiness, type ReadinessResult } from "@/lib/readiness/evaluator"
+import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob"
 import type { ReadinessSnapshot, DomainEventType, DomainEventInput } from "./event-types"
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
@@ -34,6 +35,53 @@ export async function recomputeReadiness({
   emitEvent,
 }: RecomputeReadinessInput): Promise<ReadinessResult | null> {
   try {
+    // Recompute canonical evidence map before readiness
+    try {
+      await buildEvidenceMapForJob({
+        supabase,
+        userId,
+        jobId,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Evidence map rebuild failed"
+      console.error("[readiness] evidence map rebuild failed", {
+        jobId,
+        userId,
+        triggeredBy,
+        error: message,
+      })
+
+      const { data: job } = await supabase
+        .from("jobs")
+        .select("evidence_map")
+        .eq("id", jobId)
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .maybeSingle()
+
+      const previousMap =
+        job?.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
+          ? job.evidence_map as Record<string, unknown>
+          : {}
+
+      await supabase
+        .from("jobs")
+        .update({
+          evidence_map: {
+            ...previousMap,
+            map_build_error: {
+              message,
+              triggered_by: triggeredBy,
+              failed_at: new Date().toISOString(),
+            },
+          },
+        })
+        .eq("id", jobId)
+        .eq("user_id", userId)
+
+      return null
+    }
+
     const { data: job, error } = await supabase
       .from("jobs")
       .select("id, status, applied_at, generated_resume, generated_cover_letter, evidence_map, quality_passed, score, score_gaps, gap_clarifications, gaps_addressed")
@@ -52,8 +100,15 @@ export async function recomputeReadiness({
       job_id: jobId,
       user_id: userId,
       source: "system",
-      payload: { snapshot },
-      invalidates: ["dashboard", "coach_state", "analytics_cache"],
+      payload: {
+        snapshot,
+        is_ready: snapshot.isReady,
+        can_apply: snapshot.canApply,
+        stage: snapshot.stage,
+        outcome: snapshot.outcome,
+        blocked_reasons: snapshot.blockedReasons,
+      },
+      invalidates: ["dashboard", "coach_state", "analytics_cache", "ready_to_apply"],
       recomputes: [],
       affected_routes: ["/dashboard", "/jobs", `/jobs/${jobId}`, "/ready-to-apply"],
       severity: "info",
@@ -61,7 +116,13 @@ export async function recomputeReadiness({
     })
 
     return result
-  } catch {
+  } catch (error) {
+    console.error("[readiness] recompute failed", {
+      jobId,
+      userId,
+      triggeredBy,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return null
   }
 }

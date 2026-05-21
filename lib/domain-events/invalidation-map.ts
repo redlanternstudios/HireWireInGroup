@@ -83,6 +83,13 @@ export const INVALIDATION_MAP: PropagationMap = {
     severity: "info",
   },
 
+  evidence_draft_created: {
+    invalidates: ["coach_state"],
+    recomputes: [],
+    routeTemplates: ["/jobs/[id]/evidence-match"],
+    severity: "info",
+  },
+
   // ── Resume source ─────────────────────────────────────────────────────────
 
   resume_uploaded: {
@@ -175,7 +182,21 @@ export const INVALIDATION_MAP: PropagationMap = {
   readiness_changed: {
     invalidates: ["dashboard", "coach_state", "analytics_cache"],
     recomputes: [],
-    routeTemplates: ["/dashboard", "/jobs", "/ready-to-apply"],
+    routeTemplates: ["/dashboard", "/jobs", "/jobs/[id]", "/ready-to-apply"],
+    severity: "info",
+  },
+
+  coach_gap_session_started: {
+    invalidates: ["coach_state"],
+    recomputes: [],
+    routeTemplates: ["/jobs/[id]/evidence-match"],
+    severity: "info",
+  },
+
+  coach_gap_message_added: {
+    invalidates: ["coach_state"],
+    recomputes: [],
+    routeTemplates: ["/jobs/[id]/evidence-match"],
     severity: "info",
   },
 
@@ -198,9 +219,9 @@ export const INVALIDATION_MAP: PropagationMap = {
   // ── Application ───────────────────────────────────────────────────────────
 
   application_submitted: {
-    invalidates: ["readiness", "analytics_cache", "dashboard", "applications", "coach_state"],
-    recomputes: [],
-    routeTemplates: ["/dashboard", "/jobs", "/applications", "/analytics", "/logs"],
+    invalidates: ["readiness", "analytics_cache", "dashboard", "applications", "coach_state", "ready_to_apply"],
+    recomputes: ["readiness"],
+    routeTemplates: ["/dashboard", "/jobs", "/jobs/[id]", "/applications", "/ready-to-apply", "/analytics", "/logs"],
     severity: "info",
   },
 
@@ -214,16 +235,46 @@ export const INVALIDATION_MAP: PropagationMap = {
   outcome_updated: {
     invalidates: ["applications", "analytics_cache", "dashboard", "coach_state"],
     recomputes: [],
-    routeTemplates: ["/applications", "/analytics", "/dashboard", "/logs"],
+    routeTemplates: ["/applications", "/analytics", "/dashboard", "/jobs/[id]", "/logs"],
     severity: "info",
   },
 
   // ── Coach ─────────────────────────────────────────────────────────────────
 
   coach_action_taken: {
+    invalidates: ["coach_state", "readiness", "ready_to_apply"],
+    recomputes: ["readiness"],
+    routeTemplates: ["/jobs/[id]", "/jobs/[id]/evidence-match", "/ready-to-apply", "/dashboard"],
+    severity: "info",
+  },
+
+  // ── Coach Tool Calls ──────────────────────────────────────────────────────
+
+  coach_tool_call: {
     invalidates: ["coach_state"],
     recomputes: [],
     routeTemplates: [],
+    severity: "info",
+  },
+
+  coach_tool_result: {
+    invalidates: ["coach_state"],
+    recomputes: [],
+    routeTemplates: [],
+    severity: "info",
+  },
+
+  requirement_addressed: {
+    invalidates: ["readiness", "coach_state"],
+    recomputes: ["readiness"],
+    routeTemplates: ["/jobs/[id]", "/jobs/[id]/evidence-match", "/ready-to-apply", "/dashboard"],
+    severity: "info",
+  },
+
+  job_archived: {
+    invalidates: ["dashboard", "analytics_cache", "coach_state"],
+    recomputes: [],
+    routeTemplates: ["/jobs", "/jobs/[id]", "/dashboard"],
     severity: "info",
   },
 

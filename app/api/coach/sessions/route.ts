@@ -6,6 +6,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { buildOpeningPrompt } from "@/lib/coach/buildCoachPrompt"
+import { handleDomainEvent } from "@/lib/domain-events"
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,9 +17,9 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { jobId, gapRequirement, gapRequirementId } = body
-    if (!jobId || !gapRequirement) {
+    if (!jobId || !gapRequirement || !gapRequirementId) {
       return NextResponse.json(
-        { success: false, error: "missing_fields", user_message: "jobId and gapRequirement are required." },
+        { success: false, error: "missing_fields", user_message: "jobId, gapRequirement, and gapRequirementId are required." },
         { status: 400 }
       )
     }
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
       .select("id")
       .eq("user_id", userId)
       .eq("job_id", jobId)
-      .eq("gap_requirement", gapRequirement)
+      .eq("gap_requirement_id", gapRequirementId)
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(1)
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
     const { data: newSession, error: sessionError } = await supabase
       .from("coach_sessions")
       .insert({ user_id: userId, job_id: jobId, gap_requirement: gapRequirement,
-        gap_requirement_id: gapRequirementId ?? null, status: "active" })
+        gap_requirement_id: gapRequirementId, status: "active" })
       .select("id").single()
 
     if (sessionError || !newSession) {
@@ -77,6 +78,19 @@ export async function POST(request: NextRequest) {
     const { data: openingMsg } = await supabase.from("coach_messages")
       .insert({ session_id: newSession.id, role: "assistant", content: openingContent })
       .select("id,role,content,created_at").single()
+
+    void handleDomainEvent({
+      supabase,
+      event_type: "coach_gap_session_started",
+      job_id: jobId,
+      user_id: userId,
+      source: "coach_route",
+      payload: {
+        session_id: newSession.id,
+        requirement_id: gapRequirementId,
+        requirement_text: gapRequirement,
+      },
+    })
 
     return NextResponse.json({
       sessionId: newSession.id, isNew: true,

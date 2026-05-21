@@ -5,7 +5,7 @@ import { handleDomainEvent } from "@/lib/domain-events"
 import { createClient } from "@/lib/supabase/server"
 
 type CoachStepBody =
-  | { action: "answer"; gap: string; answer: string }
+  | { action: "answer"; gap: string; requirementId?: string; answer: string }
   | { action: "skip" }
   | { action: "complete" }
 
@@ -48,7 +48,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
     }
 
-    void emitCoachEvent(supabase, user.id, id, "skipped", {})
+    await emitCoachEvent(supabase, user.id, id, "skipped", {})
     return NextResponse.json({ success: true, coachStep: { status: "skipped" } })
   }
 
@@ -67,7 +67,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
     }
 
-    void emitCoachEvent(supabase, user.id, id, "completed", {})
+    await emitCoachEvent(supabase, user.id, id, "completed", {})
     return NextResponse.json({ success: true, coachStep: { status: "completed" } })
   }
 
@@ -88,6 +88,9 @@ export async function POST(
     job.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
       ? job.evidence_map as Record<string, unknown>
       : {}
+  const canonicalMatches = Array.isArray(existingMap.requirement_matches)
+    ? existingMap.requirement_matches as Array<Record<string, unknown>>
+    : null
   const existingGapEntry =
     existingMap[gap] && typeof existingMap[gap] === "object" && !Array.isArray(existingMap[gap])
       ? existingMap[gap] as Record<string, unknown>
@@ -117,15 +120,28 @@ export async function POST(
     ...job,
     gap_clarifications: updatedClarifications,
     gaps_addressed: updatedAddressed,
-    evidence_map: {
-      ...existingMap,
-      [gap]: {
-        ...existingGapEntry,
-        coach_answer: answer,
-        source: "coach_step",
-        answered_at: new Date().toISOString(),
-      },
-    },
+    evidence_map: canonicalMatches
+      ? {
+          ...existingMap,
+          requirement_matches: canonicalMatches.map((match) =>
+            match.requirement_id === body.requirementId
+              ? {
+                  ...match,
+                  reasoning: `${String(match.reasoning ?? "")} Coach clarification captured; await confirmed evidence before upgrading status.`.trim(),
+                  updated_at: new Date().toISOString(),
+                }
+              : match,
+          ),
+        }
+      : {
+          ...existingMap,
+          [gap]: {
+            ...existingGapEntry,
+            coach_answer: answer,
+            source: "coach_step",
+            answered_at: new Date().toISOString(),
+          },
+        },
   }
   const nextState = getCoachStepState(provisionalJob)
   const evidenceMap = withCoachStepMeta(
@@ -150,7 +166,7 @@ export async function POST(
     return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
   }
 
-  void emitCoachEvent(supabase, user.id, id, "answered", { gap })
+  await emitCoachEvent(supabase, user.id, id, "answered", { gap, requirement_id: body.requirementId ?? null })
   return NextResponse.json({
     success: true,
     coachStep: getCoachStepState({

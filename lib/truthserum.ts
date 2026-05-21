@@ -44,11 +44,18 @@ export interface BulletProvenance {
   source_company?: string
   matched_requirement_id?: string
   matched_requirement_text?: string
+  source_packet_id?: string
+  match_strength?: "strong" | "partial" | "weak"
+  match_reason?: string
+  evidence_strength?: "high" | "medium" | "low"
+  proof_snippets?: string[]
+  why_included?: string
   claim_confidence: "high" | "medium" | "low"
   keywords_covered: string[]
   risk_flags: string[]
   is_metric_rich: boolean
   concrete_signal_count: number
+  truth_serum?: TruthSerumBulletAudit
 }
 
 export interface ParagraphProvenance {
@@ -108,6 +115,17 @@ export interface RedTeamFix {
   canAutoFix?: boolean // Whether this fix can be applied automatically
   confidence?: "high" | "medium" | "low"
   sourceEvidence?: string // Evidence ID that supports this fix
+}
+
+export interface TruthSerumBulletAudit {
+  generic: boolean
+  ungrounded: boolean
+  missing_system: boolean
+  missing_scope: boolean
+  missing_outcome: boolean
+  any_pm_applicability: boolean
+  flags: string[]
+  score: number
 }
 
 // ============================================================================
@@ -273,6 +291,67 @@ export function hasMetrics(text: string): boolean {
   ]
   
   return metricPatterns.some(p => p.test(text))
+}
+
+export function truthSerumAuditBullet(
+  bullet: string,
+  context: {
+    sourceEvidenceId?: string | null
+    proofSnippets?: string[]
+    systems?: string[]
+    tools?: string[]
+    outcomes?: string[]
+    riskFlags?: string[]
+  } = {}
+): TruthSerumBulletAudit {
+  const concreteness = analyzeBulletConcreteness(bullet)
+  const banned = detectBannedPhrases(bullet)
+  const vague = detectVaguePatterns(bullet)
+  const hasPacketSystems = Boolean(context.systems?.length || context.tools?.length)
+  const hasPacketOutcomes = Boolean(context.outcomes?.length)
+  const hasScope = /\b\d+|\bacross\b|\bglobal\b|\benterprise\b|\bregional\b|\bcountries\b|\busers\b|\bcustomers\b/i.test(bullet)
+  const ungrounded = !context.sourceEvidenceId
+  const generic = banned.length > 0 || vague.length > 0 || concreteness.concrete_signal_count < 2
+  const missing_system = !concreteness.has_system && !hasPacketSystems
+  const missing_outcome = !concreteness.has_result && !hasPacketOutcomes
+  const missing_scope = !hasScope
+  const any_pm_applicability =
+    generic ||
+    /roadmap|stakeholder|cross-functional|strategy|prioriti[sz]e/i.test(bullet) &&
+      missing_system &&
+      missing_scope &&
+      missing_outcome
+  const flags = Array.from(new Set([
+    ...banned.map(phrase => `banned_phrase:${phrase}`),
+    ...vague.map(pattern => `vague_pattern:${pattern}`),
+    ...(ungrounded ? ["ungrounded"] : []),
+    ...(generic ? ["generic"] : []),
+    ...(missing_system ? ["missing_system"] : []),
+    ...(missing_scope ? ["missing_scope"] : []),
+    ...(missing_outcome ? ["missing_outcome"] : []),
+    ...(any_pm_applicability ? ["any_pm_applicability"] : []),
+    ...(context.riskFlags ?? []),
+  ]))
+  const score = Math.max(
+    0,
+    100 -
+      (ungrounded ? 30 : 0) -
+      (generic ? 20 : 0) -
+      (missing_system ? 10 : 0) -
+      (missing_scope ? 10 : 0) -
+      (missing_outcome ? 10 : 0) -
+      (any_pm_applicability ? 20 : 0)
+  )
+  return {
+    generic,
+    ungrounded,
+    missing_system,
+    missing_scope,
+    missing_outcome,
+    any_pm_applicability,
+    flags,
+    score,
+  }
 }
 
 // ============================================================================

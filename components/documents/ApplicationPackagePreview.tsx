@@ -5,6 +5,33 @@ import { acceptApplicationPackage, markPackageNeedsReview } from "@/lib/actions/
 import { approveQualityManually } from "@/lib/actions/documents"
 import { useRouter } from "next/navigation"
 
+type BulletTrace = {
+  bullet_text?: string
+  source_evidence_id?: string
+  source_evidence_title?: string
+  source_packet_id?: string
+  matched_requirement_text?: string
+  match_strength?: string
+  match_reason?: string
+  evidence_strength?: string
+  proof_snippets?: string[]
+  why_included?: string
+  risk_flags?: string[]
+  truth_serum?: {
+    score?: number
+    flags?: string[]
+    generic?: boolean
+    ungrounded?: boolean
+    any_pm_applicability?: boolean
+  }
+}
+
+function getBulletTraces(job: any): BulletTrace[] {
+  const map = job?.evidence_map
+  if (!map || typeof map !== "object" || Array.isArray(map)) return []
+  return Array.isArray(map.bullet_provenance) ? map.bullet_provenance : []
+}
+
 export default function ApplicationPackagePreview({
   job,
   readiness,
@@ -55,6 +82,7 @@ export default function ApplicationPackagePreview({
 
   // If job is edited after acceptance, mark as needs_review
   // (This should be triggered by parent/editor on edit)
+  const bulletTraces = getBulletTraces(job)
 
   return (
     <div className="space-y-6">
@@ -111,6 +139,76 @@ export default function ApplicationPackagePreview({
           </li>
         </ul>
       </div>
+
+      {bulletTraces.length > 0 && (
+        <div className="hw-card p-4">
+          <h3 className="font-semibold mb-2 text-sm">Bullet Trace</h3>
+          <div className="space-y-3">
+            {bulletTraces.map((trace, index) => {
+              const flags = trace.truth_serum?.flags ?? trace.risk_flags ?? []
+              const score = trace.truth_serum?.score
+              return (
+                <details key={`${trace.source_packet_id ?? trace.source_evidence_id ?? index}-${index}`} className="rounded-md border border-border p-3">
+                  <summary className="cursor-pointer text-xs font-medium text-foreground">
+                    {trace.bullet_text ?? `Bullet ${index + 1}`}
+                  </summary>
+                  <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                    <div>
+                      <span className="font-medium text-foreground">Packet:</span>{" "}
+                      {trace.source_packet_id ?? "Missing"}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Requirement:</span>{" "}
+                      {trace.matched_requirement_text ?? "Not linked"}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Evidence:</span>{" "}
+                      {trace.source_evidence_title ?? trace.source_evidence_id ?? "Missing"}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Match:</span>{" "}
+                      {trace.match_strength ?? "Unknown"}
+                      {trace.evidence_strength ? ` · Evidence ${trace.evidence_strength}` : ""}
+                      {typeof score === "number" ? ` · TruthSerum ${score}` : ""}
+                    </div>
+                    {trace.match_reason && (
+                      <div>
+                        <span className="font-medium text-foreground">Reason:</span>{" "}
+                        {trace.match_reason}
+                      </div>
+                    )}
+                    {trace.why_included && (
+                      <div>
+                        <span className="font-medium text-foreground">Why included:</span>{" "}
+                        {trace.why_included}
+                      </div>
+                    )}
+                    {Array.isArray(trace.proof_snippets) && trace.proof_snippets.length > 0 && (
+                      <div>
+                        <span className="font-medium text-foreground">Proof:</span>
+                        <ul className="mt-1 list-disc pl-4">
+                          {trace.proof_snippets.slice(0, 3).map((snippet) => (
+                            <li key={snippet}>{snippet}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {flags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {flags.slice(0, 8).map((flag) => (
+                          <span key={flag} className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                            {flag.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Evidence and Quality Summary */}
       <div className="hw-card p-4">

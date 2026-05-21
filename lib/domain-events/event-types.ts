@@ -47,8 +47,16 @@ export type DomainEventType =
   | "application_submitted"
   | "application_failed"
   | "outcome_updated"
-  // Coach
+  // Coach tools
+  | "coach_tool_call"
+  | "coach_tool_result"
+  | "requirement_addressed"
+  | "job_archived"
+  // Coach sessions
   | "coach_action_taken"
+  | "coach_gap_session_started"
+  | "coach_gap_message_added"
+  | "evidence_draft_created"
   // Export
   | "export_generated"
   | "resume_preview_opened"
@@ -70,6 +78,7 @@ export type DomainEventSource =
   | "generate_documents_route"
   | "analyze_job_route"
   | "coach_route"
+  | "coach_tool"
   | "export_route"
   | "preview_action"
   | "resume_export_action"

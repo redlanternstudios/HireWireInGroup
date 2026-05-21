@@ -220,7 +220,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, summary, qualifications_required, responsibilities, title, company, location")
+      .select("matched_skills, known_gaps, qualifications_required, responsibilities, title, company, location")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -349,7 +349,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           {hasDocs && readiness.outcome === "active" && (
             <div className="mt-4 flex justify-end">
               <Link href="/ready-to-apply">
-                <Button className="hw-btn-primary">Check Apply Gate</Button>
+                <Button className="hw-btn-primary">Ready to Apply</Button>
               </Link>
             </div>
           )}
@@ -420,13 +420,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   <ScoreBar label="Seniority alignment" value={Number(scores.seniority_alignment)} />
                 )}
               </div>
-            </div>
-          )}
-
-          {analysis?.summary && (
-            <div className="hw-card px-6 py-5">
-              <h2 className="hw-section-label mb-3">Summary</h2>
-              <p className="text-sm text-foreground leading-relaxed">{analysis.summary}</p>
             </div>
           )}
 

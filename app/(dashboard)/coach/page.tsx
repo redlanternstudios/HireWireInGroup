@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { getReadyJobIds } from "@/lib/readiness";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { CoachChat } from "@/components/coach-chat";
 import {
@@ -72,7 +71,7 @@ async function getCoachContext() {
 
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    const [jobsResult, evidenceResult, readyResult, eventsResult] =
+    const [jobsResult, evidenceResult, eventsResult] =
       await Promise.all([
         supabase
           .from("jobs")
@@ -85,7 +84,6 @@ async function getCoachContext() {
           .from("evidence_library")
           .select("id, is_user_approved")
           .eq("user_id", user.id),
-        getReadyJobIds(user.id),
         supabase
           .from("domain_events")
           .select("id, event_type, job_id, payload, created_at")
@@ -97,7 +95,6 @@ async function getCoachContext() {
 
     const jobs = jobsResult.data ?? [];
     const evidence = evidenceResult.data ?? [];
-    const readyIds = readyResult.ready ?? [];
     const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(
       (event) => ({
         id: event.id,
@@ -112,6 +109,9 @@ async function getCoachContext() {
       job,
       readiness: evaluateReadiness(job),
     }));
+    const readyCount = evaluatedJobs.filter(
+      ({ readiness }) => readiness.isReady,
+    ).length;
 
     const activeJobs = jobs.length;
     const appliedJobs = evaluatedJobs.filter(
@@ -142,7 +142,7 @@ async function getCoachContext() {
     return {
       activeJobs,
       appliedJobs,
-      readyCount: readyIds.length,
+      readyCount,
       withMaterials,
       evidenceCount,
       approvedEvidence,

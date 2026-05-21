@@ -10,6 +10,9 @@ import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { emitCoachSignals } from "@/lib/coach/signals/emit-signals"
 import { isEvidenceMapMetadataKey } from "@/lib/coach-step"
 import { buildEvidenceLibraryContext, isContextEngineEnabled } from "@/lib/context-engine"
+import { COACH_TOOLS } from "@/lib/coach/tools"
+import { routeToolCall, formatToolResultForStream } from "@/lib/coach/tool-router"
+import { stepCountIs } from "ai"
 
 export const maxDuration = 60
 
@@ -247,7 +250,7 @@ export async function POST(request: Request) {
 
     // Gap clarification context
     if (gapContext) {
-      systemPrompt += `\n\n## Gap Clarification Mode\nHelp the user address this specific gap:\n- Job: ${gapContext.jobTitle} at ${gapContext.company}${gapContext.gap ? `\n- Gap: ${gapContext.gap.requirement}\n- Category: ${gapContext.gap.category}\n- Question: ${gapContext.gap.coach_question}` : ""}`
+      systemPrompt += `\n\n## Gap Clarification Mode\nHelp the user translate this specific job expectation into verified proof:\n- Job: ${gapContext.jobTitle} at ${gapContext.company}${gapContext.gap ? `\n- Requirement ID: ${gapContext.gap.requirement_id ?? "not provided"}\n- Requirement: ${gapContext.gap.requirement}\n- Category: ${gapContext.gap.category}\n- Question: ${gapContext.gap.coach_question}` : ""}`
     }
 
     // Workflow state
@@ -301,10 +304,59 @@ export async function POST(request: Request) {
       systemPrompt += `\n\n## Fit Threshold: Readiness Mode (${fitScore}% ≥ ${FIT_ACTIVATION_THRESHOLD}%)\nThis job has strong fit. Focus coaching on completing the application package, quality review, and apply readiness rather than gap analysis.`
     }
 
+    // Add tool descriptions to system prompt
+    systemPrompt += `\n\n## Available Actions\nWhen helpful, you can take the following actions directly:\n`
+    systemPrompt += `- **createEvidence**: Ask the user first. "Should I create an evidence entry for your database optimization work?" Only call if they say yes.\n`
+    systemPrompt += `- **mapEvidenceToRequirement**: Auto-map if evidence clearly matches requirement (>80% confidence). Show result: "Mapped your AWS experience to Infrastructure requirement."\n`
+    systemPrompt += `- **recordOutcome**: Only when user explicitly tells you the result: "I got rejected" or "They scheduled an interview."\n`
+    systemPrompt += `- **markRequirementAddressed**: Use when you've successfully mapped sufficient evidence to a gap.\n`
+    systemPrompt += `- **archiveJob** & **deleteEvidence**: Require explicit user request ("Archive this job" / "Delete that evidence").\n`
+    systemPrompt += `Always narrate what you're doing: "I'll map that to the Infrastructure requirement" before calling tools.`
+
+    // Create session ID for tool call tracking
+    const sessionId = crypto.randomUUID()
+    const conversationTurn = 1
+
     const result = streamText({
       model: CLAUDE_MODELS.SONNET,
       system: systemPrompt,
       messages: coreMessages,
+      tools: Object.fromEntries(
+        Object.entries(COACH_TOOLS).map(([name, tool]) => [
+          name,
+          {
+            description: tool.description,
+            inputSchema: tool.parameters,
+            execute: async (input: unknown, options: { toolCallId?: string }) => {
+              const args = input && typeof input === "object" && !Array.isArray(input)
+                ? input as Record<string, unknown>
+                : {}
+              const output = await routeToolCall({
+                sessionId,
+                jobId,
+                toolName: name as keyof typeof COACH_TOOLS,
+                args,
+                clientToolCallId: options.toolCallId,
+                confirmed: false,
+                conversationTurnNumber: conversationTurn,
+              })
+
+              return {
+                message: formatToolResultForStream(output),
+                success: output.success,
+                needsConfirmation: output.result.needsConfirmation === true,
+                confirmationPrompt: output.result.confirmationPrompt,
+                toolName: name,
+                toolCallId: output.toolCallId,
+                sessionId,
+                jobId,
+                args,
+              }
+            },
+          },
+        ])
+      ),
+      stopWhen: stepCountIs(3),
     })
 
     return result.toUIMessageStreamResponse()

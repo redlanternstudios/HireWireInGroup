@@ -23,6 +23,15 @@ type GapCoachDrawerProps = {
   score?: number | null
   status?: string
   gaps: string[]
+  requirement?: {
+    requirement_id: string
+    requirement_text: string
+    priority?: string
+    status?: string
+    current_proof?: string[]
+    proof_needed?: string[]
+    coach_question?: string
+  }
   autoOpen?: boolean
 }
 
@@ -37,6 +46,7 @@ export function GapCoachDrawer({
   score,
   status,
   gaps,
+  requirement,
   autoOpen = false,
 }: GapCoachDrawerProps) {
   const [open, setOpen] = useState(autoOpen && gaps.length > 0)
@@ -44,15 +54,16 @@ export function GapCoachDrawer({
   const [saving, setSaving] = useState<"answer" | "skip" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const activeGap = gaps[0] ? cleanGap(gaps[0]) : null
+  const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
 
   const initialMessage = useMemo(() => {
     if (!activeGap) return undefined
     return [
-      `Help me work through this gap for ${jobTitle} at ${company}: "${activeGap}".`,
-      "Start with one targeted question. If I give useful detail, help me turn it into evidence and ask me to confirm before saving.",
+      `Help me find a real example for ${jobTitle} at ${company}: "${activeGap}".`,
+      requirement?.current_proof?.length ? `Possible examples already found: ${requirement.current_proof.join("; ")}.` : "No strong example has been found yet.",
+      "Start with one simple question. If I give useful detail, help me save it as evidence after I confirm it.",
     ].join(" ")
-  }, [activeGap, company, jobTitle])
+  }, [activeGap, company, jobTitle, requirement?.current_proof])
 
   if (!activeGap) return null
 
@@ -82,38 +93,47 @@ export function GapCoachDrawer({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <div className="hw-card px-5 py-4 border-l-4 border-l-primary">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary shrink-0" />
-              <h2 className="text-sm font-semibold text-foreground">Coach can help close the first gap</h2>
+      {requirement ? (
+        <SheetTrigger asChild>
+          <Button size="sm" className="hw-btn-primary gap-1.5 text-xs shrink-0">
+            <MessageSquareText className="h-3.5 w-3.5" />
+            Open coach
+          </Button>
+        </SheetTrigger>
+      ) : (
+        <div className="hw-card px-5 py-4 border-l-4 border-l-primary">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                <h2 className="text-sm font-semibold text-foreground">Coach can help find an example</h2>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {activeGap}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {activeGap}
-            </p>
+            <SheetTrigger asChild>
+              <Button size="sm" className="hw-btn-primary gap-1.5 text-xs shrink-0">
+                <MessageSquareText className="h-3.5 w-3.5" />
+                Open coach
+              </Button>
+            </SheetTrigger>
           </div>
-          <SheetTrigger asChild>
-            <Button size="sm" className="hw-btn-primary gap-1.5 text-xs shrink-0">
-              <MessageSquareText className="h-3.5 w-3.5" />
-              Open coach
-            </Button>
-          </SheetTrigger>
         </div>
-      </div>
+      )}
 
       <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-xl">
         <SheetHeader className="border-b border-border px-5 py-4 pr-10">
-          <SheetTitle className="text-base">Gap coach</SheetTitle>
+          <SheetTitle className="text-base">Find an example</SheetTitle>
           <SheetDescription>
-            Working through {jobTitle} at {company}, one gap at a time.
+            Answer one question at a time. Only confirmed details get saved.
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1">
           <div className="border-b border-border bg-muted/30 px-5 py-4">
-            <p className="text-xs font-semibold text-foreground">One question</p>
+            <p className="text-xs font-semibold text-foreground">Start here</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              The job requires {activeGap}. Do you have a real project, certification, result, or adjacent experience that supports it?
+              Have you done anything related to {activeGap}? A project, responsibility, tool, result, or adjacent experience all count.
             </p>
             <div className="mt-3 space-y-2">
               <Textarea
@@ -128,7 +148,7 @@ export function GapCoachDrawer({
                   size="sm"
                   className="hw-btn-primary gap-1.5 text-xs"
                   disabled={saving !== null || answer.trim().length < 8}
-                  onClick={() => postCoachStep({ action: "answer", gap: activeGap, answer }, "answer")}
+                  onClick={() => postCoachStep({ action: "answer", gap: activeGap, requirementId: requirement?.requirement_id, answer }, "answer")}
                 >
                   {saving === "answer" ? "Saving..." : "Save answer"}
                 </Button>
@@ -158,9 +178,10 @@ export function GapCoachDrawer({
               jobTitle,
               company,
               gap: {
+                requirement_id: requirement?.requirement_id,
                 requirement: activeGap,
-                category: "missing_experience",
-                coach_question: `The job requires ${activeGap}. Do you have experience, a certification, or a project that demonstrates this?`,
+                category: requirement?.priority ?? "requirement",
+                coach_question: requirement?.coach_question ?? `Have you done anything related to ${activeGap}?`,
               },
             }}
             initialMessage={initialMessage}

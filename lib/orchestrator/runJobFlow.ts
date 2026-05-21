@@ -22,6 +22,7 @@ export interface RunJobFlowInput {
   request: RequestLike
   userId: string
   jobId: string
+  triggerDocuments?: boolean
   triggerInterviewPrep?: boolean
 }
 
@@ -40,7 +41,7 @@ export interface RunJobFlowResult {
 }
 
 export async function runJobFlow(input: RunJobFlowInput): Promise<RunJobFlowResult> {
-  const { supabase, request, userId, jobId, triggerInterviewPrep = false } = input
+  const { supabase, request, userId, jobId, triggerDocuments = false, triggerInterviewPrep = false } = input
   const steps: RunStep[] = []
   
   // Create execution context for this flow
@@ -93,13 +94,27 @@ export async function runJobFlow(input: RunJobFlowInput): Promise<RunJobFlowResu
       await addStep("analysis", "skipped", "Analysis already completed")
     }
 
+    if (!triggerDocuments) {
+      await addStep("generate_documents", "skipped", "Document generation waits for readiness and user action")
+      return {
+        success: true,
+        jobId,
+        correlationId: ctx.correlationId,
+        steps,
+        generation: {
+          attempted: false,
+          success: false,
+          error: null,
+        },
+      }
+    }
+
     await supabase
       .from("jobs")
       .update({ status: "generating", generation_status: "generating" })
       .eq("id", jobId)
       .eq("user_id", userId)
     await addStep("generate_documents", "started", "Document generation started")
-
     // Use context for baseUrl and cookie forwarding
     const generationResponse = await fetch(`${ctx.baseUrl}/api/generate-documents`, {
       method: "POST",

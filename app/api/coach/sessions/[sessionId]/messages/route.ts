@@ -8,6 +8,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { generateText } from "@/lib/ai/gateway"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { createClient } from "@/lib/supabase/server"
+import { handleDomainEvent } from "@/lib/domain-events"
 import {
   buildCoachSystemPrompt,
   parseEvidenceDraft,
@@ -38,7 +39,7 @@ export async function POST(
     }
 
     const { data: session } = await supabase.from("coach_sessions")
-      .select("id,job_id,gap_requirement,status")
+      .select("id,job_id,gap_requirement,gap_requirement_id,status")
       .eq("id", sessionId).eq("user_id", userId).maybeSingle()
 
     if (!session) return NextResponse.json({ success: false, error: "not_found" }, { status: 404 })
@@ -51,6 +52,19 @@ export async function POST(
 
     await supabase.from("coach_messages")
       .insert({ session_id: sessionId, role: "user", content: userContent })
+
+    void handleDomainEvent({
+      supabase,
+      event_type: "coach_gap_message_added",
+      job_id: session.job_id,
+      user_id: userId,
+      source: "coach_route",
+      payload: {
+        session_id: sessionId,
+        requirement_id: session.gap_requirement_id,
+        role: "user",
+      },
+    })
 
     const [jobResult, evidenceResult, messagesResult] = await Promise.all([
       supabase.from("jobs").select("role_title,company_name,job_description")
@@ -70,6 +84,7 @@ export async function POST(
 
     const systemPrompt = buildCoachSystemPrompt({
       gapRequirement: session.gap_requirement,
+      requirementId: session.gap_requirement_id,
       jobTitle: job?.role_title ?? "this role",
       jobCompany: job?.company_name ?? "this company",
       jobDescriptionSummary: (job?.job_description ?? "").slice(0, 500),
@@ -106,6 +121,20 @@ export async function POST(
         .select("id,source_title,source_type,proof_snippet,confidence_level,skills,status")
         .single()
       savedDraft = draft ?? null
+      if (savedDraft) {
+        void handleDomainEvent({
+          supabase,
+          event_type: "evidence_draft_created",
+          job_id: session.job_id,
+          user_id: userId,
+          source: "coach_route",
+          payload: {
+            session_id: sessionId,
+            draft_id: savedDraft.id,
+            requirement_id: session.gap_requirement_id,
+          },
+        })
+      }
     }
 
     await supabase.from("coach_sessions")

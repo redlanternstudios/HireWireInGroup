@@ -239,6 +239,18 @@ export default async function LogsPage() {
             Every mutation across your jobs, documents, and pipeline.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Link href="/jobs">
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <Briefcase className="h-3.5 w-3.5" /> View Pipeline
+            </Button>
+          </Link>
+          <Link href="/jobs/new">
+            <Button size="sm" className="hw-btn-primary gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Add Job
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* ─── Metric Strip ─── */}

@@ -80,15 +80,19 @@ export default async function ApplicationsPage() {
     job: JobRef | null;
   };
 
-  // Supabase always returns FK joins as arrays even for many-to-one.
-  // Cast the raw result to reflect that, then collapse job to the first element.
+  // Supabase join shape varies between generated types/runtime clients.
+  // Accept both the object shape and the array shape so valid applications
+  // do not disappear from the tracker.
   type RawApp = {
     id: string;
     applied_at: string;
     status: string;
     method: string | null;
-    job: JobRef[] | null;
+    job: JobRef | JobRef[] | null;
   };
+  const normalizeJob = (job: RawApp["job"]): JobRef | null =>
+    Array.isArray(job) ? (job[0] ?? null) : job;
+
   const rawCast = (rawApplications as unknown as RawApp[]) ?? [];
   const applications = rawCast
     .map(
@@ -97,7 +101,7 @@ export default async function ApplicationsPage() {
         applied_at: a.applied_at,
         status: a.status,
         method: a.method,
-        job: a.job?.[0] ?? null,
+        job: normalizeJob(a.job),
       }),
     )
     .filter(

@@ -16,6 +16,7 @@ import { generateStructuredText } from "@/lib/ai/gateway";
 import { z } from "zod";
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow";
 import { withCoachStepMeta } from "@/lib/coach-step";
+import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import {
   buildEvidenceLibraryContext,
   buildJobContext,
@@ -48,6 +49,10 @@ import {
 } from "@/lib/duplicate-detection";
 import type { createClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
+
+function toDbScore(value: number | null | undefined): number {
+  return Math.round(Number.isFinite(value ?? NaN) ? value! : 0);
+}
 import type { Job } from "@/lib/types";
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
@@ -748,13 +753,13 @@ Extract the job details following the schema.`,
   const confidenceScore = confidenceMap[explainableFit.confidence] || 0.7;
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: job.id,
-    overall_score: fitResult.score,
+    overall_score: toDbScore(fitResult.score),
     confidence_score: confidenceScore,
-    skills_match: Math.round(dimensionScores.skills),
-    experience_relevance: Math.round(dimensionScores.experience),
-    evidence_quality: Math.round(dimensionScores.evidence),
-    seniority_alignment: Math.round(dimensionScores.seniority),
-    ats_keywords: Math.round(dimensionScores.ats || 0),
+    skills_match: toDbScore(dimensionScores.skills),
+    experience_relevance: toDbScore(dimensionScores.experience),
+    evidence_quality: toDbScore(dimensionScores.evidence),
+    seniority_alignment: toDbScore(dimensionScores.seniority),
+    ats_keywords: toDbScore(dimensionScores.ats),
     scoring_version: "3.0-explainable",
   });
   if (scoresError) console.error("Scores insert error:", scoresError);
@@ -771,12 +776,7 @@ Extract the job details following the schema.`,
     .update({
       role_title: validatedAnalysis.title,
       company_name: validatedAnalysis.company,
-      responsibilities: validatedAnalysis.responsibilities,
-      qualifications_required: validatedAnalysis.qualifications_required,
-      qualifications_preferred: validatedAnalysis.qualifications_preferred,
-      ats_keywords: validatedAnalysis.keywords,
-      keywords_extracted: validatedAnalysis.keywords,
-      score: fitResult.score,
+      score: toDbScore(fitResult.score),
       fit: fitResult.fit,
       // Ensure fit and score are always written
       score_gaps: gaps,
@@ -787,11 +787,44 @@ Extract the job details following the schema.`,
       seniority_level: normalizedSeniority,
       role_family: validatedAnalysis.role_family,
       industry_guess: validatedAnalysis.industry_guess,
-      analyzed_at: new Date().toISOString(),
     })
     .eq("id", job.id)
     .eq("user_id", user.id);
   if (backfillError) console.error("Jobs backfill error:", backfillError);
+  if (!backfillError) {
+    try {
+      await buildEvidenceMapForJob({
+        supabase,
+        userId: user.id,
+        jobId: job.id,
+      });
+    } catch (evidenceMapError) {
+      console.error("Evidence map build error:", evidenceMapError);
+      await supabase
+        .from("jobs")
+        .update({
+          evidence_map: withCoachStepMeta(
+            {
+              matching_complete: false,
+              map_build_error: {
+                code: "evidence_map_build_failed",
+                message:
+                  evidenceMapError instanceof Error
+                    ? evidenceMapError.message
+                    : "Unknown evidence map build error",
+                failed_at: new Date().toISOString(),
+              },
+            },
+            "required",
+            {
+              reason: "evidence_map_build_failed",
+            },
+          ),
+        })
+        .eq("id", job.id)
+        .eq("user_id", user.id);
+    }
+  }
 
   if (isContextEngineEnabled()) {
     const jobContext = buildJobContext({

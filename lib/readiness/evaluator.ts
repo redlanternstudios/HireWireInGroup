@@ -60,6 +60,67 @@ import {
   getVoiceBlockedReason,
 } from "./voice-readiness";
 
+
+import type {
+  CanonicalJobEvidenceMap,
+  EvidenceIntelligencePacket,
+  RequirementEvidenceMatch,
+} from "@/lib/evidence/types";
+
+function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntelligencePacket[] {
+  return packets.filter(packet =>
+    packet.matchStrength !== "weak" &&
+    packet.matchedEvidenceIds.length > 0 &&
+    (packet.allowedUsage === "resume_allowed" || packet.allowedUsage === "resume_allowed_with_reframe")
+  );
+}
+
+function hasRequiredEvidenceCoverage(job: ReadinessJob): boolean {
+  const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
+  if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) return false;
+  const usablePacketRequirementIds = new Set(
+    packetsForResume(Array.isArray(evidenceMap.capability_packets) ? evidenceMap.capability_packets : [])
+      .map(packet => String(packet.packet_id).replace(/^pkt_/, ""))
+  );
+  const requiredMatches = evidenceMap.requirement_matches.filter(
+    (m: RequirementEvidenceMatch) => m.priority === "required"
+  );
+  if (requiredMatches.length === 0) {
+    return evidenceMap.requirement_matches.some(
+      (m: RequirementEvidenceMatch) =>
+        (m.status === "met" || m.status === "partial") &&
+        m.matched_evidence_ids.length > 0 &&
+        usablePacketRequirementIds.has(m.requirement_id)
+    );
+  }
+  return requiredMatches.every(
+    (m: RequirementEvidenceMatch) =>
+      (m.status === "met" || m.status === "partial") &&
+      m.matched_evidence_ids.length > 0 &&
+      usablePacketRequirementIds.has(m.requirement_id)
+  );
+}
+
+function getEvidenceBlockedReasons(job: ReadinessJob): string[] {
+  const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
+  if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) {
+    return ["Evidence has not been mapped to this job yet"];
+  }
+  return evidenceMap.requirement_matches
+    .filter(
+      (m: RequirementEvidenceMatch) =>
+        m.priority === "required" &&
+        ((m.status === "gap" || m.status === "unknown") ||
+          !packetsForResume(Array.isArray(evidenceMap.capability_packets) ? evidenceMap.capability_packets : [])
+            .some(packet => String(packet.packet_id).replace(/^pkt_/, "") === m.requirement_id))
+    )
+    .map((m: RequirementEvidenceMatch) =>
+      (m.status === "gap" || m.status === "unknown")
+        ? `Missing evidence for ${m.requirement_text}`
+        : `Missing usable evidence packet for ${m.requirement_text}`
+    );
+}
+
 export function evaluateReadiness(
   job: ReadinessJob & { voice_drift_result?: any },
 ): ReadinessResult {
@@ -68,7 +129,7 @@ export function evaluateReadiness(
   const checklist = {
     resume: !!job.generated_resume,
     coverLetter: !!job.generated_cover_letter,
-    evidence: hasMinimumEvidence(job),
+    evidence: hasRequiredEvidenceCoverage(job),
     coach: coachStep.complete,
     quality: job.quality_passed === true,
     voiceIntegrity,
@@ -86,7 +147,7 @@ export function evaluateReadiness(
   const blockedReasons: string[] = [];
   if (!checklist.resume) blockedReasons.push("Resume not generated");
   if (!checklist.coverLetter) blockedReasons.push("Cover letter not generated");
-  if (!checklist.evidence) blockedReasons.push("Insufficient evidence match");
+  if (!checklist.evidence) blockedReasons.push(...getEvidenceBlockedReasons(job));
   if (!checklist.coach) blockedReasons.push("Coach step required before generation");
   if (!checklist.quality) blockedReasons.push("Quality check failed");
   if (!checklist.voiceIntegrity) {
@@ -156,7 +217,7 @@ function getNextAction(
   if (!checklist.resume || !checklist.coverLetter) {
     return {
       label: "Generate materials",
-      href: jobHref,
+      href: job.id ? `/jobs/${job.id}/documents` : "/jobs",
       description: "Create the evidence-grounded resume and cover letter.",
     };
   }

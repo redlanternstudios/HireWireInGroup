@@ -13,11 +13,13 @@ import {
   getEvidenceUsageRule,
   determineGenerationStrategy,
   analyzeBulletConcreteness,
+  truthSerumAuditBullet,
   hasMetrics,
   type GenerationStrategy,
   type BulletProvenance,
   type ParagraphProvenance,
 } from "@/lib/truthserum";
+import type { EvidenceIntelligencePacket } from "@/lib/evidence/types";
 import {
   detectUnsafeMetrics,
   classifyQuantificationSafety,
@@ -48,6 +50,7 @@ import { checkVoiceDrift } from "@/lib/voice/voice-drift-check";
 import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
+import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import {
   buildEvidenceLibraryContext,
   isContextEngineEnabled,
@@ -200,6 +203,7 @@ const EvidenceMapSchema = z.object({
         evidence_id: z.string().nullable(),
       }),
     )
+    .default([])
     .describe("Projects that demonstrate relevant skills"),
   gaps: z
     .array(z.string())
@@ -227,8 +231,8 @@ const ResumeWithProvenanceSchema = z.object({
         source_evidence_id: z
           .string()
           .describe("ID of the evidence this bullet is based on"),
-        source_role: z.string().describe("Role title from the source evidence"),
-        source_company: z.string().describe("Company from the source evidence"),
+        source_role: z.string().nullable().transform((value) => value ?? "").describe("Role title from the source evidence"),
+        source_company: z.string().nullable().transform((value) => value ?? "").describe("Company from the source evidence"),
         matched_requirement: z
           .string()
           .nullable()
@@ -272,6 +276,188 @@ type ConcreteBulletAnalysis = ReturnType<typeof analyzeBulletConcreteness> & {
   bullet: string;
   has_metric: boolean;
 };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function getCapabilityPackets(evidenceMap: unknown): EvidenceIntelligencePacket[] {
+  const map = asRecord(evidenceMap);
+  const packets = map?.capability_packets;
+  return Array.isArray(packets) ? packets as EvidenceIntelligencePacket[] : [];
+}
+
+function getBlockedRequiredRequirements(evidenceMap: unknown) {
+  const map = asRecord(evidenceMap);
+  const packets = getCapabilityPackets(evidenceMap);
+  const usablePacketIds = new Set(
+    packetsForResume(packets).map((packet) =>
+      String(packet.packet_id).replace(/^pkt_/, ""),
+    ),
+  );
+  const requirementMatches = Array.isArray(map?.requirement_matches)
+    ? (map.requirement_matches as Array<Record<string, unknown>>)
+    : [];
+
+  return requirementMatches
+    .filter((match) => String(match.priority ?? "") === "required")
+    .filter((match) => {
+      const status = String(match.status ?? "unknown");
+      const ids = Array.isArray(match.matched_evidence_ids)
+        ? (match.matched_evidence_ids as string[])
+        : [];
+      const requirementId = String(match.requirement_id ?? "");
+      return (
+        ids.length === 0 ||
+        status === "gap" ||
+        status === "unknown" ||
+        !usablePacketIds.has(requirementId)
+      );
+    })
+    .map((match) => ({
+      requirement_id: String(match.requirement_id ?? ""),
+      requirement_text: String(match.requirement_text ?? ""),
+      status: String(match.status ?? "unknown"),
+      matched_evidence_ids: Array.isArray(match.matched_evidence_ids)
+        ? (match.matched_evidence_ids as string[])
+        : [],
+      proof_needed: Array.isArray(match.proof_needed)
+        ? (match.proof_needed as string[])
+        : [],
+      evidence_questions: Array.isArray(match.evidence_questions)
+        ? (match.evidence_questions as string[])
+        : [],
+    }));
+}
+
+function requirementAnchorId(requirementId: string) {
+  const safeId = requirementId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `req-${safeId || "unknown"}`;
+}
+
+function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntelligencePacket[] {
+  return packets.filter(packet =>
+    packet.matchStrength !== "weak" &&
+    packet.matchedEvidenceIds.length > 0 &&
+    (packet.allowedUsage === "resume_allowed" || packet.allowedUsage === "resume_allowed_with_reframe")
+  );
+}
+
+function buildPacketEvidenceMap(packets: EvidenceIntelligencePacket[]) {
+  const usable = packetsForResume(packets);
+  const required = packets.filter(packet => packet.priority === "required");
+  const coveredRequired = required.filter(packet => packet.matchStrength === "strong" || packet.matchStrength === "partial");
+  const matchedEvidenceIds = new Set(usable.flatMap(packet => packet.matchedEvidenceIds));
+  return {
+    matched_skills: Array.from(new Set(usable.map(packet => packet.normalized))).slice(0, 16),
+    matched_tools: Array.from(new Set(usable.flatMap(packet => packet.tools))).slice(0, 16),
+    matched_experiences: usable.slice(0, 8).map(packet => ({
+      experience_title: packet.roles[0] ?? packet.matchedEvidenceTitles[0] ?? packet.requirement,
+      company: packet.companies[0] ?? "Evidence library",
+      relevance: packet.matchReason,
+      key_achievements: [...packet.outcomes, ...packet.proofSnippets].slice(0, 4),
+      evidence_id: packet.matchedEvidenceIds[0] ?? null,
+    })),
+    matched_projects: [],
+    gaps: packets
+      .filter(packet => packet.priority === "required" && packet.matchStrength === "weak")
+      .map(packet => packet.requirement),
+    fit_score: required.length > 0 ? Math.round((coveredRequired.length / required.length) * 100) : 50,
+    fit_rationale: `${coveredRequired.length}/${required.length || 0} required requirements are covered by structured evidence packets.`,
+    requirement_coverage: required.length > 0 ? Math.round((coveredRequired.length / required.length) * 100) : 50,
+    selected_evidence_ids: Array.from(matchedEvidenceIds),
+  };
+}
+
+function formatGenerationPackets(packets: EvidenceIntelligencePacket[]) {
+  return packetsForResume(packets)
+    .map(packet => `
+--- PACKET [${packet.packet_id}] ---
+Requirement: ${packet.requirement}
+Normalized Capability: ${packet.normalized}
+Priority: ${packet.priority}
+Match Strength: ${packet.matchStrength} (${packet.matchScore}/100)
+Evidence Strength: ${packet.evidenceStrength}
+Allowed Usage: ${packet.allowedUsage}
+Matched Evidence IDs: ${packet.matchedEvidenceIds.join(", ")}
+Matched Evidence Titles: ${packet.matchedEvidenceTitles.join(", ")}
+Systems: ${packet.systems.join(", ") || "None specified"}
+Tools: ${packet.tools.join(", ") || "None specified"}
+Companies/Roles: ${[...packet.companies, ...packet.roles].join(", ") || "None specified"}
+Proof Snippets:
+${packet.proofSnippets.map(snippet => `- ${snippet}`).join("\n") || "- None"}
+Outcomes:
+${packet.outcomes.map(outcome => `- ${outcome}`).join("\n") || "- None"}
+Responsibilities:
+${packet.responsibilities.map(item => `- ${item}`).join("\n") || "- None"}
+Risk Flags: ${packet.riskFlags.join(", ") || "None"}
+Why Included: ${packet.whyIncluded}
+`)
+    .join("\n");
+}
+
+function findPacketForBullet(
+  bullet: GeneratedResumeBullet,
+  packets: EvidenceIntelligencePacket[]
+): EvidenceIntelligencePacket | undefined {
+  return packets.find(packet =>
+    packet.matchedEvidenceIds.includes(bullet.source_evidence_id) &&
+    (!bullet.matched_requirement ||
+      packet.requirement === bullet.matched_requirement ||
+      packet.normalized.includes(bullet.matched_requirement.toLowerCase()))
+  ) ?? packets.find(packet => packet.matchedEvidenceIds.includes(bullet.source_evidence_id));
+}
+
+function tokenSet(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9+#.]+/)
+      .filter(token => token.length > 2)
+  );
+}
+
+function scoreBulletPacketOverlap(bulletText: string, packet: EvidenceIntelligencePacket): number {
+  const bulletTokens = tokenSet(bulletText);
+  const packetTokens = tokenSet([
+    packet.requirement,
+    packet.normalized,
+    ...packet.proofSnippets,
+    ...packet.systems,
+    ...packet.tools,
+    ...packet.outcomes,
+    ...packet.responsibilities,
+    ...packet.companies,
+    ...packet.roles,
+  ].join(" "));
+  if (bulletTokens.size === 0 || packetTokens.size === 0) return 0;
+  return Array.from(bulletTokens).filter(token => packetTokens.has(token)).length / bulletTokens.size;
+}
+
+function resolvePacketForBullet(
+  bullet: { bullet_text: string; source_evidence_id?: string; matched_requirement?: string | null },
+  packets: EvidenceIntelligencePacket[]
+): EvidenceIntelligencePacket | undefined {
+  const direct = packets.find(packet =>
+    bullet.source_evidence_id &&
+    packet.matchedEvidenceIds.includes(bullet.source_evidence_id) &&
+    (!bullet.matched_requirement ||
+      packet.requirement === bullet.matched_requirement ||
+      packet.normalized.includes(bullet.matched_requirement.toLowerCase()))
+  );
+  if (direct) return direct;
+
+  return packetsForResume(packets)
+    .map(packet => ({ packet, score: scoreBulletPacketOverlap(bullet.bullet_text, packet) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.packet;
+}
 
 // Schema for quality check
 const QualityCheckSchema = z.object({
@@ -414,7 +600,7 @@ async function syncNormalizedJobScore(
 ) {
   const { error } = await supabase
     .from("job_scores")
-    .update({ overall_score: score })
+    .update({ overall_score: Math.round(score) })
     .eq("job_id", jobId);
 
   if (error) {
@@ -508,6 +694,7 @@ async function generateFallbackDocuments({
   job_id,
   userId,
   profile,
+  sourceResumeData,
   allEvidence,
   jobData,
 }: {
@@ -515,13 +702,25 @@ async function generateFallbackDocuments({
   job_id: string;
   userId: string;
   profile: Record<string, any> | null;
+  sourceResumeData?: Record<string, any> | null;
   allEvidence: EvidenceRecord[];
   jobData: Record<string, any>;
 }) {
-  const name = profile?.full_name || "Rory Semeah";
-  const location = profile?.location || "San Diego, CA";
-  const email = profile?.email || "rory.test.hirewire@example.com";
-  const headline = profile?.headline || "AI Product Manager";
+  const toText = (value: unknown): string =>
+    typeof value === "string" ? value.trim() : "";
+
+  const firstSentence = (value: unknown): string => {
+    const text = toText(value);
+    if (!text) return "";
+    const normalized = text.replace(/\s+/g, " ").trim();
+    const idx = normalized.search(/[.!?]/);
+    return idx >= 0 ? normalized.slice(0, idx + 1) : normalized;
+  };
+
+  const name = toText(profile?.full_name) || toText(profile?.name) || toText(sourceResumeData?.full_name);
+  const location = toText(profile?.location) || toText(sourceResumeData?.location);
+  const email = toText(profile?.email) || toText(sourceResumeData?.email);
+  const headline = toText(profile?.headline) || toText(profile?.title) || toText(sourceResumeData?.headline) || toText(sourceResumeData?.title);
   const skills = Array.from(
     new Set([
       ...((profile?.skills as string[] | null) || []),
@@ -531,7 +730,23 @@ async function generateFallbackDocuments({
   const roleEvidence = allEvidence
     .filter((item) => item.source_type === "work_experience")
     .slice(0, 4);
-  const summary = `${headline} with evidence-backed experience across AI product strategy, enterprise workflow products, APIs, cloud platforms, analytics, and safe AI delivery. Brings hands-on product ownership from RedLantern Studios and Ingram Micro, with a track record translating customer and stakeholder needs into requirements, roadmaps, KPI loops, and recruiter-readable delivery narratives.`;
+  const evidenceHighlights = roleEvidence
+    .flatMap((item) => [
+      ...(Array.isArray(item.approved_achievement_bullets)
+        ? item.approved_achievement_bullets
+        : []),
+      ...(Array.isArray(item.outcomes) ? item.outcomes : []),
+      ...(Array.isArray(item.responsibilities) ? item.responsibilities : []),
+    ])
+    .map((text) => firstSentence(text))
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const summaryHeadline = headline || "Candidate";
+  const summary =
+    evidenceHighlights.length > 0
+      ? `${summaryHeadline} with evidence-backed experience. Highlights include ${evidenceHighlights.join(" ")}`
+      : `${summaryHeadline} with evidence-backed product and delivery experience.`;
   const experienceSections = roleEvidence.map((item) => {
     const bullets = [
       ...(item.responsibilities || []),
@@ -544,9 +759,9 @@ async function generateFallbackDocuments({
       ...bullets.map((bullet) => `- ${bullet}`),
     ].join("\n");
   });
-  const formattedResume = `${String(name).toUpperCase()}
-${location} | ${email}
-${headline}
+  const formattedResume = `${name ? String(name).toUpperCase() : "CANDIDATE"}
+${[location, email].filter(Boolean).join(" | ")}
+${headline || "Evidence-backed candidate"}
 
 SUMMARY
 ${summary}
@@ -558,19 +773,44 @@ EXPERIENCE
 ${experienceSections.join("\n\n")}
 
 EDUCATION AND CERTIFICATIONS
-MS Information Systems, University of Phoenix
-BS Business Management, University of Phoenix
-SAFe, Scrum, CPMAI in progress`;
-  const formattedCoverLetter = `Dear SignalWorks AI Hiring Team,
+${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.length > 0
+  ? sourceResumeData.education
+      .map((edu: Record<string, unknown>) => [edu.degree, edu.school, edu.year].filter(Boolean).join(", "))
+      .filter(Boolean)
+      .join("\n")
+  : "Education and certifications omitted when not present in verified profile data."}`;
+  const coverLetterParagraphs = [
+    {
+      text: `I am applying for the ${jobData.title || jobData.role_title || "Product role"} at ${jobData.company || jobData.company_name || "your company"} with evidence-backed experience from my profile and work history.`,
+      cited_evidence_id: null as string | null,
+    },
+    ...roleEvidence.slice(0, 2).map((item) => {
+      const role = toText(item.role_name) || toText(item.source_title) || "my prior role";
+      const company = toText(item.company_name);
+      const lead =
+        firstSentence(item.approved_achievement_bullets?.[0]) ||
+        firstSentence(item.outcomes?.[0]) ||
+        firstSentence(item.responsibilities?.[0]) ||
+        "delivered measurable outcomes through cross-functional execution.";
+      const context =
+        firstSentence(item.responsibilities?.[0]) ||
+        firstSentence(item.outcomes?.[0]) ||
+        "";
+      const body = context && context !== lead ? `${lead} ${context}` : lead;
+      return {
+        text: `In ${role}${company ? ` at ${company}` : ""}, I ${body.charAt(0).toLowerCase()}${body.slice(1)}`,
+        cited_evidence_id: item.id,
+      };
+    }),
+    {
+      text: "I would bring the same evidence-backed approach to your team, and I can share concrete examples of ownership, collaboration, and measurable outcomes.",
+      cited_evidence_id: null as string | null,
+    },
+  ];
 
-I am excited to apply for the ${jobData.title || jobData.role_title || "AI Product Manager"} role. My background lines up with your need for someone who can turn enterprise workflow problems into clear product requirements, measurable roadmap priorities, and safe AI-powered experiences.
-
-At RedLantern Studios, I have worked on LLM workflow design, prompt strategy, model-routing concepts, evaluation loops, and guardrails for practical AI product use cases. At Ingram Micro, I delivered enterprise product and integration work across SAP, Salesforce, Xvantage, APIs, cloud platforms, SQL, and Looker, including globally scaled invoice workflow work across 60+ countries.
-
-SignalWorks AI needs product judgment, technical fluency, and cross-functional delivery discipline. Those are the through-lines in my experience: partnering with engineering and business teams, defining acceptance criteria and KPIs, and keeping AI and automation work grounded in user trust and operational outcomes.
-
-Sincerely,
-${name}`;
+  const formattedCoverLetter = `Dear Hiring Team,\n\n${coverLetterParagraphs
+    .map((paragraph) => paragraph.text)
+    .join("\n\n")}\n\nSincerely${name ? `,\n${name}` : ""}`;
   const fitScore = Math.max(
     75,
     Math.min(92, 70 + Math.round(skills.length / 2)),
@@ -636,13 +876,12 @@ ${name}`;
         cited_evidence_id: item.id,
       })),
   );
-  const fallbackParagraphs = formattedCoverLetter
-    .split("\n\n")
-    .filter((paragraph) => paragraph.length > 80);
-  const paragraphClaimInputs = fallbackParagraphs.map((text) => ({
-    text,
-    cited_evidence_id: roleEvidence[0]?.id ?? null,
-  }));
+  const paragraphClaimInputs = coverLetterParagraphs
+    .map((paragraph) => ({
+      text: paragraph.text,
+      cited_evidence_id: paragraph.cited_evidence_id,
+    }))
+    .filter((paragraph) => paragraph.text.length > 40);
   const claimValidation = validateAllClaims(
     bulletClaimInputs,
     paragraphClaimInputs,
@@ -749,10 +988,37 @@ ${name}`;
     );
   }
 
+  const fallbackResumeBannedPhrases = detectBannedPhrases(formattedResume);
+  const fallbackCoverLetterBannedPhrases = detectBannedPhrases(formattedCoverLetter);
+  const fallbackBannedPhrases = Array.from(new Set([
+    ...fallbackResumeBannedPhrases,
+    ...fallbackCoverLetterBannedPhrases,
+  ]));
+  const fallbackVaguePatterns = detectVaguePatterns(formattedResume);
+  const fallbackBulletAnalysis = bulletClaimInputs.map((claim) => ({
+    bullet: claim.text,
+    ...analyzeBulletConcreteness(claim.text),
+  }));
+  const fallbackWeakBullets = fallbackBulletAnalysis.filter((bullet) => !bullet.is_concrete_enough);
+  const fallbackQualityScore = Math.max(
+    0,
+    80 -
+      fallbackBannedPhrases.length * 10 -
+      fallbackVaguePatterns.length * 5 -
+      fallbackWeakBullets.length * 5 -
+      claimValidation.lowConfidenceCount * 5,
+  );
+  const fallbackQualityIssues = [
+    "Fallback generation requires manual review before apply.",
+    ...fallbackBannedPhrases.map((phrase) => `Banned phrase: "${phrase}"`),
+    ...fallbackVaguePatterns.map((pattern) => `Vague pattern: "${pattern}"`),
+    ...fallbackWeakBullets.map((bullet) => `Weak bullet: "${bullet.bullet.slice(0, 80)}"`),
+  ];
+
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
-      status: "ready",
+      status: "needs_review",
       generated_resume: formattedResume,
       generated_cover_letter: formattedCoverLetter,
       fit: "HIGH",
@@ -772,17 +1038,17 @@ ${name}`;
           : {}),
         ...evidenceMap,
       },
-      generation_status: "ready",
+      generation_status: "needs_review",
       generation_error: null,
       scored_at: new Date().toISOString(),
       generation_timestamp: new Date().toISOString(),
-      generation_quality_score: 88,
+      generation_quality_score: fallbackQualityScore,
       resume_format: "modern_professional",
       resume_font: "inter",
       format_recommendation_reason:
         "Fallback format selected for ATS-safe local testing.",
-      generation_quality_issues: [],
-      quality_passed: true,
+      generation_quality_issues: fallbackQualityIssues,
+      quality_passed: false,
       governance_version: "1.0.0",
       governance_passed: true,
       governance_drift_score: driftResult.score,
@@ -866,8 +1132,8 @@ ${name}`;
     ai_filler_found: [],
     repeated_structures_found: [],
     unsupported_claims_found: [],
-    passed: true,
-    issues_count: 0,
+    passed: false,
+    issues_count: fallbackQualityIssues.length,
   });
   logSupabaseWriteError("insert_fallback_generation_quality_check", qualityCheckInsert.error, {
     job_id,
@@ -892,8 +1158,8 @@ ${name}`;
     resume_format: "modern_professional",
     resume_font: "inter",
     generation_model: "local-fallback",
-    quality_passed: true,
-    quality_score: 88,
+    quality_passed: false,
+    quality_score: fallbackQualityScore,
     strategy: "direct_match",
   });
 
@@ -905,9 +1171,22 @@ ${name}`;
     source: "generate_documents_route",
     payload: {
       strategy: "direct_match",
-      quality_passed: true,
-      quality_score: 88,
+      quality_passed: false,
+      quality_score: fallbackQualityScore,
       fit_score: fitScore,
+      fallback: true,
+    },
+  });
+
+  void handleDomainEvent({
+    supabase,
+    event_type: "quality_failed",
+    job_id,
+    user_id: userId,
+    source: "generate_documents_route",
+    payload: {
+      reason: "fallback_requires_review",
+      quality_score: fallbackQualityScore,
       fallback: true,
     },
   });
@@ -919,9 +1198,13 @@ ${name}`;
     generated_resume: formattedResume,
     generated_cover_letter: formattedCoverLetter,
     quality_check: {
-      passed: true,
-      score: 88,
-      issues: { invented_claims: [], vague_bullets: [], ai_filler: [] },
+      passed: false,
+      score: fallbackQualityScore,
+      issues: {
+        invented_claims: [],
+        vague_bullets: fallbackWeakBullets.map((bullet) => bullet.bullet),
+        ai_filler: [],
+      },
       suggestions: ["Review final wording before submission."],
     },
     strategy: "direct_match",
@@ -1039,6 +1322,7 @@ export async function POST(request: NextRequest) {
   const { toApiErrorResponse } = await import("@/lib/errors/response");
   const { createCorrelationId } = await import("@/lib/errors/correlation");
   const correlationId = createCorrelationId();
+  let parsedJobId: string | null = null;
   try {
     const body = await request.json();
     const { selected_evidence_ids, _retry_count = 0 } = body;
@@ -1056,6 +1340,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { job_id } = parseResult.data;
+    parsedJobId = job_id;
     const isRetry = _retry_count > 0;
     const MAX_RETRIES = 1; // Auto-retry once if quality check fails
     const aiConfigured = isAnthropicConfigured();
@@ -1131,7 +1416,7 @@ export async function POST(request: NextRequest) {
 
     // HARD FAIL: Evidence is required for document generation
     if (!allEvidence || allEvidence.length === 0) {
-      await supabase
+      const { error: evidenceRequiredStatusError } = await supabase
         .from("jobs")
         .update({
           generation_status: "failed",
@@ -1139,6 +1424,7 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", job_id)
         .eq("user_id", userId);
+      logSupabaseWriteError("mark_evidence_required_failed", evidenceRequiredStatusError, { job_id, user_id: userId });
 
       return NextResponse.json(
         {
@@ -1154,7 +1440,7 @@ export async function POST(request: NextRequest) {
     // If no profile exists, create a minimal one or use source resume data
     if (!profile && !sourceResume?.parsed_data) {
       // Update job status to indicate why generation failed
-      await supabase
+      const { error: profileRequiredStatusError } = await supabase
         .from("jobs")
         .update({
           generation_status: "failed",
@@ -1162,6 +1448,7 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", job_id)
         .eq("user_id", userId);
+      logSupabaseWriteError("mark_profile_required_failed", profileRequiredStatusError, { job_id, user_id: userId });
 
       return NextResponse.json(
         {
@@ -1193,6 +1480,60 @@ export async function POST(request: NextRequest) {
           user_message:
             "Answer the coach prompts, or explicitly skip them, before generating materials for this role.",
           next_action: readiness.nextAction,
+        },
+        { status: 409 },
+      );
+    }
+
+    let effectiveEvidenceMap = jobData.evidence_map;
+    let capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
+    let usablePackets = packetsForResume(capabilityPackets);
+
+    // Auto-recovery: if packets are missing, force a canonical rebuild once.
+    if (capabilityPackets.length === 0 || usablePackets.length === 0) {
+      try {
+        const rebuiltMap = await buildEvidenceMapForJob({
+          supabase,
+          userId,
+          jobId: job_id,
+        });
+        effectiveEvidenceMap = rebuiltMap;
+        capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
+        usablePackets = packetsForResume(capabilityPackets);
+      } catch {
+        // Keep original map and return an actionable error below.
+      }
+    }
+
+    if (capabilityPackets.length === 0 || usablePackets.length === 0) {
+      const map = asRecord(effectiveEvidenceMap);
+      const blockedRequirements = getBlockedRequiredRequirements(effectiveEvidenceMap);
+      const mapBuildError = asRecord(map?.map_build_error);
+      await supabase
+        .from("jobs")
+        .update({
+          generation_status: "failed",
+          generation_error: "capability_packets_required",
+        })
+        .eq("id", job_id)
+        .eq("user_id", userId);
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: "capability_packets_required",
+          user_message:
+            "HireWire needs structured evidence intelligence packets before generating. Update evidence or rerun analysis so requirements are matched to approved evidence.",
+          blocked_requirements: blockedRequirements,
+          map_build_error: mapBuildError,
+          next_action: {
+            label: "Resolve proof gaps",
+            href: blockedRequirements[0]?.requirement_id
+              ? `/jobs/${job_id}/evidence-match#${requirementAnchorId(blockedRequirements[0].requirement_id)}`
+              : `/jobs/${job_id}/evidence-match`,
+            description:
+              "Review the unmatched requirements and confirm or add evidence before generating again.",
+          },
         },
         { status: 409 },
       );
@@ -1232,13 +1573,40 @@ export async function POST(request: NextRequest) {
         supabase,
         job_id,
         userId,
-        profile: profile as Record<string, any> | null,
-        allEvidence: allEvidence as EvidenceRecord[],
-        jobData: jobData as Record<string, any>,
-      });
+    profile: profile as Record<string, any> | null,
+    sourceResumeData: sourceResume?.parsed_data as Record<string, any> | null,
+    allEvidence: allEvidence as EvidenceRecord[],
+    jobData: jobData as Record<string, any>,
+  });
     }
 
-    const jobAnalysis = jobData.job_analyses?.[0];
+    const canonicalMap = asRecord(jobData.evidence_map);
+    const canonicalRequirements = Array.isArray(canonicalMap?.requirement_matches)
+      ? canonicalMap.requirement_matches as Array<Record<string, any>>
+      : [];
+    const storedJobAnalysis = jobData.job_analyses?.[0];
+    const jobAnalysis = canonicalRequirements.length > 0
+      ? {
+          ...storedJobAnalysis,
+          responsibilities: canonicalRequirements
+            .filter((match) => match.expectation_type && String(match.expectation_type).includes("respons"))
+            .map((match) => String(match.requirement_text ?? ""))
+            .filter(Boolean),
+          qualifications_required: canonicalRequirements
+            .filter((match) => match.priority === "required")
+            .map((match) => String(match.requirement_text ?? ""))
+            .filter(Boolean),
+          qualifications_preferred: canonicalRequirements
+            .filter((match) => match.priority === "preferred")
+            .map((match) => String(match.requirement_text ?? ""))
+            .filter(Boolean),
+          keywords: canonicalRequirements
+            .filter((match) => match.priority === "keyword")
+            .map((match) => String(match.normalized_requirement ?? match.requirement_text ?? ""))
+            .filter(Boolean),
+          ats_phrases: Array.isArray(storedJobAnalysis?.ats_phrases) ? storedJobAnalysis.ats_phrases : [],
+        }
+      : storedJobAnalysis;
 
     // Evidence matching gate removed — generation is allowed regardless of matching_complete
 
@@ -1507,31 +1875,17 @@ NOTE: The candidate provided this additional context to address gaps. Use this i
 }
 `;
 
-    // Step 1: Create evidence map and determine strategy (with retry for rate limits)
-    // Using Claude for higher token limits and better quality
-    const generatedEvidenceMap = await withRetry(() =>
-      generateStructuredText({
-        model: CLAUDE_MODELS.SONNET,
-        schema: EvidenceMapSchema,
-        schemaDescription: EVIDENCE_MAP_SCHEMA_DESCRIPTION,
-        prompt: `Analyze the match between this candidate and job opportunity.
+    // Step 1: consume the upstream evidence intelligence contract.
+    // Generation is a composer here; it may not reach back to raw evidence to invent its own matching logic.
+    const generatedEvidenceMap = buildPacketEvidenceMap(capabilityPackets);
+    const packetContext = `
+STRUCTURED EVIDENCE INTELLIGENCE PACKETS
+Use ONLY these packets for resume and cover-letter claims. Do not create bullets for requirements
+without a packet. Do not add systems, metrics, scope, tools, companies, or outcomes that are not
+present in the packets.
 
-${profileContext}
-
-${evidenceContext}
-
-${jobContext}
-
-Create an evidence map that:
-1. Identifies skills and tools from the profile that match job requirements
-2. Selects the most relevant work experiences (include evidence IDs when referencing evidence items)
-3. Notes any gaps in qualifications
-4. Provides an honest fit score
-5. Calculate what percentage of REQUIRED qualifications are covered
-
-Be conservative - only include matches that are clearly supported by the evidence. Do not exaggerate or invent connections.`,
-      }),
-    );
+${formatGenerationPackets(capabilityPackets)}
+`;
 
     // Determine generation strategy based on fit
     const evidenceQuality =
@@ -1598,6 +1952,10 @@ Be conservative - only include matches that are clearly supported by the evidenc
     // Step 2: Generate resume with bullet-level provenance (with retry for rate limits)
     // SIMPLIFIED: Reduced prompt verbosity to produce more natural, human-sounding output
     // Using Claude for higher token limits and better quality
+    const packetEvidenceIds = new Set(generatedEvidenceMap.selected_evidence_ids);
+    resumeEvidence = resumeEvidence.filter((e: { id: string }) => packetEvidenceIds.has(e.id));
+    coverLetterEvidence = coverLetterEvidence.filter((e: { id: string }) => packetEvidenceIds.has(e.id));
+
     const resumeWithProvenance = await withRetry(() =>
       generateStructuredText({
         model: CLAUDE_MODELS.SONNET,
@@ -1605,9 +1963,16 @@ Be conservative - only include matches that are clearly supported by the evidenc
         schemaDescription: RESUME_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
         prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
 
-${profileContext}
+Candidate identity/contact/education context only:
+Name: ${effectiveName}
+Location: ${effectiveLocation}
+Skills for skills section only: ${effectiveSkills.join(", ")}
+Education:
+${effectiveEducation
+  .map((edu: { degree: string; school: string; year?: string }) => `- ${edu.degree} from ${edu.school}${edu.year ? ` (${edu.year})` : ""}`)
+  .join("\n")}
 
-${evidenceContext}
+${packetContext}
 
 ${jobContext}
 
@@ -1620,24 +1985,25 @@ ${strategyPrompt}
 ${voiceInstructions}
 
 WRITING RULES:
-1. Link every bullet to a specific evidence ID
-2. Use only facts from the evidence - never invent
+1. Link every bullet to a specific evidence ID from a packet
+2. Use only facts from the packets - never invent
 3. Start bullets with strong verbs (Built, Led, Shipped, Launched)
-4. Include real metrics from evidence when available
+4. Include real metrics from packets when available
 5. Write like a human professional would - confident but not robotic
-6. If pre-approved bullets exist in evidence, use them directly
+6. Do not generate a bullet for a requirement that has no usable packet
+7. Prefer bullets with system/tool/scope/outcome detail over generic PM phrasing
 
 QUANTIFICATION POLICY - CRITICAL:
 ALLOWED metrics:
-- Numbers explicitly stated in the evidence (exact amounts, percentages, counts)
+- Numbers explicitly stated in the packets (exact amounts, percentages, counts)
 - Deterministic derivations ("team of 5 across 3 regions")
-- Factual counts from evidence (number of products, countries, users if stated)
+- Factual counts from packets (number of products, countries, users if stated)
 
 NOT ALLOWED - DO NOT INVENT:
-- Percentages like "reduced churn by 25%" unless explicitly in evidence
-- Time savings like "saved 40 hours/week" unless explicitly in evidence
-- Revenue impact like "generated $2M" unless explicitly in evidence
-- Improvement claims like "improved efficiency by 30%" unless explicitly in evidence
+- Percentages like "reduced churn by 25%" unless explicitly in packets
+- Time savings like "saved 40 hours/week" unless explicitly in packets
+- Revenue impact like "generated $2M" unless explicitly in packets
+- Improvement claims like "improved efficiency by 30%" unless explicitly in packets
 
 IF NO METRIC IN EVIDENCE, use qualitative language instead:
 - "Reduced manual work" (not "reduced by 60%")
@@ -1646,12 +2012,12 @@ IF NO METRIC IN EVIDENCE, use qualitative language instead:
 - "Accelerated delivery" (not "reduced time by 50%")
 
 KEEP IT SPECIFIC:
-- Use exact numbers ONLY when in evidence: "team of 5" not "team"
+- Use exact numbers ONLY when in packets: "team of 5" not "team"
 - Name tools: "React, PostgreSQL" not "modern stack"
-- Include scale ONLY if in evidence: "50K users" not "users"
+- Include scale ONLY if in packets: "50K users" not "users"
 - Preserve industry: "B2B fintech" not "software"
 
-Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to evidence.`,
+Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to a packet.`,
       }),
     );
     // Step 2.5: PRE-GENERATION ENHANCEMENT PASS
@@ -1661,8 +2027,8 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
         resumeWithProvenance.experience_bullets.map((b) => ({
           bullet_text: b.bullet_text,
           source_evidence_id: b.source_evidence_id,
-          source_role: b.source_role,
-          source_company: b.source_company,
+          source_role: b.source_role ?? "",
+          source_company: b.source_company ?? "",
           matched_requirement: b.matched_requirement ?? undefined,
           keywords_used: b.keywords_used,
         })),
@@ -1686,8 +2052,36 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
             }),
           ),
         },
-        allEvidence,
+        resumeEvidence,
       );
+    const tracedBullets = enhancedBullets.map((bullet) => {
+      const packet = resolvePacketForBullet(bullet, capabilityPackets);
+      const packetOverlap = packet ? scoreBulletPacketOverlap(bullet.bullet_text, packet) : 0;
+      return {
+        ...bullet,
+        source_evidence_id: packet?.matchedEvidenceIds[0] ?? bullet.source_evidence_id,
+        matched_requirement: packet?.requirement ?? bullet.matched_requirement,
+        source_packet_id: packet?.packet_id,
+        packet_overlap: packetOverlap,
+        packet,
+      };
+    }).filter((bullet) =>
+      Boolean(bullet.packet) &&
+      Boolean(bullet.source_packet_id) &&
+      bullet.packet_overlap >= 0.12
+    );
+
+    if (tracedBullets.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "no_traceable_bullets",
+          user_message:
+            "HireWire blocked generation because the draft did not produce any bullets that could be traced back to evidence packets.",
+        },
+        { status: 409 },
+      );
+    }
 
     // Generate Selected Products section if we have named products with artifacts
     // FIX: Use allEvidence (correct in-scope variable) instead of undefined 'evidence'
@@ -1704,19 +2098,11 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
         schemaDescription: COVER_LETTER_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
         prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
 
-${profileContext}
+Candidate identity context:
+Name: ${effectiveName}
+Location: ${effectiveLocation}
 
-EVIDENCE:
-${coverLetterEvidence
-  .map(
-    (e: {
-      id: string;
-      source_title: string;
-      source_type: string;
-      company_name?: string;
-    }) => `[${e.id}] ${e.source_title} at ${e.company_name || "N/A"}`,
-  )
-  .join("\n")}
+${packetContext}
 
 ${jobContext}
 
@@ -1728,6 +2114,7 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
 - Give 1-2 specific examples of relevant work (link to evidence IDs)
 - Close briefly - no groveling or excessive enthusiasm
 - Never say "I am excited to apply" or "I would be thrilled"
+- Do not mention facts, credentials, metrics, systems, or scope absent from packets
 - 3-4 paragraphs total`,
       }),
     );
@@ -1748,7 +2135,7 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
       "Professional";
 
     // Use ENHANCED bullets (with product names, metrics, context injected)
-    const experienceBullets = enhancedBullets
+    const experienceBullets = tracedBullets
       .map((b) => `• ${b.bullet_text}`)
       .join("\n");
 
@@ -1830,8 +2217,27 @@ ${signatureBlock}`;
     // Runs AFTER document text is finalized but BEFORE quality check and DB write.
     // This is additive — it does not replace the existing quality checks.
 
-    // Build a GovernanceEvidence[] from the already-loaded evidence
-    const governanceEvidence: GovernanceEvidence[] = allEvidence.map(
+    const packetGovernanceEvidence: GovernanceEvidence[] = packetsForResume(capabilityPackets).map((packet) => ({
+      id: packet.packet_id,
+      source_title: `${packet.requirement} packet`,
+      source_type: "evidence_packet",
+      confidence_level: packet.evidenceStrength,
+      responsibilities: [packet.requirement, packet.normalized, ...packet.responsibilities, ...packet.proofSnippets],
+      outcomes: packet.outcomes,
+      tools_used: [...packet.systems, ...packet.tools],
+      team_size: null,
+      budget_scope: null,
+      user_impact_scale: null,
+      what_not_to_overstate: packet.riskFlags.join(", ") || null,
+      approved_achievement_bullets: packet.proofSnippets,
+    }));
+
+    // Build a GovernanceEvidence[] from structured packets first, then raw evidence.
+    // Bullets cite packets for governance so validation checks the upstream contract,
+    // while persisted provenance still keeps the source evidence ID for traceability.
+    const governanceEvidence: GovernanceEvidence[] = [
+      ...packetGovernanceEvidence,
+      ...allEvidence.map(
       (e: EvidenceRecord) => ({
         id: e.id,
         source_title: e.source_title,
@@ -1852,14 +2258,14 @@ ${signatureBlock}`;
           ? e.approved_achievement_bullets
           : [],
       }),
-    );
+    )];
 
     // 1. Claim validation — every bullet and paragraph checked against its evidence
-    const bulletClaimInputs = enhancedBullets.map((b) => ({
+    const bulletClaimInputs = tracedBullets.map((b) => ({
       text: b.bullet_text,
       cited_evidence_id:
-        (b as { bullet_text: string; source_evidence_id?: string })
-          .source_evidence_id ?? null,
+        (b as { bullet_text: string; source_packet_id?: string })
+          .source_packet_id ?? null,
     }));
     const paragraphClaimInputs = coverLetterWithProvenance.paragraphs.map(
       (p: { paragraph_text: string; evidence_ids_used: string[] }) => ({
@@ -2063,8 +2469,8 @@ ${signatureBlock}`;
 
     // Analyze bullet concreteness
     const bulletAnalysis: ConcreteBulletAnalysis[] =
-      resumeWithProvenance.experience_bullets.map(
-        (b: GeneratedResumeBullet) => ({
+      tracedBullets.map(
+        (b) => ({
           bullet: b.bullet_text,
           ...analyzeBulletConcreteness(b.bullet_text),
           has_metric: hasMetrics(b.bullet_text),
@@ -2082,7 +2488,7 @@ ${signatureBlock}`;
       safe_alternatives: string[];
     }[] = [];
 
-    for (const bullet of enhancedBullets) {
+    for (const bullet of tracedBullets) {
       const { has_unsafe, unsafe_claims, safe_alternatives } =
         detectUnsafeMetrics(bullet.bullet_text);
       if (has_unsafe) {
@@ -2143,26 +2549,43 @@ If no issues found, return empty arrays and overall_passed: true.`,
 
     // Build provenance records for storage
     const bulletProvenance: BulletProvenance[] =
-      resumeWithProvenance.experience_bullets.map(
-        (b: GeneratedResumeBullet) => ({
-          bullet_text: b.bullet_text,
-          source_evidence_id: b.source_evidence_id,
-          source_evidence_title:
-            resumeEvidence.find(
-              (e: { id: string; source_title: string }) =>
-                e.id === b.source_evidence_id,
-            )?.source_title || "Unknown",
-          source_role: b.source_role,
-          source_company: b.source_company,
-          matched_requirement_id: undefined,
-          matched_requirement_text: b.matched_requirement ?? undefined,
-          claim_confidence: "high" as const,
-          keywords_covered: b.keywords_used,
-          risk_flags: [],
-          is_metric_rich: hasMetrics(b.bullet_text),
-          concrete_signal_count: analyzeBulletConcreteness(b.bullet_text)
-            .concrete_signal_count,
-        }),
+      tracedBullets.map(
+        (b) => {
+          const packet = b.packet ?? resolvePacketForBullet(b, capabilityPackets);
+          const audit = truthSerumAuditBullet(b.bullet_text, {
+            sourceEvidenceId: b.source_evidence_id,
+            proofSnippets: packet?.proofSnippets,
+            systems: packet ? [...packet.systems, ...packet.tools] : undefined,
+            outcomes: packet?.outcomes,
+            riskFlags: packet?.riskFlags,
+          });
+          return {
+            bullet_text: b.bullet_text,
+            source_evidence_id: b.source_evidence_id,
+            source_evidence_title:
+              resumeEvidence.find(
+                (e: { id: string; source_title: string }) =>
+                  e.id === b.source_evidence_id,
+              )?.source_title || packet?.matchedEvidenceTitles[0] || "Unknown",
+            source_role: b.source_role,
+            source_company: b.source_company,
+            matched_requirement_id: packet?.packet_id,
+            matched_requirement_text: packet?.requirement ?? b.matched_requirement ?? undefined,
+            source_packet_id: packet?.packet_id,
+            match_strength: packet?.matchStrength,
+            match_reason: packet?.matchReason,
+            evidence_strength: packet?.evidenceStrength,
+            proof_snippets: packet?.proofSnippets,
+            why_included: packet?.whyIncluded,
+            claim_confidence: audit.score >= 80 ? "high" as const : audit.score >= 55 ? "medium" as const : "low" as const,
+            keywords_covered: b.keywords_used,
+            risk_flags: audit.flags,
+            is_metric_rich: hasMetrics(b.bullet_text),
+            concrete_signal_count: analyzeBulletConcreteness(b.bullet_text)
+              .concrete_signal_count,
+            truth_serum: audit,
+          };
+        },
       );
 
     const paragraphProvenance: ParagraphProvenance[] =
@@ -2487,7 +2910,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
         .update({
           matched_skills: generatedEvidenceMap.matched_skills,
           matched_tools: generatedEvidenceMap.matched_tools,
-          matched_projects: generatedEvidenceMap.matched_projects.map(
+          matched_projects: (generatedEvidenceMap.matched_projects ?? []).map(
             (p: { project_name: string }) => p.project_name,
           ),
           known_gaps: generatedEvidenceMap.gaps,
@@ -2691,15 +3114,20 @@ If no issues found, return empty arrays and overall_passed: true.`,
       correlationId,
     });
   } catch (error) {
+    let failedJobId: string | null = null
+    let failedUserId: string | null = null
+    let failedSupabase: Awaited<ReturnType<typeof createClient>> | null = null
     // Try to update job status to failed (best effort, don't fail if this fails)
     try {
-      const { job_id } = await request.clone().json();
-      if (job_id) {
+      failedJobId = parsedJobId
+      if (failedJobId) {
         const supabase = await createClient();
+        failedSupabase = supabase
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (user) {
+          failedUserId = user.id
           const failedGenerationUpdate = await supabase
             .from("jobs")
             .update({
@@ -2707,10 +3135,10 @@ If no issues found, return empty arrays and overall_passed: true.`,
               generation_error:
                 error instanceof Error ? error.message : "Generation failed",
             })
-            .eq("id", job_id)
+            .eq("id", failedJobId)
             .eq("user_id", user.id);
           logSupabaseWriteError("mark_generation_failed", failedGenerationUpdate.error, {
-            job_id,
+            job_id: failedJobId,
             user_id: user.id,
           });
         }
@@ -2718,10 +3146,39 @@ If no issues found, return empty arrays and overall_passed: true.`,
     } catch {}
     const errorMessage =
       error instanceof Error ? error.message : "Generation failed";
+    const isTimeout =
+      errorMessage.includes("timeout") ||
+      errorMessage.includes("timed out") ||
+      errorMessage.includes("aborted");
     const isRateLimit =
       errorMessage.includes("rate_limit") ||
       errorMessage.includes("Rate limit") ||
       errorMessage.includes("429");
+
+    if ((isTimeout || isRateLimit) && failedJobId && failedUserId && failedSupabase) {
+      try {
+        const [profile, allEvidence, jobData, sourceResume] = await Promise.all([
+          loadUserProfile(failedSupabase, failedUserId),
+          loadEvidenceLibrary(failedSupabase, failedUserId),
+          loadJobAnalysis(failedSupabase, failedJobId, failedUserId),
+          loadSourceResume(failedSupabase, failedUserId),
+        ]);
+
+        if (allEvidence && allEvidence.length > 0 && jobData) {
+          return generateFallbackDocuments({
+            supabase: failedSupabase,
+            job_id: failedJobId,
+            userId: failedUserId,
+            profile: profile as Record<string, any> | null,
+            sourceResumeData: sourceResume?.parsed_data as Record<string, any> | null,
+            allEvidence: allEvidence as EvidenceRecord[],
+            jobData: jobData as Record<string, any>,
+          });
+        }
+      } catch (fallbackError) {
+        console.error("[HireWire] timeout/rate-limit fallback generation failed:", fallbackError);
+      }
+    }
     if (isRateLimit) {
       const err = aiProviderError({
         code: "AI_RATE_LIMIT",

@@ -35,6 +35,8 @@ import {
 import { JobInputForm } from "@/app/(dashboard)/jobs/JobInputForm";
 import { cn } from "@/lib/utils";
 import { getCoachStepState } from "@/lib/coach-step";
+import { getNextStep } from "@/lib/workflow/get-next-step";
+import { NextStepModal } from "@/components/workflow/NextStepModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,6 +158,15 @@ function nextActionFor(job: EnrichedJob): {
   desc: string;
   href: string;
 } {
+  const guided = getNextStep(job);
+  if (guided.type !== "done") {
+    return {
+      label: guided.primaryLabel,
+      desc: guided.title,
+      href: `/jobs/${job.id}`,
+    };
+  }
+
   if (job.coachStep.required && !job.coachStep.complete) {
     return {
       label: "Start coach",
@@ -240,7 +251,15 @@ function tagsFor(job: EnrichedJob): string[] {
 
 // ─── Job Row (dense table-style) ──────────────────────────────────────────────
 
-function JobRow({ job, isLast }: { job: EnrichedJob; isLast: boolean }) {
+function JobRow({
+  job,
+  isLast,
+  onContinue,
+}: {
+  job: EnrichedJob;
+  isLast: boolean;
+  onContinue: (job: EnrichedJob) => void;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const action = nextActionFor(job);
   const stageLabel = DISPLAY_STAGE_LABEL[job.displayStage];
@@ -341,12 +360,16 @@ function JobRow({ job, isLast }: { job: EnrichedJob; isLast: boolean }) {
 
       {/* NEXT ACTION column */}
       <div>
-        <Link href={action.href}>
+        <button
+          type="button"
+          onClick={() => onContinue(job)}
+          className="text-left"
+        >
           <p className="text-xs font-semibold text-foreground hover:text-primary transition-colors">
             {action.label}
           </p>
           <p className="text-[10px] text-muted-foreground">{action.desc}</p>
-        </Link>
+        </button>
       </div>
 
       {/* Overflow menu */}
@@ -673,6 +696,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("needs_action_first");
   const [showSort, setShowSort] = useState(false);
   const [showAddJob, setShowAddJob] = useState(false);
+  const [guidedJob, setGuidedJob] = useState<EnrichedJob | null>(null);
 
   const jobs = useMemo(() => rawJobs.map(enrichJob), [rawJobs]);
 
@@ -1081,6 +1105,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
                   key={job.id}
                   job={job}
                   isLast={i === visible.length - 1}
+                  onContinue={setGuidedJob}
                 />
               ))}
               <div className="px-4 py-2.5 border-t border-border/60">
@@ -1099,6 +1124,13 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
           onAddJob={() => setShowAddJob((v) => !v)}
         />
       </div>
+      <NextStepModal
+        job={guidedJob}
+        open={guidedJob !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setGuidedJob(null);
+        }}
+      />
     </div>
   );
 }

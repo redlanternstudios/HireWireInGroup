@@ -6,9 +6,13 @@
     "dev": "next dev",
     "build": "NODE_ENV=production next build",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "test:api": "node tests/api-routes.test.mjs",
+    "test:evidence": "node --import tsx --test lib/evidence/matchRequirementToEvidence.test.ts",
+    "test:e2e:updownstream": "tsx tests/updownstream-e2e.ts",
     "test:context": "tsx tests/context-engine.test.ts",
     "test:ai": "tsx tests/ai-workflows-smoke.ts",
+    "test:e2e:apply": "playwright test tests/e2e/apply-flow.spec.ts",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "dependencies": {
@@ -81,6 +85,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^8.57.0",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^22",

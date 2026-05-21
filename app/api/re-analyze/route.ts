@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { withCoachStepMeta } from "@/lib/coach-step"
+import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob"
 import {
   buildEvidenceLibraryContext,
   buildJobContext,
@@ -12,6 +13,10 @@ import {
   mirrorProfileContext,
   runContextGapMatch,
 } from "@/lib/context-engine"
+
+function toDbScore(value: number | null | undefined): number {
+  return Math.round(Number.isFinite(value ?? NaN) ? value! : 0)
+}
 
 /**
  * POST /api/re-analyze
@@ -326,9 +331,6 @@ async function reAnalyzeExistingJob(
       role_title: title,
       company_name: company,
       status: "analyzed",
-      qualifications_required: analysis.qualifications_required,
-      qualifications_preferred: analysis.qualifications_preferred,
-      responsibilities: analysis.responsibilities,
       score: explainableFit.score,
       fit: fitBandToLegacy[explainableFit.band],
       score_gaps: gaps,
@@ -336,9 +338,7 @@ async function reAnalyzeExistingJob(
       seniority_level: seniority,
       role_family: analysis.role_family,
       industry_guess: analysis.industry_guess,
-      keywords_extracted: analysis.keywords,
       job_description: pageContent.slice(0, 10000),
-      analyzed_at: new Date().toISOString(),
       evidence_map: withCoachStepMeta(existingJob?.evidence_map, gaps.length > 0 || explainableFit.score < 70 ? "required" : "completed", {
         reset_at: new Date().toISOString(),
         reason: "job_reanalyzed",
@@ -374,16 +374,54 @@ async function reAnalyzeExistingJob(
   // Insert fresh scores record
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: jobId,
-    overall_score: explainableFit.score,
+    overall_score: toDbScore(explainableFit.score),
     confidence_score: explainableFit.confidence === "high" ? 0.9 : explainableFit.confidence === "medium" ? 0.7 : 0.5,
-    skills_match: dimensionScores.skills,
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats,
+    skills_match: toDbScore(dimensionScores.skills),
+    experience_relevance: toDbScore(dimensionScores.experience),
+    evidence_quality: toDbScore(dimensionScores.evidence),
+    seniority_alignment: toDbScore(dimensionScores.seniority),
+    ats_keywords: toDbScore(dimensionScores.ats),
     scoring_version: "3.0-explainable",
   })
   if (scoresError) console.error("Scores insert error:", scoresError)
+
+  try {
+    await buildEvidenceMapForJob({
+      supabase,
+      userId: user.id,
+      jobId,
+    })
+  } catch (evidenceMapError) {
+    console.error("Evidence map rebuild error:", evidenceMapError)
+    const existingMap =
+      existingJob?.evidence_map && typeof existingJob.evidence_map === "object" && !Array.isArray(existingJob.evidence_map)
+        ? existingJob.evidence_map as Record<string, unknown>
+        : {}
+    await supabase
+      .from("jobs")
+      .update({
+        evidence_map: withCoachStepMeta(
+          {
+            ...existingMap,
+            matching_complete: false,
+            map_build_error: {
+              code: "evidence_map_build_failed",
+              message:
+                evidenceMapError instanceof Error
+                  ? evidenceMapError.message
+                  : "Unknown evidence map build error",
+              failed_at: new Date().toISOString(),
+            },
+          },
+          "required",
+          {
+            reason: "evidence_map_build_failed",
+          },
+        ),
+      })
+      .eq("id", jobId)
+      .eq("user_id", user.id)
+  }
 
   if (isContextEngineEnabled()) {
     const jobContext = buildJobContext({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useChat, Chat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
   Target,
   HelpCircle,
   Mic,
+  ShieldAlert,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -36,6 +38,7 @@ interface CoachChatProps {
     jobTitle: string;
     company: string;
     gap?: {
+      requirement_id?: string;
       requirement: string;
       category: string;
       coach_question: string;
@@ -131,6 +134,30 @@ const promptClusters = [
   },
 ];
 
+type CoachToolOutput = {
+  message?: string;
+  success?: boolean;
+  needsConfirmation?: boolean;
+  confirmationPrompt?: string;
+  toolName?: string;
+  toolCallId?: string;
+  sessionId?: string;
+  jobId?: string | null;
+  args?: Record<string, unknown>;
+};
+
+function getToolOutput(part: unknown): CoachToolOutput | null {
+  if (!part || typeof part !== "object") return null;
+  const record = part as Record<string, unknown>;
+  if (typeof record.type !== "string" || !record.type.startsWith("tool-")) {
+    return null;
+  }
+  if (record.state !== "output-available") return null;
+  const output = record.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  return output as CoachToolOutput;
+}
+
 export function CoachChat({
   className,
   compact = false,
@@ -142,6 +169,8 @@ export function CoachChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialMessageSent = useRef(false);
   const [input, setInput] = useState("");
+  const [toolConfirmState, setToolConfirmState] = useState<Record<string, "confirming" | "confirmed" | "failed">>({});
+  const router = useRouter();
 
   // AI SDK v6: Chat requires a transport instance for custom api/body.
   // DefaultChatTransport handles the fetch to our route.
@@ -205,6 +234,33 @@ export function CoachChat({
   };
 
   const canSend = input.trim().length > 0 && !isLoading;
+
+  const confirmToolCall = async (output: CoachToolOutput) => {
+    if (!output.toolCallId || !output.sessionId || !output.toolName || !output.args) return;
+    setToolConfirmState((state) => ({ ...state, [output.toolCallId!]: "confirming" }));
+    try {
+      const response = await fetch("/api/coach/confirm-tool-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toolCallId: output.toolCallId,
+          sessionId: output.sessionId,
+          toolName: output.toolName,
+          jobId: output.jobId ?? jobContext?.jobId ?? null,
+          args: output.args,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) {
+        setToolConfirmState((state) => ({ ...state, [output.toolCallId!]: "failed" }));
+        return;
+      }
+      setToolConfirmState((state) => ({ ...state, [output.toolCallId!]: "confirmed" }));
+      router.refresh();
+    } catch {
+      setToolConfirmState((state) => ({ ...state, [output.toolCallId!]: "failed" }));
+    }
+  };
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -308,7 +364,10 @@ export function CoachChat({
                 .filter((p: { type: string }) => p.type === "text")
                 .map((p: { type: string; text?: string }) => p.text ?? "")
                 .join("");
-              if (!text) return null;
+              const toolOutputs = (message.parts ?? [])
+                .map(getToolOutput)
+                .filter((output): output is CoachToolOutput => output !== null);
+              if (!text && toolOutputs.length === 0) return null;
 
               return (
                 <div
@@ -346,40 +405,85 @@ export function CoachChat({
                           : "bg-card border border-border text-foreground rounded-2xl rounded-bl-sm shadow-sm",
                       )}
                     >
-                      {isUser ? (
-                        <p>{text}</p>
-                      ) : (
-                        <ReactMarkdown
-                          components={{
-                            p: ({ children }) => (
-                              <p className="mb-2 last:mb-0">{children}</p>
-                            ),
-                            ul: ({ children }) => (
-                              <ul className="list-disc pl-4 mb-2 space-y-0.5">
-                                {children}
-                              </ul>
-                            ),
-                            ol: ({ children }) => (
-                              <ol className="list-decimal pl-4 mb-2 space-y-0.5">
-                                {children}
-                              </ol>
-                            ),
-                            li: ({ children }) => <li>{children}</li>,
-                            strong: ({ children }) => (
-                              <strong className="font-semibold">
-                                {children}
-                              </strong>
-                            ),
-                            code: ({ children }) => (
-                              <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">
-                                {children}
-                              </code>
-                            ),
-                          }}
-                        >
-                          {text}
-                        </ReactMarkdown>
+                      {text && (
+                        isUser ? (
+                          <p>{text}</p>
+                        ) : (
+                          <ReactMarkdown
+                            components={{
+                              p: ({ children }) => (
+                                <p className="mb-2 last:mb-0">{children}</p>
+                              ),
+                              ul: ({ children }) => (
+                                <ul className="list-disc pl-4 mb-2 space-y-0.5">
+                                  {children}
+                                </ul>
+                              ),
+                              ol: ({ children }) => (
+                                <ol className="list-decimal pl-4 mb-2 space-y-0.5">
+                                  {children}
+                                </ol>
+                              ),
+                              li: ({ children }) => <li>{children}</li>,
+                              strong: ({ children }) => (
+                                <strong className="font-semibold">
+                                  {children}
+                                </strong>
+                              ),
+                              code: ({ children }) => (
+                                <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">
+                                  {children}
+                                </code>
+                              ),
+                            }}
+                          >
+                            {text}
+                          </ReactMarkdown>
+                        )
                       )}
+                      {toolOutputs.map((output, index) => {
+                        const state = output.toolCallId ? toolConfirmState[output.toolCallId] : undefined;
+                        return (
+                          <div
+                            key={`${output.toolCallId ?? index}`}
+                            className={cn(
+                              "mt-2 rounded-xl border px-3 py-2 text-xs",
+                              output.success
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border-amber-200 bg-amber-50 text-amber-800",
+                            )}
+                          >
+                            <div className="flex items-start gap-2">
+                              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <ReactMarkdown>{output.message ?? "Tool completed."}</ReactMarkdown>
+                                {output.needsConfirmation && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="h-7 px-2 text-[11px]"
+                                      disabled={state === "confirming" || state === "confirmed"}
+                                      onClick={() => confirmToolCall(output)}
+                                    >
+                                      {state === "confirming"
+                                        ? "Confirming..."
+                                        : state === "confirmed"
+                                          ? "Confirmed"
+                                          : "Confirm"}
+                                    </Button>
+                                    {state === "failed" && (
+                                      <span className="self-center text-[11px] text-rose-700">
+                                        Could not confirm. Try again.
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

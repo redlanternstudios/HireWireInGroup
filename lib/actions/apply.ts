@@ -92,7 +92,7 @@ export async function applyToJob(
         correlationId,
       })
 
-      void handleDomainEvent({
+      await handleDomainEvent({
         supabase,
         event_type: "override_logged",
         job_id: jobId,
@@ -145,7 +145,7 @@ export async function applyToJob(
       const err = supabaseError({ code: "APPLICATION_INSERT_FAILED", message: appError.message, correlationId })
       logErr(err, { action: "applyToJob" })
 
-      void handleDomainEvent({
+      await handleDomainEvent({
         supabase,
         event_type: "application_failed",
         job_id: jobId,
@@ -159,7 +159,7 @@ export async function applyToJob(
     }
 
     // Emit application_submitted — triggers analytics, logs, dashboard, coach
-    void handleDomainEvent({
+    await handleDomainEvent({
       supabase,
       event_type: "application_submitted",
       job_id: jobId,

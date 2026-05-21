@@ -184,6 +184,25 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {saved && (
+        <div className="hw-panel p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Profile saved</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Next, add a job so HireWire can match this career identity against a real role.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => router.push("/evidence")}>
+              Career Context
+            </Button>
+            <Button size="sm" className="hw-btn-primary gap-1.5" onClick={() => router.push("/jobs/new")}>
+              <Plus className="h-3.5 w-3.5" /> Add Job
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ─── Workspace ─── */}
       <div className="hw-workspace">
         {/* Main — Profile Form */}

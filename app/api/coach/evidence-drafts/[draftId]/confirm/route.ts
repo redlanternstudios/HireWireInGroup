@@ -6,6 +6,29 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
+
+type ConfirmSupabase = Awaited<ReturnType<typeof createClient>>
+
+async function mapWithConflictRetry(params: {
+  supabase: ConfirmSupabase
+  userId: string
+  jobId: string
+  sessionId: string
+  requirementId: string
+  evidenceId: string
+  evidenceTitle?: string | null
+  evidenceType?: string | null
+}) {
+  try {
+    return await mapConfirmedEvidenceToRequirement(params)
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== "evidence_map_conflict") {
+      throw error
+    }
+    return mapConfirmedEvidenceToRequirement(params)
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -39,10 +62,17 @@ export async function POST(
     const finalSnippet = userEditedSnippet ?? draft.proof_snippet
 
     const { data: session } = await supabase.from("coach_sessions")
-      .select("id,job_id,gap_requirement")
+      .select("id,job_id,gap_requirement,gap_requirement_id")
       .eq("id", draft.session_id)
       .eq("user_id", userId)
       .maybeSingle()
+
+    if (!session?.job_id || !session.gap_requirement_id) {
+      return NextResponse.json(
+        { success: false, error: "requirement_anchor_missing", user_message: "This coach draft is not anchored to a job requirement." },
+        { status: 400 }
+      )
+    }
 
     const { data: evidenceRow, error: evidenceError } = await supabase
       .from("evidence_library")
@@ -66,56 +96,30 @@ export async function POST(
       )
     }
 
+    await mapWithConflictRetry({
+      supabase,
+      userId,
+      jobId: session.job_id,
+      sessionId: session.id,
+      requirementId: session.gap_requirement_id,
+      evidenceId: evidenceRow.id,
+      evidenceTitle: draft.source_title,
+      evidenceType: draft.source_type,
+    })
+
     await supabase.from("coach_evidence_drafts")
       .update({ status: "confirmed", confirmed_row_id: evidenceRow.id, proof_snippet: finalSnippet })
       .eq("id", draftId).eq("user_id", userId)
 
-    if (session?.job_id && session.gap_requirement) {
-      const { data: job } = await supabase.from("jobs")
-        .select("evidence_map")
-        .eq("id", session.job_id)
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .maybeSingle()
-
-      const existingMap =
-        job?.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
-          ? job.evidence_map as Record<string, unknown>
-          : {}
-      const existingRequirementMap =
-        existingMap[session.gap_requirement] &&
-        typeof existingMap[session.gap_requirement] === "object" &&
-        !Array.isArray(existingMap[session.gap_requirement])
-          ? existingMap[session.gap_requirement] as Record<string, unknown>
-          : {}
-      const evidenceIds = Array.isArray(existingRequirementMap.evidence_ids)
-        ? existingRequirementMap.evidence_ids.map(String)
-        : []
-
-      await supabase.from("jobs")
-        .update({
-          evidence_map: {
-            ...existingMap,
-            [session.gap_requirement]: {
-              ...existingRequirementMap,
-              evidence_ids: Array.from(new Set([...evidenceIds, evidenceRow.id])),
-              source: "coach_gap_dialogue",
-              updated_at: new Date().toISOString(),
-            },
-          },
-        })
-        .eq("id", session.job_id)
-        .eq("user_id", userId)
-    }
-
     void handleDomainEvent({
       supabase,
-      event_type: "evidence_added",
-      job_id: session?.job_id ?? null,
+      event_type: "evidence_mapped",
+      job_id: session.job_id,
       user_id: userId,
       source: "coach_route",
       payload: {
         evidence_id: evidenceRow.id,
+        requirement_id: session?.gap_requirement_id ?? null,
         gap_requirement: session?.gap_requirement ?? null,
         source_type: draft.source_type,
         source_title: draft.source_title,

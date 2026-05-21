@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { NextStepButton } from "@/components/workflow/NextStepButton";
 
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
+import { getNextStep } from "@/lib/workflow/get-next-step";
 import {
   Plus,
   Briefcase,
@@ -233,48 +235,12 @@ export default async function DashboardPage() {
         cta: "Add job",
         timeEst: null,
       };
-    const base = `/jobs/${job.id}`;
-    if (tier === "action") {
-      const readiness = evaluateReadiness(job);
-      const gaps = (job.score_gaps as string[] | null) ?? [];
-      const gapCount = gaps.length;
-      const evidenceBlocked = readiness.stage === "evidence_blocked";
-      return {
-        label: evidenceBlocked
-          ? gapCount > 0
-            ? `Match ${gapCount} missing proof point${gapCount !== 1 ? "s" : ""}`
-            : "Add missing evidence"
-          : "Generate your package",
-        desc:
-          readiness.blockedReasons[0] ??
-          "Complete the next readiness requirement.",
-        href: readiness.nextAction?.href ?? `${base}/evidence-match`,
-        cta: evidenceBlocked ? "Fix now" : "Continue",
-        timeEst:
-          gapCount > 0 ? `Est. ${gapCount * 5}–${gapCount * 8} min` : null,
-      };
-    }
-    if (tier === "review")
-      return {
-        label: "Review your package",
-        desc: "Your application package is ready for a final check.",
-        href: `${base}/documents`,
-        cta: "Review now",
-        timeEst: "Est. 5–10 min",
-      };
-    if (tier === "ready")
-      return {
-        label: "Submit your application",
-        desc: "Package is quality-approved and ready to go.",
-        href: "/ready-to-apply",
-        cta: "Apply now",
-        timeEst: null,
-      };
+    const guided = getNextStep(job);
     return {
-      label: "View job details",
-      desc: "Check the latest status of this role.",
-      href: base,
-      cta: "Open",
+      label: guided.title,
+      desc: guided.description,
+      href: guided.href ?? `/jobs/${job.id}`,
+      cta: guided.primaryLabel,
       timeEst: null,
     };
   }
@@ -282,19 +248,12 @@ export default async function DashboardPage() {
   const heroAction = heroNextStep(heroTier, heroJob);
 
   const heroWarning =
-    heroJob && heroTier === "action"
+    heroJob
       ? (() => {
-          const readiness = evaluateReadiness(heroJob);
-          const gaps = (heroJob.score_gaps as string[] | null) ?? [];
-          const gapCount = gaps.length;
-          return readiness.stage === "evidence_blocked" && gapCount > 0
-            ? `Resume not generated`
-            : (readiness.blockedReasons[0] ??
-                "Needs readiness work before applying");
+          const guided = getNextStep(heroJob);
+          return guided.readiness.blockedReasons[0] ?? null;
         })()
-      : heroJob && heroTier === "review"
-        ? "Awaiting your review before submission"
-        : null;
+      : null;
 
   const attentionItems = needsActionJobs.length + needsReviewJobs.length;
   const subtitle =
@@ -443,11 +402,15 @@ export default async function DashboardPage() {
                   background: "hsl(var(--muted)/0.35)",
                 }}
               >
-                <Link href={heroAction.href}>
-                  <Button size="sm" className="hw-btn-primary gap-1.5 px-5 h-9">
-                    {heroAction.cta} <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                </Link>
+                {heroJob ? (
+                  <NextStepButton job={heroJob} label={heroAction.cta} />
+                ) : (
+                  <Link href={heroAction.href}>
+                    <Button size="sm" className="hw-btn-primary gap-1.5 px-5 h-9">
+                      {heroAction.cta} <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </Link>
+                )}
                 <Link href="/jobs">
                   <Button
                     size="sm"
