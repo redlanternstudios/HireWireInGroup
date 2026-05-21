@@ -88,7 +88,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
   const proofGaps = requirementMatches.filter(match => match.status === "gap" || match.status === "unknown")
 
   return (
-    <div className="hw-page max-w-6xl">
+    <div className="hw-page">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link

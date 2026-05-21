@@ -343,8 +343,16 @@ export default function CareerContextPage() {
 
           {/* Body */}
           {loading ? (
-            <div className="flex items-center justify-center h-48">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="hw-empty min-h-48">
+              <div className="hw-empty-icon">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Loading career context</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  Gathering your saved proof points, tools, and outcomes.
+                </p>
+              </div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="hw-empty">

@@ -276,7 +276,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
 
   return (
-    <div className="hw-page max-w-3xl">
+    <div className="hw-page">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link href="/jobs" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -333,6 +333,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <WorkflowProgress stage={workflow.stage} />
         </div>
       </div>
+
+      <div className="hw-workspace">
+        <div className="hw-workspace-main space-y-4">
 
       {/* NEXT STEP CTA — always visible, never a dead end */}
       {!stillProcessing && (
@@ -516,6 +519,46 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       )}
+
+        </div>
+
+        <div className="hw-workspace-rail space-y-4">
+          <div className="hw-panel p-4">
+            <p className="hw-section-label mb-2">Job Snapshot</p>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Status</span>
+                <span className="font-semibold text-foreground">{STATUS_LABEL[job.status] ?? job.status}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Readiness</span>
+                <span className="font-semibold text-foreground">{readiness.stage.replace(/_/g, " ")}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Fit Score</span>
+                <span className="font-semibold text-foreground tabular-nums">
+                  {overallScore !== null ? `${Math.round(Number(overallScore))}/100` : "Pending"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hw-panel p-4">
+            <p className="hw-section-label mb-2">Quick Links</p>
+            <div className="space-y-2">
+              <Link href={`/jobs/${id}/evidence-match`} className="block text-xs text-primary hover:underline">
+                Open Evidence Match
+              </Link>
+              <Link href={`/jobs/${id}/documents`} className="block text-xs text-primary hover:underline">
+                Open Documents
+              </Link>
+              <Link href="/ready-to-apply" className="block text-xs text-primary hover:underline">
+                Ready to Apply Gate
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

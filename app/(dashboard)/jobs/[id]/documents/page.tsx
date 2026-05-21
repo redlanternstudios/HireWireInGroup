@@ -68,7 +68,7 @@ export default async function DocumentsPage({
   if (!hasDocs) {
     const wasBlocked = job.generation_status === "failed" && !!job.generation_error;
     return (
-      <div className="hw-page max-w-2xl">
+      <div className="hw-page">
         <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4">
           <p className="text-sm font-semibold">
             {wasBlocked ? "Generation needs evidence review" : "No documents generated yet"}
@@ -137,19 +137,20 @@ export default async function DocumentsPage({
   const packageReadiness = evaluateReadiness(jobWithFormat);
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="hw-page">
       <Link
         href={`/jobs/${id}`}
-        className="text-sm text-blue-600 hover:underline"
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         Back to job
       </Link>
-      <div className="mt-4 mb-6">
-        <h1 className="text-2xl font-semibold">
+
+      <div className="hw-card px-6 py-5">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           {job.role_title}
-          <span className="ml-2 text-gray-500">@ {job.company_name}</span>
+          <span className="ml-2 text-muted-foreground">@ {job.company_name}</span>
         </h1>
-        <div className="mt-1 text-sm text-gray-500">
+        <div className="mt-1 text-xs text-muted-foreground">
           {job.generation_timestamp && (
             <span>
               Generated {new Date(job.generation_timestamp).toLocaleString()}
@@ -162,11 +163,12 @@ export default async function DocumentsPage({
           )}
         </div>
       </div>
-      <div className="flex flex-col md:flex-row gap-8">
-        <div className="flex-1 min-w-0">
+
+      <div className="hw-workspace">
+        <div className="hw-workspace-main min-w-0">
           <DocumentsEditor job={jobWithFormat} candidateName={candidateName} />
         </div>
-        <aside className="w-full md:w-96 shrink-0 space-y-4">
+        <aside className="hw-workspace-rail space-y-4">
           <ApplicationPackagePreview
             job={jobWithFormat}
             readiness={packageReadiness}

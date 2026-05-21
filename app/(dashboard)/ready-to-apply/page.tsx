@@ -110,7 +110,8 @@ export default async function ReadyToApplyPage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="hw-workspace">
+          <div className="hw-workspace-main space-y-8">
 
           {justClearedJobs.length > 0 && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5 flex items-start gap-3">
@@ -212,6 +213,26 @@ export default async function ReadyToApplyPage() {
               </div>
             )}
           </section>
+          </div>
+
+          <aside className="hw-workspace-rail space-y-4">
+            <div className="hw-panel p-4">
+              <p className="hw-section-label mb-2">Readiness Rules</p>
+              <ul className="space-y-2 text-xs text-muted-foreground">
+                <li>Resume generated</li>
+                <li>Cover letter generated</li>
+                <li>Evidence threshold met</li>
+                <li>Quality pass complete</li>
+              </ul>
+            </div>
+
+            <div className="hw-panel p-4">
+              <p className="hw-section-label mb-2">Next Best Action</p>
+              <p className="text-xs text-muted-foreground">
+                If blocked, open the job and resolve the first checklist item in red. If ready, review docs one more time and apply from this gate.
+              </p>
+            </div>
+          </aside>
         </div>
       )}
     </div>

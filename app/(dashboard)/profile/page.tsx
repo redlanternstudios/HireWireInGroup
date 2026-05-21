@@ -136,8 +136,18 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="hw-page">
+        <div className="hw-empty min-h-64">
+          <div className="hw-empty-icon">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Loading profile</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Pulling your saved career identity and profile settings.
+            </p>
+          </div>
+        </div>
       </div>
     )
   }

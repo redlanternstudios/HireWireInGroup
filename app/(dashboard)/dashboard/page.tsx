@@ -263,22 +263,15 @@ export default async function DashboardPage() {
         ? `${readyJobs.length} job${readyJobs.length !== 1 ? "s" : ""} ready to apply today.`
         : "Your pipeline is up to date.";
 
-  // Inline card style helpers
-  const cardBase: React.CSSProperties = {
-    background: "hsl(var(--card))",
-    border: "1px solid rgba(26,23,20,0.07)",
-    boxShadow: "0 1px 3px rgba(26,23,20,0.04), 0 4px 16px rgba(26,23,20,0.06)",
-  };
-
   return (
-    <div className="w-full" style={{ maxWidth: 1200, marginInline: "auto" }}>
+    <div className="hw-page">
       {/* ─── HEADER ─── */}
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <p className="hw-section-label mb-1">Command Center</p>
           <h1 className="text-[26px] font-bold tracking-tight text-foreground leading-tight">
             {greeting()},{" "}
-            <span style={{ color: "hsl(var(--primary))" }}>{firstName}.</span>
+            <span className="text-primary">{firstName}.</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {attentionItems > 0 ? (
@@ -295,15 +288,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 pt-1">
-          <button
-            className="relative flex items-center justify-center rounded-full transition-colors"
-            style={{
-              width: 34,
-              height: 34,
-              background: "hsl(var(--card))",
-              border: "1px solid rgba(26,23,20,0.09)",
-            }}
-          >
+          <button className="relative h-8.5 w-8.5 flex items-center justify-center rounded-full transition-colors hw-card border-border/70">
             <Bell className="h-4 w-4 text-muted-foreground" />
             {attentionItems > 0 && (
               <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-white text-[9px] font-bold flex items-center justify-center">
@@ -320,27 +305,16 @@ export default async function DashboardPage() {
       </div>
 
       {/* ─── TWO-COLUMN WORKSPACE ─── */}
-      <div className="flex gap-4 items-start">
+      <div className="hw-workspace">
         {/* ─── MAIN COLUMN ─── */}
-        <div className="flex-1 min-w-0 space-y-4">
+        <div className="hw-workspace-main space-y-4">
           {/* ── HERO: Your Next Move ── */}
           {heroJob ? (
-            <div
-              className="rounded-3xl overflow-hidden"
-              style={{
-                background: "hsl(var(--card))",
-                border: "1px solid rgba(26,23,20,0.08)",
-                boxShadow:
-                  "0 2px 8px rgba(26,23,20,0.05), 0 12px 32px rgba(26,23,20,0.09)",
-              }}
-            >
+            <div className="rounded-3xl overflow-hidden hw-card border-border/80 shadow-md">
               <div className="px-6 pt-5 pb-4">
                 {/* Label row */}
                 <div className="flex items-center gap-2 mb-3">
-                  <div
-                    className="w-5 h-5 rounded flex items-center justify-center"
-                    style={{ background: "hsl(var(--primary))" }}
-                  >
+                  <div className="w-5 h-5 rounded flex items-center justify-center bg-primary">
                     <Sparkles className="h-3 w-3 text-white" />
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-primary">
@@ -369,10 +343,7 @@ export default async function DashboardPage() {
                   </div>
 
                   {/* Right: next step block */}
-                  <div
-                    className="shrink-0 text-right hidden sm:block"
-                    style={{ minWidth: 180 }}
-                  >
+                  <div className="shrink-0 text-right hidden sm:block min-w-45">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
                       Next Step
                     </p>
@@ -383,10 +354,7 @@ export default async function DashboardPage() {
                       {heroAction.desc}
                     </p>
                     {heroAction.timeEst && (
-                      <div
-                        className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground font-medium"
-                        style={{ background: "hsl(var(--muted))" }}
-                      >
+                      <div className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground font-medium bg-muted">
                         <Clock className="h-3 w-3" /> {heroAction.timeEst}
                       </div>
                     )}
@@ -395,13 +363,7 @@ export default async function DashboardPage() {
               </div>
 
               {/* Action footer */}
-              <div
-                className="px-6 py-3.5 flex items-center gap-2.5"
-                style={{
-                  borderTop: "1px solid rgba(26,23,20,0.06)",
-                  background: "hsl(var(--muted)/0.35)",
-                }}
-              >
+              <div className="px-6 py-3.5 flex items-center gap-2.5 border-t border-border/70 bg-muted/35">
                 {heroJob ? (
                   <NextStepButton job={heroJob} label={heroAction.cta} />
                 ) : (
@@ -444,18 +406,8 @@ export default async function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div
-              className="rounded-3xl px-6 py-10 flex flex-col items-center text-center gap-3"
-              style={{
-                background: "hsl(var(--card))",
-                border: "1px dashed rgba(26,23,20,0.12)",
-                boxShadow: "0 1px 3px rgba(26,23,20,0.04)",
-              }}
-            >
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ background: "hsl(var(--muted))" }}
-              >
+            <div className="rounded-3xl px-6 py-10 flex flex-col items-center text-center gap-3 hw-card border-dashed border-border/70 shadow-sm">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-muted">
                 <Target className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
@@ -512,10 +464,7 @@ export default async function DashboardPage() {
                 },
               ].map((q) => (
                 <Link key={q.label} href={q.href}>
-                  <div
-                    className="rounded-2xl px-4 py-4 flex flex-col gap-2 group transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
-                    style={cardBase}
-                  >
+                  <div className="rounded-2xl px-4 py-4 flex flex-col gap-2 group transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer hw-card">
                     {/* Icon circle */}
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center"
@@ -579,11 +528,7 @@ export default async function DashboardPage() {
                   color: "#3b82f6",
                 },
               ].map((s) => (
-                <div
-                  key={s.label}
-                  className="rounded-xl px-3.5 py-3 flex flex-col gap-0.5"
-                  style={cardBase}
-                >
+                <div key={s.label} className="rounded-xl px-3.5 py-3 flex flex-col gap-0.5 hw-card">
                   <s.icon
                     className="h-3.5 w-3.5 mb-1"
                     style={{ color: s.color }}
@@ -632,7 +577,7 @@ export default async function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="rounded-2xl overflow-hidden" style={cardBase}>
+              <div className="rounded-2xl overflow-hidden hw-card">
                 {jobList.slice(0, 5).map((job, i) => {
                   const tier = urgencyTier(job);
                   const ss = statusStyle(job.status);
@@ -768,7 +713,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* ─── RIGHT RAIL ─── */}
-        <div className="shrink-0 space-y-3" style={{ width: 264 }}>
+        <div className="hw-workspace-rail space-y-3">
           {/* ── PIPELINE INTELLIGENCE — dark intelligence surface ── */}
           <div
             className="rounded-2xl p-4 relative overflow-hidden"
@@ -884,7 +829,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* ── QUICK ACTIONS — light surface ── */}
-          <div className="rounded-2xl p-4" style={cardBase}>
+          <div className="rounded-2xl p-4 hw-card">
             <div className="flex items-center gap-1.5 mb-3">
               <div
                 className="w-5 h-5 rounded-md flex items-center justify-center"
@@ -940,7 +885,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* MOMENTUM + RECENT ACTIVITY */}
-          <div className="rounded-2xl p-4" style={cardBase}>
+          <div className="rounded-2xl p-4 hw-card">
             <div className="flex items-center gap-1.5 mb-3">
               <div
                 className="w-5 h-5 rounded-md flex items-center justify-center"
