@@ -1014,6 +1014,37 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
     ...fallbackVaguePatterns.map((pattern) => `Vague pattern: "${pattern}"`),
     ...fallbackWeakBullets.map((bullet) => `Weak bullet: "${bullet.bullet.slice(0, 80)}"`),
   ];
+  const fallbackBulletProvenance: BulletProvenance[] = bulletClaimInputs.map((claim) => {
+    const sourceEvidence = allEvidence.find((item) => item.id === claim.cited_evidence_id);
+    const audit = truthSerumAuditBullet(claim.text, {
+      sourceEvidenceId: claim.cited_evidence_id,
+      proofSnippets: sourceEvidence?.proof_snippet ? [sourceEvidence.proof_snippet] : [],
+      systems: Array.isArray(sourceEvidence?.tools_used) ? sourceEvidence.tools_used : [],
+      outcomes: Array.isArray(sourceEvidence?.outcomes) ? sourceEvidence.outcomes : [],
+      riskFlags: sourceEvidence?.what_not_to_overstate ? ["overstatement_constraint"] : [],
+    });
+
+    return {
+      bullet_text: claim.text,
+      source_evidence_id: claim.cited_evidence_id,
+      source_evidence_title: sourceEvidence?.source_title ?? "Unknown",
+      source_role: sourceEvidence?.role_name ?? undefined,
+      source_company: sourceEvidence?.company_name ?? undefined,
+      claim_confidence: audit.score >= 80 ? "high" : audit.score >= 55 ? "medium" : "low",
+      keywords_covered: [],
+      risk_flags: audit.flags,
+      is_metric_rich: hasMetrics(claim.text),
+      concrete_signal_count: analyzeBulletConcreteness(claim.text).concrete_signal_count,
+      truth_serum: audit,
+    };
+  });
+  const fallbackParagraphProvenance: ParagraphProvenance[] = coverLetterParagraphs.map((paragraph) => ({
+    paragraph_text: paragraph.text,
+    evidence_used: paragraph.cited_evidence_id ? [paragraph.cited_evidence_id] : [],
+    matched_job_theme: "fallback_evidence_grounded_cover_letter",
+    claim_confidence: paragraph.cited_evidence_id ? "medium" : "low",
+    unsupported_language: detectBannedPhrases(paragraph.text),
+  }));
 
   const { error: updateError } = await supabase
     .from("jobs")
@@ -1037,6 +1068,8 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
           ? jobData.evidence_map as Record<string, unknown>
           : {}),
         ...evidenceMap,
+        bullet_provenance: fallbackBulletProvenance,
+        paragraph_provenance: fallbackParagraphProvenance,
       },
       generation_status: "needs_review",
       generation_error: null,
