@@ -1,5 +1,20 @@
 # HireWire v0 / Code Generator System Prompt
 
+## Canonical Notice (2026-05-21)
+
+Use this file as background context only.
+
+Primary execution prompt has moved to:
+- `docs/V0_SUPABASE_ALIGNMENT_EXECUTION_PROMPT.md`
+
+Primary upstream/downstream system map has moved to:
+- `docs/HIREWIRE_UP_DOWNSTREAM_TOTALITY.md`
+
+UI cohesion execution spec:
+- `hire-wire-sight-engine-ui-cohesion-pass.md`
+
+If any instruction in this file conflicts with the three files above, follow the newer files.
+
 Use this system context whenever generating or modifying HireWire code with v0, Cursor, Claude, or similar code generation tools.
 
 ## Core Architecture (Current)

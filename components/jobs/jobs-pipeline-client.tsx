@@ -482,7 +482,7 @@ function IntelligencePanel({
     });
 
   return (
-    <div className="shrink-0 space-y-3" style={{ width: 240 }}>
+    <div className="hw-workspace-rail space-y-3">
       {/* Pipeline Intelligence */}
       <div
         className="rounded-xl overflow-hidden"
@@ -790,10 +790,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
   const staleCount = jobs.filter((j) => j.staleness.isStale).length;
 
   return (
-    <div
-      className="w-full px-5 py-4"
-      style={{ maxWidth: 1280, marginInline: "auto" }}
-    >
+    <div className="hw-page">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -828,14 +825,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
 
       {/* Add Job form */}
       {showAddJob && (
-        <div
-          className="mb-4 rounded-xl p-5"
-          style={{
-            background: "hsl(var(--card))",
-            border: "1px solid rgba(26,23,20,0.07)",
-            boxShadow: "0 1px 3px rgba(26,23,20,0.04)",
-          }}
-        >
+        <div className="mb-4 rounded-xl p-5 hw-card">
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
             Analyze a Job
           </p>
@@ -893,16 +883,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
             subColor: "text-muted-foreground",
           },
         ].map((s) => (
-          <div
-            key={s.label}
-            className="rounded-xl px-4 py-3.5"
-            style={{
-              background: "hsl(var(--card))",
-              border: "1px solid rgba(26,23,20,0.07)",
-              boxShadow:
-                "0 1px 3px rgba(26,23,20,0.04),0 3px 8px rgba(26,23,20,0.04)",
-            }}
-          >
+          <div key={s.label} className="rounded-xl px-4 py-3.5 hw-card">
             <p
               className={cn(
                 "text-2xl font-bold tabular-nums leading-none",
@@ -920,17 +901,9 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
       </div>
 
       {/* Main two-column layout */}
-      <div className="flex gap-4 items-start">
+      <div className="hw-workspace">
         {/* Left — jobs table */}
-        <div
-          className="flex-1 min-w-0 rounded-xl overflow-hidden"
-          style={{
-            background: "hsl(var(--card))",
-            border: "1px solid rgba(26,23,20,0.07)",
-            boxShadow:
-              "0 1px 3px rgba(26,23,20,0.04),0 3px 8px rgba(26,23,20,0.04)",
-          }}
-        >
+        <div className="hw-workspace-main hw-card overflow-hidden">
           {/* View tabs */}
           <div className="flex items-end border-b border-border/70 px-4 pt-3">
             {VIEW_TABS.map((tab) => (

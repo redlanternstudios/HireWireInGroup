@@ -80,6 +80,7 @@ export default async function DocumentsPage({
           </Link>
         </div>
         <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4 max-w-lg mx-auto">
+        <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4">
           <p className="text-sm font-semibold">
             {wasBlocked ? "Generation needs evidence review" : "No documents generated yet"}
           </p>
@@ -171,6 +172,29 @@ export default async function DocumentsPage({
               </span>
             )}
           </p>
+      <Link
+        href={`/jobs/${id}`}
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Back to job
+      </Link>
+
+      <div className="hw-card px-6 py-5">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          {job.role_title}
+          <span className="ml-2 text-muted-foreground">@ {job.company_name}</span>
+        </h1>
+        <div className="mt-1 text-xs text-muted-foreground">
+          {job.generation_timestamp && (
+            <span>
+              Generated {new Date(job.generation_timestamp).toLocaleString()}
+            </span>
+          )}
+          {job.last_edited_at && (
+            <span className="ml-3">
+              · Last edited {new Date(job.last_edited_at).toLocaleString()}
+            </span>
+          )}
         </div>
         <ApplyButton jobId={id} disabled={!packageReadiness.canApply} />
       </div>
@@ -181,6 +205,11 @@ export default async function DocumentsPage({
           <DocumentsEditor job={jobWithFormat} candidateName={candidateName} />
         </div>
         <aside className="hw-workspace-rail">
+      <div className="hw-workspace">
+        <div className="hw-workspace-main min-w-0">
+          <DocumentsEditor job={jobWithFormat} candidateName={candidateName} />
+        </div>
+        <aside className="hw-workspace-rail space-y-4">
           <ApplicationPackagePreview
             job={jobWithFormat}
             readiness={packageReadiness}

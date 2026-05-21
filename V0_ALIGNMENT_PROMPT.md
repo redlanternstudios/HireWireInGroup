@@ -6,6 +6,22 @@
 
 ---
 
+## Required Companion Spec (UI Cohesion)
+
+Before any UI-focused pass, also read:
+
+- `hire-wire-sight-engine-ui-cohesion-pass.md`
+
+If there is any conflict on visual/layout guidance, follow this precedence order:
+
+1. `.github/copilot-instructions.md`
+2. `CLAUDE.md`
+3. `hire-wire-sight-engine-ui-cohesion-pass.md`
+4. `V0_ALIGNMENT_PROMPT.md`
+5. `.ai/prompts/v0-ui-alignment.md`
+
+---
+
 ## Your Role
 
 You are building features for HireWire, a job application intelligence product.
