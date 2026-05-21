@@ -16,6 +16,7 @@ import {
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { getCoachStepState } from "@/lib/coach-step";
 import { GenerateButton } from "../GenerateButton";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -69,11 +70,21 @@ export default async function DocumentsPage({
     const wasBlocked = job.generation_status === "failed" && !!job.generation_error;
     return (
       <div className="hw-page">
+        <div className="flex items-center gap-2 mb-2">
+          <Link
+            href={`/jobs/${id}`}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            {job.role_title ?? "Job"} at {job.company_name ?? "—"}
+          </Link>
+        </div>
+        <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4 max-w-lg mx-auto">
         <div className="hw-card px-6 py-10 flex flex-col items-center text-center gap-4">
           <p className="text-sm font-semibold">
             {wasBlocked ? "Generation needs evidence review" : "No documents generated yet"}
           </p>
-          <p className="text-xs text-muted-foreground max-w-xs">
+          <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
             {!readiness.canGenerate
               ? "Answer the coach prompts first, or explicitly skip them, before generating application materials."
               : wasBlocked
@@ -97,12 +108,6 @@ export default async function DocumentsPage({
               disabledReason={readiness.nextAction?.description}
             />
           </div>
-          <Link
-            href={`/jobs/${id}`}
-            className="text-xs text-primary hover:underline"
-          >
-            Back to job
-          </Link>
         </div>
       </div>
     );
@@ -138,6 +143,35 @@ export default async function DocumentsPage({
 
   return (
     <div className="hw-page">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2">
+        <Link
+          href={`/jobs/${id}`}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          {job.role_title ?? "Job"} at {job.company_name ?? "—"}
+        </Link>
+      </div>
+
+      {/* Page header */}
+      <div className="hw-page-header">
+        <div>
+          <p className="hw-section-label mb-1">Application Materials</p>
+          <h1 className="hw-page-title">{job.role_title}</h1>
+          <p className="hw-page-subtitle">
+            {job.company_name ?? "—"}
+            {job.generation_timestamp && (
+              <span className="ml-2 text-muted-foreground/60">
+                · Generated {new Date(job.generation_timestamp).toLocaleDateString()}
+              </span>
+            )}
+            {job.last_edited_at && (
+              <span className="ml-1 text-muted-foreground/60">
+                · Edited {new Date(job.last_edited_at).toLocaleDateString()}
+              </span>
+            )}
+          </p>
       <Link
         href={`/jobs/${id}`}
         className="text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -162,8 +196,15 @@ export default async function DocumentsPage({
             </span>
           )}
         </div>
+        <ApplyButton jobId={id} disabled={!packageReadiness.canApply} />
       </div>
 
+      {/* Two-column workspace */}
+      <div className="hw-workspace">
+        <div className="hw-workspace-main">
+          <DocumentsEditor job={jobWithFormat} candidateName={candidateName} />
+        </div>
+        <aside className="hw-workspace-rail">
       <div className="hw-workspace">
         <div className="hw-workspace-main min-w-0">
           <DocumentsEditor job={jobWithFormat} candidateName={candidateName} />
@@ -175,7 +216,7 @@ export default async function DocumentsPage({
             userId={user.id}
           />
           {coachStep.warning && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <div className="hw-card rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               {coachStep.warning}
             </div>
           )}
@@ -195,7 +236,6 @@ export default async function DocumentsPage({
             }
           />
           <ResumeVersionHistory jobId={id} versions={versions} />
-          <ApplyButton jobId={id} disabled={!packageReadiness.canApply} />
         </aside>
       </div>
     </div>

@@ -307,6 +307,7 @@ export default async function DashboardPage() {
       {/* ─── TWO-COLUMN WORKSPACE ─── */}
       <div className="hw-workspace">
         {/* ─── MAIN COLUMN ─── */}
+        <div className="hw-workspace-main">
         <div className="hw-workspace-main space-y-4">
           {/* ── HERO: Your Next Move ── */}
           {heroJob ? (
@@ -363,6 +364,7 @@ export default async function DashboardPage() {
               </div>
 
               {/* Action footer */}
+              <div className="px-6 py-3.5 flex items-center gap-2.5 border-t border-border/40 bg-muted/35">
               <div className="px-6 py-3.5 flex items-center gap-2.5 border-t border-border/70 bg-muted/35">
                 {heroJob ? (
                   <NextStepButton job={heroJob} label={heroAction.cta} />
@@ -464,6 +466,9 @@ export default async function DashboardPage() {
                 },
               ].map((q) => (
                 <Link key={q.label} href={q.href}>
+                  <div
+                    className="hw-card rounded-2xl px-4 py-4 flex flex-col gap-2 group transition-all hover:-translate-y-0.5 cursor-pointer"
+                  >
                   <div className="rounded-2xl px-4 py-4 flex flex-col gap-2 group transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer hw-card">
                     {/* Icon circle */}
                     <div
@@ -528,6 +533,10 @@ export default async function DashboardPage() {
                   color: "#3b82f6",
                 },
               ].map((s) => (
+                <div
+                  key={s.label}
+                  className="hw-card rounded-xl px-3.5 py-3 flex flex-col gap-0.5"
+                >
                 <div key={s.label} className="rounded-xl px-3.5 py-3 flex flex-col gap-0.5 hw-card">
                   <s.icon
                     className="h-3.5 w-3.5 mb-1"
@@ -560,13 +569,7 @@ export default async function DashboardPage() {
             </div>
 
             {jobList.length === 0 ? (
-              <div
-                className="rounded-2xl px-5 py-10 flex flex-col items-center text-center gap-3"
-                style={{
-                  background: "hsl(var(--card))",
-                  border: "1px dashed rgba(26,23,20,0.12)",
-                }}
-              >
+            <div className="hw-empty rounded-2xl px-5 py-10 flex flex-col items-center text-center gap-3">
                 <div className="hw-empty-icon">
                   <Briefcase className="h-5 w-5 text-muted-foreground" />
                 </div>
@@ -577,6 +580,7 @@ export default async function DashboardPage() {
                 </p>
               </div>
             ) : (
+              <div className="hw-card rounded-2xl overflow-hidden">
               <div className="rounded-2xl overflow-hidden hw-card">
                 {jobList.slice(0, 5).map((job, i) => {
                   const tier = urgencyTier(job);
@@ -586,8 +590,7 @@ export default async function DashboardPage() {
                   return (
                     <div
                       key={job.id}
-                      className={`flex items-center gap-3 px-5 py-3 group hover:bg-muted/30 transition-colors ${i > 0 ? "border-t" : ""}`}
-                      style={{ borderColor: "rgba(26,23,20,0.05)" }}
+                      className={`flex items-center gap-3 px-5 py-3 group hover:bg-muted/30 transition-colors ${i > 0 ? "border-t border-border/40" : ""}`}
                     >
                       {/* Avatar */}
                       <div
@@ -713,6 +716,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* ─── RIGHT RAIL ─── */}
+        <div className="hw-workspace-rail">
         <div className="hw-workspace-rail space-y-3">
           {/* ── PIPELINE INTELLIGENCE — dark intelligence surface ── */}
           <div
@@ -789,10 +793,7 @@ export default async function DashboardPage() {
 
               {heroJob && (
                 <>
-                  <div
-                    className="mb-2"
-                    style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
-                  />
+                  <div className="mb-2 border-t border-white/[0.07]" />
                   <p
                     className="text-[10px] font-bold uppercase tracking-wider mb-2"
                     style={{ color: "rgba(255,255,255,0.4)" }}
@@ -829,6 +830,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* ── QUICK ACTIONS — light surface ── */}
+          <div className="hw-card rounded-2xl p-4">
           <div className="rounded-2xl p-4 hw-card">
             <div className="flex items-center gap-1.5 mb-3">
               <div
@@ -885,6 +887,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* MOMENTUM + RECENT ACTIVITY */}
+          <div className="hw-card rounded-2xl p-4">
           <div className="rounded-2xl p-4 hw-card">
             <div className="flex items-center gap-1.5 mb-3">
               <div
@@ -946,15 +949,7 @@ export default async function DashboardPage() {
               </p>
             )}
             {/* RECENT ACTIVITY */}
-            <div
-              className="rounded-xl p-3.5 mt-4"
-              style={{
-                background: "hsl(var(--card))",
-                border: "1px solid rgba(26,23,20,0.07)",
-                boxShadow:
-                  "0 1px 3px rgba(26,23,20,0.04), 0 3px 8px rgba(26,23,20,0.04)",
-              }}
-            >
+            <div className="hw-card rounded-xl p-3.5 mt-4">
               <div className="flex items-center gap-1.5 mb-2.5">
                 <div className="w-5 h-5 rounded-md bg-muted flex items-center justify-center">
                   <Activity className="h-3 w-3 text-muted-foreground" />
