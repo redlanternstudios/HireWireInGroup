@@ -8,6 +8,7 @@ import type {
   RequirementPriority,
 } from "./types"
 import { matchRequirementToEvidence } from "./matchRequirementToEvidence"
+import { normalizeRequirement } from "./normalizeRequirement"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
 import { buildJobContext } from "@/lib/context-engine"
 
@@ -242,6 +243,84 @@ export function buildCapabilityPacket(
         ? "No approved evidence currently supports this requirement."
         : `${match.priority} requirement matched to ${matchedEvidence.length} evidence item(s) with ${match.confidence} confidence.`,
   }
+}
+
+export async function initializeEvidenceMapForJob({
+  supabase,
+  userId,
+  jobId,
+}: BuildEvidenceMapParams): Promise<CanonicalJobEvidenceMap> {
+  const [{ data: analysis }, { data: existingJob }] = await Promise.all([
+    supabase
+      .from("job_analyses")
+      .select("qualifications_required, qualifications_preferred, responsibilities, keywords, ats_phrases")
+      .eq("job_id", jobId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("jobs")
+      .select("id, role_title, company_name, job_description, seniority_level, evidence_map")
+      .eq("id", jobId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ])
+
+  const existingMap =
+    existingJob?.evidence_map &&
+    typeof existingJob.evidence_map === "object" &&
+    !Array.isArray(existingJob.evidence_map)
+      ? existingJob.evidence_map as Record<string, unknown>
+      : {}
+
+  const requirement_matches = buildRequirementInputs(analysis ?? null, existingJob ?? null)
+    .map((requirement): RequirementEvidenceMatch => {
+      const normalized = requirement.normalized ?? normalizeRequirement(requirement.text)
+      return {
+        requirement_id: requirement.id ?? normalized.slice(0, 80).replace(/\s+/g, "_"),
+        requirement_text: requirement.text,
+        normalized_requirement: normalized,
+        expectation_type: requirement.expectationType,
+        employer_intent: requirement.employerIntent,
+        recovery_question: requirement.recoveryQuestion,
+        proof_needed: requirement.proofNeeded,
+        evidence_questions: requirement.evidenceQuestions,
+        related_skills: requirement.relatedSkills,
+        seniority_level: requirement.seniorityLevel,
+        priority: requirement.priority,
+        status: "gap",
+        matched_evidence_ids: [],
+        matched_evidence_titles: [],
+        evidence_types: [],
+        confidence: "low",
+        match_method: "fuzzy",
+        reasoning: "Initial analysis placeholder. No evidence has been confirmed for this requirement yet.",
+        riskFlags: ["missing_evidence", "no_packet_evidence"],
+        updated_at: new Date().toISOString(),
+      }
+    })
+
+  const evidenceMap = {
+    ...existingMap,
+    matching_complete: false,
+    completed_at: new Date().toISOString(),
+    version: crypto.randomUUID(),
+    requirement_matches,
+    capability_packets: requirement_matches.map(match => buildCapabilityPacket(match, [])),
+    coverage_summary: buildCoverageSummary(requirement_matches),
+    gap_summary: requirement_matches.map(match => match.requirement_text),
+  } as CanonicalJobEvidenceMap
+
+  await supabase
+    .from("jobs")
+    .update({
+      evidence_map: evidenceMap,
+      evidence_map_version: evidenceMap.version,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("user_id", userId)
+
+  return evidenceMap
 }
 
 export async function buildEvidenceMapForJob({

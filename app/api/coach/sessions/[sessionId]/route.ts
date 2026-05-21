@@ -31,7 +31,7 @@ export async function GET(
       supabase.from("coach_messages").select("id,role,content,created_at")
         .eq("session_id", sessionId).order("created_at", { ascending: true }),
       supabase.from("coach_evidence_drafts")
-        .select("id,source_title,source_type,proof_snippet,confidence_level,skills,status,created_at")
+        .select("id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status,created_at")
         .eq("session_id", sessionId).neq("status", "rejected"),
     ])
 

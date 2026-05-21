@@ -5,6 +5,7 @@ import type {
   RequirementEvidenceMatch,
 } from "./types"
 import { buildCapabilityPacket } from "./buildEvidenceMapForJob"
+import { getEvidenceUsageRule } from "@/lib/truthserum"
 
 type MapConfirmedEvidenceParams = {
   supabase: SupabaseClient
@@ -15,6 +16,13 @@ type MapConfirmedEvidenceParams = {
   evidenceId: string
   evidenceTitle?: string | null
   evidenceType?: string | null
+}
+
+export type MapConfirmedEvidenceResult = {
+  evidenceMap: CanonicalJobEvidenceMap
+  requirementId: string
+  prevStatus: RequirementEvidenceMatch["status"]
+  newStatus: RequirementEvidenceMatch["status"]
 }
 
 function asEvidenceMap(value: unknown): CanonicalJobEvidenceMap | null {
@@ -36,7 +44,27 @@ function buildCoverageSummary(matches: RequirementEvidenceMatch[]): EvidenceCove
   }
 }
 
-function mergeEvidence(match: RequirementEvidenceMatch, params: MapConfirmedEvidenceParams): RequirementEvidenceMatch {
+function isUsableConfirmedEvidence(evidence: Record<string, unknown> | undefined): boolean {
+  if (!evidence) return false
+  const snippet = typeof evidence.proof_snippet === "string" ? evidence.proof_snippet.trim() : ""
+  const confidence = typeof evidence.confidence_level === "string" ? evidence.confidence_level.toLowerCase() : ""
+  const active = evidence.is_active !== false
+  const usage = getEvidenceUsageRule(evidence as never)
+
+  return (
+    active &&
+    snippet.length >= 40 &&
+    confidence !== "low" &&
+    usage !== "blocked" &&
+    usage !== "interview_only"
+  )
+}
+
+function mergeEvidence(
+  match: RequirementEvidenceMatch,
+  params: MapConfirmedEvidenceParams,
+  evidence: Record<string, unknown> | undefined
+): RequirementEvidenceMatch {
   const matched_evidence_ids = Array.from(new Set([...match.matched_evidence_ids, params.evidenceId]))
   const matched_evidence_titles = Array.from(new Set([
     ...match.matched_evidence_titles,
@@ -50,17 +78,27 @@ function mergeEvidence(match: RequirementEvidenceMatch, params: MapConfirmedEvid
     ...(match.mapped_by_session_ids ?? []),
     params.sessionId,
   ]))
+  const nextStatus =
+    match.status === "met" ? "met" :
+    isUsableConfirmedEvidence(evidence) ? "met" :
+    "partial"
 
   return {
     ...match,
-    status: match.status === "met" ? "met" : "partial",
+    status: nextStatus,
     matched_evidence_ids,
     matched_evidence_titles,
     evidence_types,
-    confidence: match.confidence === "high" ? "high" : "medium",
+    confidence: nextStatus === "met" ? "high" : match.confidence === "high" ? "high" : "medium",
     match_method: "manual",
-    reasoning: "User-confirmed evidence was mapped to this requirement through a coach session.",
-    riskFlags: (match.riskFlags ?? []).filter(flag => flag !== "missing_evidence" && flag !== "no_packet_evidence"),
+    reasoning: nextStatus === "met"
+      ? "User-confirmed, usable evidence was mapped to this requirement through a coach session."
+      : "User-confirmed evidence was mapped to this requirement, but proof strength still needs review.",
+    riskFlags: (match.riskFlags ?? []).filter(flag =>
+      nextStatus === "met"
+        ? flag !== "missing_evidence" && flag !== "no_packet_evidence" && flag !== "partial_match"
+        : flag !== "missing_evidence" && flag !== "no_packet_evidence"
+    ),
     mapped_by_session_ids,
     updated_at: new Date().toISOString(),
   }
@@ -75,7 +113,7 @@ export async function mapConfirmedEvidenceToRequirement({
   evidenceId,
   evidenceTitle,
   evidenceType,
-}: MapConfirmedEvidenceParams): Promise<CanonicalJobEvidenceMap> {
+}: MapConfirmedEvidenceParams): Promise<MapConfirmedEvidenceResult> {
   const { data: job, error: jobError } = await supabase
     .from("jobs")
     .select("id,evidence_map,evidence_map_version")
@@ -92,11 +130,6 @@ export async function mapConfirmedEvidenceToRequirement({
   const targetExists = currentMap.requirement_matches.some(match => match.requirement_id === requirementId)
   if (!targetExists) throw new Error("requirement_not_found")
 
-  const requirement_matches = currentMap.requirement_matches.map(match =>
-    match.requirement_id === requirementId
-      ? mergeEvidence(match, { supabase, userId, jobId, sessionId, requirementId, evidenceId, evidenceTitle, evidenceType })
-      : match
-  )
   const evidenceCandidates = await supabase
     .from("evidence_library")
     .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
@@ -104,6 +137,17 @@ export async function mapConfirmedEvidenceToRequirement({
     .eq("is_active", true)
 
   const evidenceRows = (evidenceCandidates.data ?? []) as Record<string, unknown>[]
+  const confirmedEvidence = evidenceRows.find(row => String(row.id) === evidenceId)
+  const previousMatch = currentMap.requirement_matches.find(match => match.requirement_id === requirementId)
+  if (!previousMatch) throw new Error("requirement_not_found")
+
+  const requirement_matches = currentMap.requirement_matches.map(match =>
+    match.requirement_id === requirementId
+      ? mergeEvidence(match, { supabase, userId, jobId, sessionId, requirementId, evidenceId, evidenceTitle, evidenceType }, confirmedEvidence)
+      : match
+  )
+  const updatedMatch = requirement_matches.find(match => match.requirement_id === requirementId)
+  if (!updatedMatch) throw new Error("requirement_not_found")
   const nextMap: CanonicalJobEvidenceMap = {
     ...currentMap,
     version: crypto.randomUUID(),
@@ -135,5 +179,10 @@ export async function mapConfirmedEvidenceToRequirement({
   if (writeError) throw writeError
   if (!writtenRows || writtenRows.length === 0) throw new Error("evidence_map_conflict")
 
-  return nextMap
+  return {
+    evidenceMap: nextMap,
+    requirementId,
+    prevStatus: previousMatch.status,
+    newStatus: updatedMatch.status,
+  }
 }

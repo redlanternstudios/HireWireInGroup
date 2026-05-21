@@ -16,6 +16,8 @@ export type CoachMessage = {
 export type CoachContext = {
   gapRequirement: string
   requirementId?: string | null
+  requirementIntent?: string | null
+  currentEvidence?: string[]
   jobTitle: string
   jobCompany: string
   jobDescriptionSummary: string
@@ -39,6 +41,9 @@ CURRENT REQUIREMENT: "${ctx.gapRequirement}"
 REQUIREMENT ID: ${ctx.requirementId ?? "not provided"}
 JOB: ${ctx.jobTitle} at ${ctx.jobCompany}
 DESCRIPTION: ${ctx.jobDescriptionSummary}
+EMPLOYER INTENT: ${ctx.requirementIntent ?? "Infer from the requirement and job description."}
+CURRENT PROOF FOR THIS REQUIREMENT:
+${(ctx.currentEvidence ?? []).length > 0 ? (ctx.currentEvidence ?? []).map((t) => `  - ${t}`).join("\n") : "  (none mapped yet)"}
 EXISTING EVIDENCE:
 ${existingList}
 ══════════════════════════════════════════
@@ -77,12 +82,22 @@ export function buildCoachMessages(ctx: CoachContext): CoachMessage[] {
   return Array.isArray(ctx.priorMessages) ? ctx.priorMessages : []
 }
 
-export function buildOpeningPrompt(gapRequirement: string, jobTitle: string): string {
-  return `I'm your career coach. We're working on this gap in your application for ${jobTitle}:
+export function buildOpeningPrompt(
+  gapRequirement: string,
+  jobTitle: string,
+  options: { company?: string | null; intent?: string | null; recoveryQuestion?: string | null } = {}
+): string {
+  const company = options.company ? ` at ${options.company}` : ""
+  const intent = options.intent ? `\n\nWhat the employer is likely checking: ${options.intent}` : ""
+  const question = options.recoveryQuestion ??
+    `What's one real project, responsibility, or result where you showed this, even indirectly?`
+
+  return `I'm your career coach. We're working on this specific requirement for ${jobTitle}${company}:
 
 "${gapRequirement}"
+${intent}
 
-Let's find what you already have that covers this. Have you worked in a role or on a project where you dealt with anything related to this — even indirectly?`.trim()
+${question}`.trim()
 }
 
 // ── Evidence draft parser ─────────────────────────────────────────────────────

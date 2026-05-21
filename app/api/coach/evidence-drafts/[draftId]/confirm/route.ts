@@ -48,7 +48,7 @@ export async function POST(
     } catch { /* body is optional */ }
 
     const { data: draft } = await supabase.from("coach_evidence_drafts")
-      .select("id,session_id,source_title,source_type,proof_snippet,confidence_level,skills,status")
+      .select("id,session_id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status")
       .eq("id", draftId).eq("user_id", userId).maybeSingle()
 
     if (!draft) return NextResponse.json({ success: false, error: "not_found" }, { status: 404 })
@@ -67,7 +67,10 @@ export async function POST(
       .eq("user_id", userId)
       .maybeSingle()
 
-    if (!session?.job_id || !session.gap_requirement_id) {
+    const anchoredJobId = draft.job_id ?? session?.job_id ?? null
+    const anchoredRequirementId = draft.requirement_id ?? session?.gap_requirement_id ?? null
+
+    if (!anchoredJobId || !anchoredRequirementId) {
       return NextResponse.json(
         { success: false, error: "requirement_anchor_missing", user_message: "This coach draft is not anchored to a job requirement." },
         { status: 400 }
@@ -96,38 +99,52 @@ export async function POST(
       )
     }
 
-    await mapWithConflictRetry({
+    const mappingResult = await mapWithConflictRetry({
       supabase,
       userId,
-      jobId: session.job_id,
-      sessionId: session.id,
-      requirementId: session.gap_requirement_id,
+      jobId: anchoredJobId,
+      sessionId: session?.id ?? draft.session_id,
+      requirementId: anchoredRequirementId,
       evidenceId: evidenceRow.id,
       evidenceTitle: draft.source_title,
       evidenceType: draft.source_type,
     })
 
     await supabase.from("coach_evidence_drafts")
-      .update({ status: "confirmed", confirmed_row_id: evidenceRow.id, proof_snippet: finalSnippet })
+      .update({
+        status: "confirmed",
+        confirmed_row_id: evidenceRow.id,
+        proof_snippet: finalSnippet,
+        job_id: anchoredJobId,
+        requirement_id: anchoredRequirementId,
+      })
       .eq("id", draftId).eq("user_id", userId)
 
-    void handleDomainEvent({
+    await handleDomainEvent({
       supabase,
       event_type: "evidence_mapped",
-      job_id: session.job_id,
+      job_id: anchoredJobId,
       user_id: userId,
       source: "coach_route",
       payload: {
         evidence_id: evidenceRow.id,
-        requirement_id: session?.gap_requirement_id ?? null,
+        requirement_id: anchoredRequirementId,
         gap_requirement: session?.gap_requirement ?? null,
+        prev_status: mappingResult.prevStatus,
+        new_status: mappingResult.newStatus,
         source_type: draft.source_type,
         source_title: draft.source_title,
         via: "coach_draft_confirm",
       },
     })
 
-    return NextResponse.json({ success: true, evidenceId: evidenceRow.id })
+    return NextResponse.json({
+      success: true,
+      evidenceId: evidenceRow.id,
+      requirementId: anchoredRequirementId,
+      prevStatus: mappingResult.prevStatus,
+      newStatus: mappingResult.newStatus,
+    })
   } catch (error) {
     console.error("[coach/confirm] Error:", error)
     return NextResponse.json(

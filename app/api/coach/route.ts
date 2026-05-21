@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       }))
 
     // ── Parallel data fetch ───────────────────────────────────────────────────
-    const [profileResult, evidenceResult, recentJobsResult, activeJobResult] = await Promise.all([
+    const [profileResult, evidenceResult, recentJobsResult, activeJobResult, outcomesResult] = await Promise.all([
       supabase
         .from("user_profile")
         .select("full_name, name, title, summary, skills, tools, domains, certifications, education, experience, location")
@@ -156,12 +156,19 @@ export async function POST(request: Request) {
             .is("deleted_at", null)
             .single()
         : Promise.resolve({ data: null, error: null }),
+      supabase
+        .from("application_outcomes")
+        .select("job_id, outcome, outcome_date, notes, days_to_response, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(8),
     ])
 
     const profile = profileResult.data
     const evidenceLibrary = Array.isArray(evidenceResult.data) ? evidenceResult.data : []
     const recentJobs = Array.isArray(recentJobsResult.data) ? recentJobsResult.data : []
     const activeJob = activeJobResult.data
+    const recentOutcomes = Array.isArray(outcomesResult.data) ? outcomesResult.data : []
 
     // ── Build coaching context ────────────────────────────────────────────────
     const fitScore = activeJob?.score ?? jobContext?.score ?? 0
@@ -196,6 +203,7 @@ export async function POST(request: Request) {
       fitScore,
       generationHistory,
       applicationHistory,
+      recentOutcomes,
       currentPage: jobId ? "job_detail" : gapContext ? "gap_clarification" : "dashboard",
       currentAction: blockers[0] ?? "",
     })
@@ -230,6 +238,12 @@ export async function POST(request: Request) {
     }
     if (activeJob) {
       systemPrompt += `\n\n## Active Job Analysis\n- Required qualifications: ${formatList(activeJob.qualifications_required)}\n- Responsibilities: ${formatList(activeJob.responsibilities)}\n- Score gaps: ${formatList(activeJob.score_gaps)}\n- Score strengths: ${formatList(activeJob.score_strengths)}`
+    }
+    if (recentOutcomes.length > 0) {
+      systemPrompt += `\n\n## Prior Application Outcomes\nUse these only for strategy and pattern recognition. Do not change readiness decisions because of outcomes.\n` +
+        recentOutcomes.map((outcome) =>
+          `- ${outcome.outcome}${outcome.days_to_response != null ? ` after ${outcome.days_to_response} days` : ""}${outcome.notes ? `: ${String(outcome.notes).slice(0, 160)}` : ""}`
+        ).join("\n")
     }
 
     if (isContextEngineEnabled() && evidenceLibrary.length > 0) {

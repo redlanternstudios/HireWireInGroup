@@ -346,7 +346,7 @@ export async function executeMapEvidenceToRequirement(
     }
 
     const prevStatus = String(previousMatch.status ?? "unknown")
-    const updatedMap = await mapConfirmedEvidenceToRequirement({
+    const mappingResult = await mapConfirmedEvidenceToRequirement({
       supabase,
       userId,
       jobId: params.job_id,
@@ -356,8 +356,8 @@ export async function executeMapEvidenceToRequirement(
       evidenceTitle: evidence.source_title,
       evidenceType: evidence.source_type,
     })
-    const updatedMatch = updatedMap.requirement_matches.find(
-      requirement => requirement.requirement_id === params.requirement_id
+    const updatedMatch = mappingResult.evidenceMap.requirement_matches.find(
+      (requirement) => requirement.requirement_id === params.requirement_id
     )
 
     // Emit domain event
@@ -370,8 +370,8 @@ export async function executeMapEvidenceToRequirement(
       payload: {
         requirement_id: params.requirement_id,
         evidence_id: params.evidence_id,
-        prev_status: prevStatus,
-        new_status: updatedMatch?.status ?? "partial",
+        prev_status: mappingResult.prevStatus ?? prevStatus,
+        new_status: mappingResult.newStatus,
         confidence: params.confidence,
         session_id: context.sessionId,
       },

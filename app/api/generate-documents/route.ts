@@ -1538,9 +1538,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (capabilityPackets.length === 0 || usablePackets.length === 0) {
+    let blockedRequirements = getBlockedRequiredRequirements(effectiveEvidenceMap);
+    if (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0) {
       const map = asRecord(effectiveEvidenceMap);
-      const blockedRequirements = getBlockedRequiredRequirements(effectiveEvidenceMap);
       const mapBuildError = asRecord(map?.map_build_error);
       await supabase
         .from("jobs")

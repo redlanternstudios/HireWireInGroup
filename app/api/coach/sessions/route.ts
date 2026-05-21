@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data: ownedJob } = await supabase.from("jobs").select("id,role_title,company_name")
+    const { data: ownedJob } = await supabase.from("jobs").select("id,role_title,company_name,evidence_map")
       .eq("id", jobId).eq("user_id", userId).is("deleted_at", null).maybeSingle()
 
     if (!ownedJob) {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       const [msgs, drafts] = await Promise.all([
         supabase.from("coach_messages").select("id,role,content,created_at")
           .eq("session_id", existing.id).order("created_at", { ascending: true }),
-        supabase.from("coach_evidence_drafts").select("id,source_title,source_type,proof_snippet,confidence_level,skills,status,created_at")
+        supabase.from("coach_evidence_drafts").select("id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status,created_at")
           .eq("session_id", existing.id).eq("status", "pending"),
       ])
       return NextResponse.json({
@@ -72,8 +72,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const evidenceMap =
+      ownedJob.evidence_map && typeof ownedJob.evidence_map === "object" && !Array.isArray(ownedJob.evidence_map)
+        ? ownedJob.evidence_map as { requirement_matches?: Array<Record<string, unknown>> }
+        : null
+    const requirementMatch = evidenceMap?.requirement_matches?.find(
+      (match) => match.requirement_id === gapRequirementId
+    )
     const jobTitle = ownedJob.role_title ?? "this role"
-    const openingContent = buildOpeningPrompt(gapRequirement, jobTitle)
+    const openingContent = buildOpeningPrompt(gapRequirement, jobTitle, {
+      company: ownedJob.company_name,
+      intent: typeof requirementMatch?.employer_intent === "string" ? requirementMatch.employer_intent : null,
+      recoveryQuestion: typeof requirementMatch?.recovery_question === "string" ? requirementMatch.recovery_question : null,
+    })
 
     const { data: openingMsg } = await supabase.from("coach_messages")
       .insert({ session_id: newSession.id, role: "assistant", content: openingContent })

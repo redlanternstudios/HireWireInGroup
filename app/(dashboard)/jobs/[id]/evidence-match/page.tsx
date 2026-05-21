@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
 import { GapCoachDrawer } from "@/components/coach/GapCoachDrawer"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
+import { ConfirmRequirementEvidenceForm } from "@/components/jobs/ConfirmRequirementEvidenceForm"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 
@@ -54,6 +55,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
       .from("evidence_library")
       .select("id, source_title, source_type, confidence_level, outcomes")
       .eq("user_id", user.id)
+      .eq("is_active", true)
       .order("created_at", { ascending: false }),
     supabase
       .from("job_analyses")
@@ -203,6 +205,15 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                         <p className="mt-1 text-xs text-foreground">
                           {(match.proof_needed ?? [])[0] ?? "Share a real project, responsibility, or result that shows this."}
                         </p>
+                        <ConfirmRequirementEvidenceForm
+                          jobId={id}
+                          requirementId={match.requirement_id}
+                          evidenceItems={(evidenceItems ?? []).map((item) => ({
+                            id: item.id,
+                            source_title: item.source_title,
+                            source_type: item.source_type,
+                          }))}
+                        />
                       </div>
                     </div>
                   </div>

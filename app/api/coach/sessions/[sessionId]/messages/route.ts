@@ -67,7 +67,7 @@ export async function POST(
     })
 
     const [jobResult, evidenceResult, messagesResult] = await Promise.all([
-      supabase.from("jobs").select("role_title,company_name,job_description")
+      supabase.from("jobs").select("role_title,company_name,job_description,evidence_map")
         .eq("id", session.job_id).eq("user_id", userId).maybeSingle(),
       supabase.from("evidence_library").select("source_title")
         .eq("user_id", userId).eq("is_active", true),
@@ -76,6 +76,13 @@ export async function POST(
     ])
 
     const job = jobResult.data
+    const evidenceMap =
+      job?.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
+        ? job.evidence_map as { requirement_matches?: Array<Record<string, unknown>> }
+        : null
+    const requirementMatch = evidenceMap?.requirement_matches?.find(
+      (match) => match.requirement_id === session.gap_requirement_id
+    )
     const existingTitles = (evidenceResult.data ?? []).map((e) => e.source_title)
     const allMessages: CoachMessage[] = (Array.isArray(messagesResult.data) ? messagesResult.data : [])
       .filter((m) => !(m.role === "user" && m.content === userContent))
@@ -85,6 +92,10 @@ export async function POST(
     const systemPrompt = buildCoachSystemPrompt({
       gapRequirement: session.gap_requirement,
       requirementId: session.gap_requirement_id,
+      requirementIntent: typeof requirementMatch?.employer_intent === "string" ? requirementMatch.employer_intent : null,
+      currentEvidence: Array.isArray(requirementMatch?.matched_evidence_titles)
+        ? requirementMatch.matched_evidence_titles.filter((item): item is string => typeof item === "string")
+        : [],
       jobTitle: job?.role_title ?? "this role",
       jobCompany: job?.company_name ?? "this company",
       jobDescriptionSummary: (job?.job_description ?? "").slice(0, 500),
@@ -110,7 +121,10 @@ export async function POST(
     if (draftPayload) {
       const { data: draft } = await supabase.from("coach_evidence_drafts")
         .insert({
-          session_id: sessionId, user_id: userId,
+          session_id: sessionId,
+          user_id: userId,
+          job_id: session.job_id,
+          requirement_id: session.gap_requirement_id,
           source_title: draftPayload.source_title,
           source_type: draftPayload.source_type,
           proof_snippet: draftPayload.proof_snippet,
@@ -118,7 +132,7 @@ export async function POST(
           skills: draftPayload.skills,
           status: "pending",
         })
-        .select("id,source_title,source_type,proof_snippet,confidence_level,skills,status")
+        .select("id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status")
         .single()
       savedDraft = draft ?? null
       if (savedDraft) {

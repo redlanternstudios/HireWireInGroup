@@ -16,7 +16,7 @@ import { generateStructuredText } from "@/lib/ai/gateway";
 import { z } from "zod";
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow";
 import { withCoachStepMeta } from "@/lib/coach-step";
-import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
+import { buildEvidenceMapForJob, initializeEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import {
   buildEvidenceLibraryContext,
   buildJobContext,
@@ -792,6 +792,12 @@ Extract the job details following the schema.`,
     .eq("user_id", user.id);
   if (backfillError) console.error("Jobs backfill error:", backfillError);
   if (!backfillError) {
+    await initializeEvidenceMapForJob({
+      supabase,
+      userId: user.id,
+      jobId: job.id,
+    });
+
     try {
       await buildEvidenceMapForJob({
         supabase,

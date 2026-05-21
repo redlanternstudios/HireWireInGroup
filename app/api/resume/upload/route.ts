@@ -446,6 +446,23 @@ export async function POST(request: NextRequest) {
         education_count: educationEntries.length,
       },
     });
+    if (inserted.length > 0 || skillsToUpdate.length > 0 || educationEntries.length > 0) {
+      void handleDomainEvent({
+        supabase,
+        event_type: "evidence_added",
+        job_id: null,
+        user_id: userId,
+        source: "system",
+        payload: {
+          source_resume_id: sourceResumeId,
+          filename,
+          evidence_inserted: inserted.length,
+          evidence_updated: skillsToUpdate.length,
+          education_count: educationEntries.length,
+          via: "resume_upload",
+        },
+      });
+    }
 
     return NextResponse.json({
       message: "Resume processed successfully",
