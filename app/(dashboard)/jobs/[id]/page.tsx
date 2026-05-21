@@ -284,14 +284,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </Link>
       </div>
 
-      {/* Job header — full width above workspace split */}
+      {/* Job header */}
       <div className="hw-card px-6 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="hw-page-title">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
               {job.role_title ?? "Untitled role"}
             </h1>
-            <p className="hw-page-subtitle">{job.company_name ?? "—"}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">{job.company_name ?? "—"}</p>
             {hasUrl && (
               <a
                 href={job.job_url}
@@ -334,19 +334,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      {/* TWO-COLUMN WORKSPACE */}
-      <div className="hw-workspace">
-
-        {/* ── MAIN COLUMN ── */}
-        <div className="hw-workspace-main">
-
-          {/* Processing state */}
-          {stillProcessing && (
-            <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-3">
-              <RefreshCw className="h-5 w-5 text-amber-600 animate-spin" />
-              <div>
-                <p className="text-sm font-semibold">Analysis in progress</p>
-                <p className="text-xs text-muted-foreground mt-1">This usually takes 15–30 seconds.</p>
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
@@ -359,164 +346,145 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               <div className="text-sm text-rose-600">
                 {readiness.blockedReasons.join(", ")}
               </div>
-              <Link
-                href={`/jobs/${id}`}
-                className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            )}
+          </div>
+          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} />
+          {hasDocs && readiness.outcome === "active" && (
+            <div className="mt-4 flex justify-end">
+              <Link href="/ready-to-apply">
+                <Button className="hw-btn-primary">Ready to Apply</Button>
               </Link>
             </div>
           )}
+          {/* Outcome Tracker — visible once applied or in active pipeline */}
+          {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
+            <OutcomeTracker
+              jobId={id}
+              currentOutcome={(job as Record<string, unknown>).outcome as string | null}
+              currentStatus={job.status}
+            />
+          )}
+        </>
+      )}
 
-          {/* No analysis yet */}
-          {!stillProcessing && !isAnalyzed && (
-            <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-4">
-              <div className="hw-empty-icon">
-                <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+      {/* Processing state */}
+      {stillProcessing && (
+        <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-3">
+          <RefreshCw className="h-5 w-5 text-amber-600 animate-spin" />
+          <div>
+            <p className="text-sm font-semibold">Analysis in progress</p>
+            <p className="text-xs text-muted-foreground mt-1">This usually takes 15–30 seconds.</p>
+          </div>
+          <Link
+            href={`/jobs/${id}`}
+            className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Link>
+        </div>
+      )}
+
+      {/* Analysis results */}
+      {!stillProcessing && isAnalyzed && (
+        <>
+          {(overallScore !== null || scores?.skills_match || scores?.experience_relevance) && (
+            <div className="hw-card px-6 py-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="hw-section-label">Fit Analysis</h2>
+                {overallScore !== null && (
+                  <span className="text-2xl font-bold tabular-nums text-foreground">
+                    {Math.round(Number(overallScore))}
+                    <span className="text-sm font-normal text-muted-foreground">/100</span>
+                  </span>
+                )}
               </div>
-              <div className="max-w-xs">
-                <p className="text-sm font-semibold">Analysis not run yet</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Extract requirements, score your fit, and get coaching specific to this role.
-                </p>
-              </div>
-              <div className="w-full max-w-xs">
-                <AnalyzeJobButton jobId={id} hasUrl={hasUrl} />
+              <div className="space-y-3">
+                {coachStep.evidenceCoverage != null && (
+                  <ScoreBar
+                    label="Evidence coverage"
+                    value={coachStep.evidenceCoverage}
+                    note="How much of the role is backed by proof in your Career Context."
+                  />
+                )}
+                {coachStep.strategicFit != null && (
+                  <ScoreBar
+                    label="Strategic fit"
+                    value={coachStep.strategicFit}
+                    note="How well your current evidence lines up with this job after weighting role signals."
+                  />
+                )}
+                {scores?.skills_match != null && (
+                  <ScoreBar label="Skills match" value={Number(scores.skills_match)} />
+                )}
+                {scores?.experience_relevance != null && (
+                  <ScoreBar label="Experience relevance" value={Number(scores.experience_relevance)} />
+                )}
+                {scores?.seniority_alignment != null && (
+                  <ScoreBar label="Seniority alignment" value={Number(scores.seniority_alignment)} />
+                )}
               </div>
             </div>
           )}
 
-          {/* Analysis results */}
-          {!stillProcessing && isAnalyzed && (
+          {(matchedSkills.length > 0 || knownGaps.length > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {matchedSkills.length > 0 && (
+                <div className="hw-card px-5 py-4">
+                  <h2 className="hw-section-label mb-3">What you bring</h2>
+                  <ul className="space-y-2">
+                    {matchedSkills.map((skill, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                        <span>{skill}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {knownGaps.length > 0 && (
+                <div className="hw-card px-5 py-4">
+                  <h2 className="hw-section-label mb-3">Gaps to address</h2>
+                  <ul className="space-y-2">
+                    {knownGaps.map((gap, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                        <span>{gap.replace(/^Gap:\s*/i, "")}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {coachStep.required && !hasDocs && (
             <>
-              {(overallScore !== null || scores?.skills_match || scores?.experience_relevance) && (
-                <div className="hw-card px-6 py-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="hw-section-label">Fit Analysis</h2>
-                    {overallScore !== null && (
-                      <span className="text-2xl font-bold tabular-nums text-foreground">
-                        {Math.round(Number(overallScore))}
-                        <span className="text-sm font-normal text-muted-foreground">/100</span>
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {coachStep.evidenceCoverage != null && (
-                      <ScoreBar
-                        label="Evidence coverage"
-                        value={coachStep.evidenceCoverage}
-                        note="How much of the role is backed by proof in your Career Context."
-                      />
-                    )}
-                    {coachStep.strategicFit != null && (
-                      <ScoreBar
-                        label="Strategic fit"
-                        value={coachStep.strategicFit}
-                        note="How well your current evidence lines up with this job after weighting role signals."
-                      />
-                    )}
-                    {scores?.skills_match != null && (
-                      <ScoreBar label="Skills match" value={Number(scores.skills_match)} />
-                    )}
-                    {scores?.experience_relevance != null && (
-                      <ScoreBar label="Experience relevance" value={Number(scores.experience_relevance)} />
-                    )}
-                    {scores?.seniority_alignment != null && (
-                      <ScoreBar label="Seniority alignment" value={Number(scores.seniority_alignment)} />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(matchedSkills.length > 0 || knownGaps.length > 0) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {matchedSkills.length > 0 && (
-                    <div className="hw-card px-5 py-4">
-                      <h2 className="hw-section-label mb-3">What you bring</h2>
-                      <ul className="space-y-2">
-                        {matchedSkills.map((skill, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                            <span>{skill}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {knownGaps.length > 0 && (
-                    <div className="hw-card px-5 py-4">
-                      <h2 className="hw-section-label mb-3">Gaps to address</h2>
-                      <ul className="space-y-2">
-                        {knownGaps.map((gap, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm">
-                            <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                            <span>{gap.replace(/^Gap:\s*/i, "")}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {coachStep.required && !hasDocs && (
-                <>
-                  <GapCoachDrawer
-                    jobId={id}
-                    jobTitle={jobWithAnalysis.title}
-                    company={jobWithAnalysis.company}
-                    score={overallScore}
-                    status={job.status}
-                    gaps={coachStep.gaps}
-                    autoOpen={!coachStep.complete}
-                  />
-                  {gapCoachRecommendations.length > 0 && (
-                    <WorkflowCoachPanelClient
-                      recommendations={gapCoachRecommendations}
-                      blockers={["Address the highest-impact gaps before generating materials."]}
-                      insights={[]}
-                      momentum="Answer one prompt and HireWire can turn it into evidence for this role."
-                    />
-                  )}
-                </>
+              <GapCoachDrawer
+                jobId={id}
+                jobTitle={jobWithAnalysis.title}
+                company={jobWithAnalysis.company}
+                score={overallScore}
+                status={job.status}
+                gaps={coachStep.gaps}
+                autoOpen={!coachStep.complete}
+              />
+              {gapCoachRecommendations.length > 0 && (
+                <WorkflowCoachPanelClient
+                  recommendations={gapCoachRecommendations}
+                  blockers={["Address the highest-impact gaps before generating materials."]}
+                  insights={[]}
+                  momentum="Answer one prompt and HireWire can turn it into evidence for this role."
+                />
               )}
             </>
           )}
-        </div>
 
-        {/* ── RIGHT RAIL ── */}
-        <div className="hw-workspace-rail">
-
-          {/* Readiness + next step */}
-          {!stillProcessing && (
-            <div className="space-y-3">
-              <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
-              {!readiness.isReady && readiness.blockedReasons.length > 0 && (
-                <div className="text-xs text-rose-600 px-1">
-                  {readiness.blockedReasons.join(", ")}
-                </div>
-              )}
-              <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} />
-              {hasDocs && readiness.outcome === "active" && (
-                <Link href="/ready-to-apply" className="block">
-                  <Button className="hw-btn-primary w-full">Ready to Apply</Button>
-                </Link>
-              )}
-              {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
-                <OutcomeTracker
-                  jobId={id}
-                  currentOutcome={(job as Record<string, unknown>).outcome as string | null}
-                  currentStatus={job.status}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Generate documents card */}
-          {!stillProcessing && isAnalyzed && !hasDocs && (
-            <div className="hw-card px-5 py-4">
-              <h2 className="hw-section-label mb-2">Documents</h2>
-              <p className="text-xs text-muted-foreground mb-3">
+          {!hasDocs && (
+            <div className="hw-card px-6 py-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="hw-section-label">Documents</h2>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
                 Generate a tailored resume and cover letter for this role.
               </p>
               <div className="space-y-2">
@@ -531,7 +499,24 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               </div>
             </div>
           )}
+        </>
+      )}
 
+      {/* No analysis yet — show AnalyzeJobButton */}
+      {!stillProcessing && !isAnalyzed && (
+        <div className="hw-card px-6 py-8 flex flex-col items-center text-center gap-4">
+          <div className="hw-empty-icon">
+            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="max-w-xs">
+            <p className="text-sm font-semibold">Analysis not run yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Extract requirements, score your fit, and get coaching specific to this role.
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <AnalyzeJobButton jobId={id} hasUrl={hasUrl} />
+          </div>
         </div>
       )}
 
