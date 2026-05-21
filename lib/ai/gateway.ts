@@ -243,6 +243,7 @@ export async function generateText(
 type GenerateStructuredTextOptions<T> = Omit<GenerateTextOptions, "output"> & {
   schema: z.ZodType<T>
   schemaDescription: string
+  contextPrompt?: string
 }
 
 function extractJsonFromText(text: string) {
@@ -269,16 +270,18 @@ export async function generateStructuredText<T>(
   options: GenerateStructuredTextOptions<T>,
   telemetry?: Partial<AiTelemetry>
 ): Promise<T> {
-  const { schema, schemaDescription, prompt, messages, ...textOptions } =
+  const { schema, schemaDescription, prompt, contextPrompt, messages, ...textOptions } =
     options as GenerateStructuredTextOptions<T> & { messages?: unknown }
   const promptText =
-    typeof prompt === "string"
-      ? prompt
-      : Array.isArray(prompt)
-        ? JSON.stringify(prompt)
-        : Array.isArray(messages)
-          ? JSON.stringify(messages)
-        : ""
+    typeof contextPrompt === "string"
+      ? contextPrompt
+      : typeof prompt === "string"
+        ? prompt
+        : Array.isArray(prompt)
+          ? JSON.stringify(prompt)
+          : Array.isArray(messages)
+            ? JSON.stringify(messages)
+            : ""
   const structuredOptions = {
     ...textOptions,
     prompt: `${promptText}

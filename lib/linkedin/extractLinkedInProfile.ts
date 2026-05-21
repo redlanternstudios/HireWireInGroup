@@ -181,20 +181,6 @@ export const LinkedInCaptureResultSchema = z.object({
   validation: ValidationSchema,
 })
 
-const LINKEDIN_CAPTURE_RESULT_SCHEMA_DESCRIPTION = `{
-  "identity": object,
-  "experience": object[],
-  "career_progression": object[],
-  "education": object[],
-  "certifications": object[],
-  "skills": object,
-  "about": object,
-  "social_proof": object,
-  "activity": object[],
-  "noise_removed": string[],
-  "validation": object
-}`
-
 export type LinkedInCaptureResult = z.infer<typeof LinkedInCaptureResultSchema>
 
 // ── User context ──────────────────────────────────────────────────────────────
@@ -363,12 +349,15 @@ export async function extractLinkedInProfile(
 ${contextBlock}LINKEDIN PROFILE TEXT:
 ${cleanedText}`
 
-  const raw = await generateStructuredText({
-    model: CLAUDE_MODELS.SONNET,
-    schema: LinkedInCaptureResultSchema,
-    schemaDescription: LINKEDIN_CAPTURE_RESULT_SCHEMA_DESCRIPTION,
-    prompt,
-  })
+  const raw = await generateStructuredText(
+    {
+      model: CLAUDE_MODELS.SONNET,
+      schema: LinkedInCaptureResultSchema,
+      schemaDescription: `{ "full_name": string, "headline": string, "location": string, "summary": string, "work_experience": [...], "education": [...], "skills": string[], "certifications": [...], "languages": [...], "volunteer": [...] }`,
+      contextPrompt: prompt,
+    },
+    { route: "extract-linkedin-profile" }
+  )
 
   if (!raw || typeof raw !== "object") {
     throw new Error(

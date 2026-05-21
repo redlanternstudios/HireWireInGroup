@@ -27,18 +27,6 @@ const EducationResultSchema = z.object({
   entries: z.array(EducationEntrySchema),
 })
 
-const EDUCATION_RESULT_SCHEMA_DESCRIPTION = `{
-  "entries": Array<{
-    "normalized_label": string,
-    "credential_type": "degree" | "certification" | "license" | "course",
-    "institution": string,
-    "field": string | null,
-    "start_date": string | null,
-    "end_date": string | null,
-    "honors": string | null
-  }>
-}`
-
 export type EducationEntry = z.infer<typeof EducationEntrySchema>
 
 // ── Proof snippet builder ─────────────────────────────────────────────────────
@@ -90,11 +78,12 @@ export async function extractEducationFromResumeText(
   rawText: string
 ): Promise<EducationEntry[]> {
   try {
-    const data = await generateStructuredText({
-      model: CLAUDE_MODELS.SONNET,
-      schema: EducationResultSchema,
-      schemaDescription: EDUCATION_RESULT_SCHEMA_DESCRIPTION,
-      prompt: `Extract ALL education credentials and certifications from the resume text below.
+    const data = await generateStructuredText(
+      {
+        model: CLAUDE_MODELS.SONNET,
+        schema: EducationResultSchema,
+        schemaDescription: `{ "entries": [{ "normalized_label": string, "credential_type": "degree"|"certification"|"license"|"course", "institution": string, "field": string, "start_date": string|null, "end_date": string|null, "honors": string|null }] }`,
+        contextPrompt: `Extract ALL education credentials and certifications from the resume text below.
 Include every degree, certification, license, and course. Do not invent information not present in the text.
 
 For each entry return:
@@ -108,7 +97,9 @@ For each entry return:
 
 RESUME TEXT:
 ${rawText}`,
-    })
+      },
+      { route: "extract-education" }
+    ) as { entries: EducationEntry[] }
     return Array.isArray(data?.entries) ? data.entries : []
   } catch (err) {
     console.error("[extractEducation] Failed:", err)

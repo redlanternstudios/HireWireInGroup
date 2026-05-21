@@ -2,21 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
 import { handleDomainEvent } from "@/lib/domain-events"
-import { withCoachStepMeta } from "@/lib/coach-step"
-import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob"
-import {
-  buildEvidenceLibraryContext,
-  buildJobContext,
-  isContextEngineEnabled,
-  mirrorGapMatches,
-  mirrorJobContext,
-  mirrorProfileContext,
-  runContextGapMatch,
-} from "@/lib/context-engine"
-
-function toDbScore(value: number | null | undefined): number {
-  return Math.round(Number.isFinite(value ?? NaN) ? value! : 0)
-}
 
 /**
  * POST /api/re-analyze
@@ -53,7 +38,7 @@ export async function POST(request: NextRequest) {
     // Fetch the existing job to get its URL
     const { data: job, error: jobError } = await supabase
       .from("jobs")
-      .select("id, job_url, status, evidence_map")
+      .select("id, job_url, status")
       .eq("id", job_id)
       .eq("user_id", user.id)
       .is("deleted_at", null)
@@ -130,7 +115,7 @@ export async function POST(request: NextRequest) {
 //
 // Simpler approach: just call the shared extraction logic directly.
 
-import { generateStructuredText } from "@/lib/ai/gateway"
+import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { z } from "zod"
 import {
   normalizeEvidenceRecord,
@@ -139,7 +124,6 @@ import {
   type CanonicalEvidence,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { parseJobPage } from "@/lib/parsers"
 import {
   inferRoleFromJobTitle,
@@ -184,33 +168,6 @@ const JobAnalysisSchema = z.object({
   }),
 })
 
-const JOB_ANALYSIS_SCHEMA_DESCRIPTION = `{
-  "title": string | null,
-  "company": string | null,
-  "location": string | null,
-  "employment_type": string | null,
-  "salary_text": string | null,
-  "description_summary": string | null,
-  "responsibilities": string[],
-  "qualifications_required": string[],
-  "qualifications_preferred": string[],
-  "keywords": string[],
-  "ats_phrases": string[],
-  "tech_stack": string[],
-  "role_family": "AI Technical Product Manager" | "Technical Product Manager" | "AI Product Manager" | "Product Manager" | "Senior Product Manager" | "Systems Product Manager" | "Workflow Product Manager" | "Analytics Product Manager" | "Product Owner" | "Program Manager" | "Other",
-  "industry_guess": string | null,
-  "seniority_level": string | null,
-  "fit_signals": {
-    "has_ai_focus": boolean,
-    "has_technical_requirements": boolean,
-    "has_workflow_focus": boolean,
-    "has_startup_culture": boolean,
-    "has_pure_engineering": boolean,
-    "has_people_management": boolean,
-    "product_ownership_level": "low" | "medium" | "high"
-  }
-}`
-
 function normalizeSeniority(level: string | null): string {
   if (!level) return "Mid"
   const lower = level.toLowerCase()
@@ -246,15 +203,40 @@ async function reAnalyzeExistingJob(
     return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
   }
 
-  // Extract with Claude
+  // Extract structured data via generateStructuredText (works with all Groq models)
   let analysis: z.infer<typeof JobAnalysisSchema>
   try {
     analysis = await generateStructuredText({
       model: CLAUDE_MODELS.SONNET,
       schema: JobAnalysisSchema,
-      schemaDescription: JOB_ANALYSIS_SCHEMA_DESCRIPTION,
-      prompt: `Analyze this job posting and extract structured information.\n\nJob posting:\n${pageContent}`,
-    })
+      contextPrompt: `Analyze this job posting:\n\n${pageContent.slice(0, 12000)}`,
+      schemaDescription: `{
+  "title": string | null,
+  "company": string | null,
+  "location": string | null,
+  "employment_type": string | null,
+  "salary_text": string | null,
+  "description_summary": string | null,
+  "responsibilities": string[],
+  "qualifications_required": string[],
+  "qualifications_preferred": string[],
+  "keywords": string[],
+  "ats_phrases": string[],
+  "tech_stack": string[],
+  "role_family": "AI Technical Product Manager"|"Technical Product Manager"|"AI Product Manager"|"Product Manager"|"Senior Product Manager"|"Systems Product Manager"|"Workflow Product Manager"|"Analytics Product Manager"|"Product Owner"|"Program Manager"|"Other",
+  "industry_guess": string | null,
+  "seniority_level": string | null,
+  "fit_signals": {
+    "has_ai_focus": boolean,
+    "has_technical_requirements": boolean,
+    "has_workflow_focus": boolean,
+    "has_startup_culture": boolean,
+    "has_pure_engineering": boolean,
+    "has_people_management": boolean,
+    "product_ownership_level": "low"|"medium"|"high"
+  }
+}`,
+    }, { route: "re-analyze", operation: "job-analysis" })
   } catch (e) {
     return { success: false, error: `AI extraction failed: ${e instanceof Error ? e.message : "unknown"}` }
   }
@@ -317,14 +299,8 @@ async function reAnalyzeExistingJob(
   // Prefix format must match the /^Gap:/i regex used in analyzeJobCore and job_analyses inserts.
   const gaps = explainableFit.gaps.filter((g) => g.severity === "critical").slice(0, 5).map((g) => `Gap: ${g.requirement.slice(0, 80)}`)
   const strengths = explainableFit.strengths.slice(0, 5).map((s) => `Strong: ${s.requirement.slice(0, 80)}`)
-  const { data: existingJob } = await supabase
-    .from("jobs")
-    .select("evidence_map")
-    .eq("id", jobId)
-    .eq("user_id", user.id)
-    .maybeSingle()
 
-  // Update the existing jobs row
+  // Update the existing jobs row — only columns that exist on public.jobs
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
@@ -339,15 +315,14 @@ async function reAnalyzeExistingJob(
       role_family: analysis.role_family,
       industry_guess: analysis.industry_guess,
       job_description: pageContent.slice(0, 10000),
-      evidence_map: withCoachStepMeta(existingJob?.evidence_map, gaps.length > 0 || explainableFit.score < 70 ? "required" : "completed", {
-        reset_at: new Date().toISOString(),
-        reason: "job_reanalyzed",
-      }),
     })
     .eq("id", jobId)
     .eq("user_id", user.id)
 
-  if (updateError) return { success: false, error: "Failed to update job" }
+  if (updateError) {
+    console.error("[re-analyze] jobs PATCH error:", updateError.message, updateError.details)
+    return { success: false, error: `Failed to update job: ${updateError.message}` }
+  }
 
   // Insert fresh analysis record
   const { error: analysisError } = await supabase.from("job_analyses").insert({
@@ -374,84 +349,16 @@ async function reAnalyzeExistingJob(
   // Insert fresh scores record
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: jobId,
-    overall_score: toDbScore(explainableFit.score),
+    overall_score: explainableFit.score,
     confidence_score: explainableFit.confidence === "high" ? 0.9 : explainableFit.confidence === "medium" ? 0.7 : 0.5,
-    skills_match: toDbScore(dimensionScores.skills),
-    experience_relevance: toDbScore(dimensionScores.experience),
-    evidence_quality: toDbScore(dimensionScores.evidence),
-    seniority_alignment: toDbScore(dimensionScores.seniority),
-    ats_keywords: toDbScore(dimensionScores.ats),
+    skills_match: dimensionScores.skills,
+    experience_relevance: dimensionScores.experience,
+    evidence_quality: dimensionScores.evidence,
+    seniority_alignment: dimensionScores.seniority,
+    ats_keywords: dimensionScores.ats,
     scoring_version: "3.0-explainable",
   })
   if (scoresError) console.error("Scores insert error:", scoresError)
-
-  try {
-    await buildEvidenceMapForJob({
-      supabase,
-      userId: user.id,
-      jobId,
-    })
-  } catch (evidenceMapError) {
-    console.error("Evidence map rebuild error:", evidenceMapError)
-    const existingMap =
-      existingJob?.evidence_map && typeof existingJob.evidence_map === "object" && !Array.isArray(existingJob.evidence_map)
-        ? existingJob.evidence_map as Record<string, unknown>
-        : {}
-    await supabase
-      .from("jobs")
-      .update({
-        evidence_map: withCoachStepMeta(
-          {
-            ...existingMap,
-            matching_complete: false,
-            map_build_error: {
-              code: "evidence_map_build_failed",
-              message:
-                evidenceMapError instanceof Error
-                  ? evidenceMapError.message
-                  : "Unknown evidence map build error",
-              failed_at: new Date().toISOString(),
-            },
-          },
-          "required",
-          {
-            reason: "evidence_map_build_failed",
-          },
-        ),
-      })
-      .eq("id", jobId)
-      .eq("user_id", user.id)
-  }
-
-  if (isContextEngineEnabled()) {
-    const jobContext = buildJobContext({
-      jobId,
-      jobText: pageContent,
-      title,
-      company,
-      requirements: analysis.qualifications_required,
-      responsibilities: analysis.responsibilities,
-      keywords: analysis.keywords,
-    })
-    const profileContext = buildEvidenceLibraryContext({
-      userId: user.id,
-      records: (evidenceResult.data ?? []) as Array<Record<string, any>>,
-    })
-    const gapContext = runContextGapMatch({
-      userId: user.id,
-      jobId,
-      profile: profileContext,
-      requirements: jobContext.requirements,
-    })
-    void mirrorProfileContext({ supabase, userId: user.id, context: profileContext })
-    void mirrorJobContext({ supabase, jobId, jobContext })
-    void mirrorGapMatches({
-      supabase,
-      userId: user.id,
-      jobId,
-      matches: gapContext.gapReport.matches,
-    })
-  }
 
   // Run orchestration (coaching, matching, etc.)
   await runJobFlow({

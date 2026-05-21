@@ -1,12 +1,12 @@
 import { generateStructuredText } from "@/lib/ai/gateway"
-import { z } from "zod"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
+import { z } from "zod"
 import type { VoiceProfile } from "./voice-types"
 
 const VoiceProfileSchema = z.object({
   tone: z.object({
     primary: z.enum(["plainspoken", "technical", "executive", "analytical", "warm", "direct"]),
-    secondary: z.array(z.string()),
+    secondary: z.array(z.string()).optional().default([]),
   }),
   formality: z.enum(["low", "medium", "high"]),
   sentencePattern: z.object({
@@ -48,46 +48,6 @@ const VoiceProfileSchema = z.object({
   }),
 })
 
-const VOICE_PROFILE_SCHEMA_DESCRIPTION = `{
-  "tone": {
-    "primary": "plainspoken" | "technical" | "executive" | "analytical" | "warm" | "direct",
-    "secondary": string[]
-  },
-  "formality": "low" | "medium" | "high",
-  "sentencePattern": {
-    "averageLength": "short" | "medium" | "long",
-    "structure": "concise_bullets" | "narrative_bullets" | "metric_first" | "responsibility_first"
-  },
-  "bulletStyle": {
-    "startsWithActionVerb": boolean,
-    "metricDensity": "low" | "medium" | "high",
-    "typicalPattern": "action_context_result" | "responsibility_tool_outcome" | "task_based" | "achievement_based"
-  },
-  "vocabulary": {
-    "level": "simple" | "professional" | "technical" | "executive",
-    "industryTerms": string[],
-    "repeatedTerms": string[],
-    "commonActionVerbs": string[]
-  },
-  "confidence": {
-    "level": "reserved" | "balanced" | "assertive",
-    "evidenceOfOverstatement": boolean
-  },
-  "quality": {
-    "grammarRisk": "low" | "medium" | "high",
-    "spellingRisk": "low" | "medium" | "high",
-    "clarityRisk": "low" | "medium" | "high"
-  },
-  "preserve": {
-    "phrases": string[],
-    "styleNotes": string[]
-  },
-  "avoid": {
-    "phrases": string[],
-    "risks": string[]
-  }
-}`
-
 const FALLBACK_PROFILE: VoiceProfile = {
   tone: { primary: "plainspoken" },
   formality: "medium",
@@ -115,11 +75,22 @@ export async function extractVoiceProfile(resumeText: string): Promise<VoiceProf
   }
 
   try {
-    return await generateStructuredText({
-      model: CLAUDE_MODELS.HAIKU,
-      schema: VoiceProfileSchema,
-      schemaDescription: VOICE_PROFILE_SCHEMA_DESCRIPTION,
-      prompt: `Analyze this resume text and extract the author's professional voice profile.
+    return await generateStructuredText(
+      {
+        model: CLAUDE_MODELS.HAIKU,
+        schema: VoiceProfileSchema,
+        schemaDescription: `{
+  "tone": { "primary": "plainspoken"|"technical"|"executive"|"analytical"|"warm"|"direct", "secondary": string[] },
+  "formality": "low"|"medium"|"high",
+  "sentencePattern": { "averageLength": "short"|"medium"|"long", "structure": "concise_bullets"|"narrative_bullets"|"metric_first"|"responsibility_first" },
+  "bulletStyle": { "startsWithActionVerb": boolean, "metricDensity": "low"|"medium"|"high", "typicalPattern": "action_context_result"|"responsibility_tool_outcome"|"task_based"|"achievement_based" },
+  "vocabulary": { "level": "simple"|"professional"|"technical"|"executive", "industryTerms": string[], "repeatedTerms": string[], "commonActionVerbs": string[] },
+  "confidence": { "level": "reserved"|"balanced"|"assertive", "evidenceOfOverstatement": boolean },
+  "quality": { "grammarRisk": "low"|"medium"|"high", "spellingRisk": "low"|"medium"|"high", "clarityRisk": "low"|"medium"|"high" },
+  "preserve": { "phrases": string[], "styleNotes": string[] },
+  "avoid": { "phrases": string[], "risks": string[] }
+}`,
+        contextPrompt: `Analyze this resume text and extract the author's professional voice profile.
 
 RESUME TEXT:
 ${resumeText.slice(0, 3000)}
@@ -137,7 +108,9 @@ Return a JSON voice profile that captures:
 - avoid: patterns that would sound wrong for this person (e.g. "do not use synergy-type buzzwords")
 
 Be specific — extract actual verbs, terms, and phrases from the text. If the text is too short or generic to reliably assess a field, use the most neutral/default value.`,
-    })
+      },
+      { route: "extract-voice-profile" }
+    ) as VoiceProfile
   } catch {
     return FALLBACK_PROFILE
   }
