@@ -12,6 +12,7 @@ import { isEvidenceMapMetadataKey } from "@/lib/coach-step"
 import { buildEvidenceLibraryContext, isContextEngineEnabled } from "@/lib/context-engine"
 import { COACH_TOOLS } from "@/lib/coach/tools"
 import { routeToolCall, formatToolResultForStream } from "@/lib/coach/tool-router"
+import { buildCoachSystemPrompt } from "@/lib/coach/buildCoachPrompt"
 import { stepCountIs } from "ai"
 
 export const maxDuration = 60
@@ -150,7 +151,7 @@ export async function POST(request: Request) {
       jobId
         ? supabase
             .from("jobs")
-            .select("id, role_title, company_name, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, responsibilities, qualifications_required, qualifications_preferred, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
+            .select("id, role_title, company_name, job_description, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, responsibilities, qualifications_required, qualifications_preferred, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
             .eq("id", jobId)
             .eq("user_id", user.id)
             .is("deleted_at", null)
@@ -213,7 +214,35 @@ export async function POST(request: Request) {
     const recommendations = generateRecommendations(coachContext, signals)
 
     // ── Assemble system prompt ────────────────────────────────────────────────
-    let systemPrompt = COACH_SYSTEM_PROMPT
+    const gapRequirementId =
+      typeof gapContext?.gap?.requirement_id === "string" ? gapContext.gap.requirement_id : null
+    const activeEvidenceMap =
+      activeJob?.evidence_map && typeof activeJob.evidence_map === "object" && !Array.isArray(activeJob.evidence_map)
+        ? activeJob.evidence_map as { requirement_matches?: Array<Record<string, unknown>> }
+        : null
+    const targetedRequirement = gapRequirementId
+      ? activeEvidenceMap?.requirement_matches?.find((match) => match.requirement_id === gapRequirementId)
+      : null
+    const hasRequirementScopedPrompt = Boolean(gapContext?.gap && gapRequirementId)
+    let systemPrompt = hasRequirementScopedPrompt
+      ? buildCoachSystemPrompt({
+          gapRequirement: String(gapContext.gap.requirement ?? targetedRequirement?.requirement_text ?? "this requirement"),
+          requirementId: gapRequirementId,
+          requirementIntent: typeof targetedRequirement?.employer_intent === "string"
+            ? targetedRequirement.employer_intent
+            : typeof gapContext.gap.category === "string"
+              ? gapContext.gap.category
+              : null,
+          currentEvidence: Array.isArray(targetedRequirement?.matched_evidence_titles)
+            ? targetedRequirement.matched_evidence_titles.filter((item): item is string => typeof item === "string")
+            : [],
+          jobTitle: String(gapContext.jobTitle ?? jobContext?.title ?? activeJob?.role_title ?? "this role"),
+          jobCompany: String(gapContext.company ?? jobContext?.company ?? activeJob?.company_name ?? "this company"),
+          jobDescriptionSummary: String(activeJob?.job_description ?? "").slice(0, 500),
+          existingEvidenceTitles: evidenceLibrary.map((item) => String(item.source_title ?? "Evidence")).filter(Boolean),
+          priorMessages: coreMessages.slice(-10),
+        })
+      : COACH_SYSTEM_PROMPT
 
     // Profile
     if (profile) {
@@ -263,7 +292,7 @@ export async function POST(request: Request) {
     }
 
     // Gap clarification context
-    if (gapContext) {
+    if (gapContext && !hasRequirementScopedPrompt) {
       systemPrompt += `\n\n## Gap Clarification Mode\nHelp the user translate this specific job expectation into verified proof:\n- Job: ${gapContext.jobTitle} at ${gapContext.company}${gapContext.gap ? `\n- Requirement ID: ${gapContext.gap.requirement_id ?? "not provided"}\n- Requirement: ${gapContext.gap.requirement}\n- Category: ${gapContext.gap.category}\n- Question: ${gapContext.gap.coach_question}` : ""}`
     }
 

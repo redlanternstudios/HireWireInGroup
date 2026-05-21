@@ -36,13 +36,14 @@ export function reverseEngineerJob(input: ReverseEngineerJobInput): ContextJobMo
   ]
 
   const uniqueRequirements = Array.from(new Set(rawRequirements.map((r) => r.trim()).filter((r) => r.length > 2)))
-  const requirements: JobRequirementModel[] = uniqueRequirements.map((text, index) => {
+  const requirements: JobRequirementModel[] = uniqueRequirements.map((text) => {
     const category = categoryFor(text)
+    const normalizedRequirement = normalizeRequirement(text)
     return {
-      id: stableId("ctx_req", [input.jobId, index, text]),
+      id: stableId("ctx_req", [input.jobId, category, normalizedRequirement]),
       job_id: input.jobId,
       requirement_text: text,
-      normalized_requirement: normalizeRequirement(text),
+      normalized_requirement: normalizedRequirement,
       category,
       importance: importanceFor(text, category),
       confidence: text.startsWith("Keyword:") ? "medium" : "high",

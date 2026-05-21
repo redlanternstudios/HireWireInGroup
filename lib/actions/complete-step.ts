@@ -9,6 +9,7 @@ export type CompleteStepResult = {
   success: boolean
   error?: string
   reasons?: string[]
+  completedStep?: CompleteStepPayload["step"]
 }
 
 export async function completeStep(
@@ -24,6 +25,7 @@ export async function completeStep(
       success: result.success,
       error: result.error,
       reasons: result.reasons,
+      completedStep: result.success ? "apply" : undefined,
     }
   }
 
@@ -36,11 +38,12 @@ export async function completeStep(
     return {
       success: result.success,
       error: result.error,
+      completedStep: result.success ? "review" : undefined,
     }
   }
 
-  revalidatePath("/jobs")
-  revalidatePath(`/jobs/${jobId}`)
-  revalidatePath("/dashboard")
-  return { success: true }
+  return {
+    success: false,
+    error: `Step ${payload.step} does not have a direct completion mutation.`,
+  }
 }

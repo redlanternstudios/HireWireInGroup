@@ -76,6 +76,28 @@ test("score-gap-match distinguishes direct, adjacent, and true gaps", () => {
   assert.ok(gap.gapReport.matches.some((match) => match.match_type === "true_gap" || match.match_type === "unsupported"))
 })
 
+test("job requirement ids are stable when extraction order changes", () => {
+  const first = reverseEngineerJob({
+    jobId: "job-stable-1",
+    jobText: "Required: Product analytics. Required: Roadmap ownership. Required: Cross-functional leadership.",
+    requirements: ["Product analytics", "Roadmap ownership", "Cross-functional leadership"],
+    keywords: ["SaaS", "AI"],
+  })
+  const second = reverseEngineerJob({
+    jobId: "job-stable-1",
+    jobText: "Required: Cross-functional leadership. Required: Product analytics. Required: Roadmap ownership.",
+    requirements: ["Cross-functional leadership", "Product analytics", "Roadmap ownership"],
+    keywords: ["AI", "SaaS"],
+  })
+
+  const firstByText = new Map(first.requirements.map((requirement) => [requirement.normalized_requirement, requirement.id]))
+  const secondByText = new Map(second.requirements.map((requirement) => [requirement.normalized_requirement, requirement.id]))
+
+  for (const [normalized, id] of firstByText) {
+    assert.equal(secondByText.get(normalized), id, `requirement id drifted for ${normalized}`)
+  }
+})
+
 test("validate-claims blocks unsupported generated claims", () => {
   const profile = buildProfileContext({
     userId: "user-1",
