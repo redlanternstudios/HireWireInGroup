@@ -91,6 +91,7 @@ export async function POST(request: Request) {
     // AI SDK v6 DefaultChatTransport sends: { id, messages, message, trigger, messageId, ...extraBody }
     // jobContext and gapContext arrive as merged extraBody fields.
     const { messages, jobContext, gapContext } = body
+    const requestedSessionId = typeof body?.sessionId === "string" ? body.sessionId : null
     const jobId = typeof jobContext?.jobId === "string" ? jobContext.jobId : null
 
     // Validate message array
@@ -357,8 +358,20 @@ export async function POST(request: Request) {
     systemPrompt += `- **archiveJob** & **deleteEvidence**: Require explicit user request ("Archive this job" / "Delete that evidence").\n`
     systemPrompt += `Always narrate what you're doing: "I'll map that to the Infrastructure requirement" before calling tools.`
 
-    // Create session ID for tool call tracking
-    const sessionId = crypto.randomUUID()
+    // Use provided requirement session when valid; otherwise fall back to ephemeral session.
+    let sessionId = crypto.randomUUID()
+    if (requestedSessionId) {
+      const { data: ownedSession } = await supabase
+        .from("coach_sessions")
+        .select("id")
+        .eq("id", requestedSessionId)
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle()
+      if (ownedSession?.id) {
+        sessionId = ownedSession.id
+      }
+    }
     const conversationTurn = 1
 
     const result = streamText({

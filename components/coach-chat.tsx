@@ -24,7 +24,7 @@ import ReactMarkdown from "react-markdown";
 
 interface CoachChatProps {
   className?: string;
-  conversationId?: string;
+  sessionId?: string;
   compact?: boolean;
   onClose?: () => void;
   jobContext?: {
@@ -161,6 +161,7 @@ function getToolOutput(part: unknown): CoachToolOutput | null {
 export function CoachChat({
   className,
   compact = false,
+  sessionId,
   jobContext,
   gapContext,
   initialMessage,
@@ -181,6 +182,7 @@ export function CoachChat({
         body: {
           ...(jobContext ? { jobContext } : {}),
           ...(gapContext ? { gapContext } : {}),
+          ...(sessionId ? { sessionId } : {}),
         },
       }),
       onError: (err: Error) => {

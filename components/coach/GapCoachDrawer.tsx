@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { MessageSquareText, Sparkles } from "lucide-react"
 
@@ -97,6 +97,9 @@ export function RequirementCoachModal({
   const [answer, setAnswer] = useState("")
   const [saving, setSaving] = useState<"answer" | "skip" | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
+  const [sessionLoading, setSessionLoading] = useState(false)
+  const [resumeHint, setResumeHint] = useState<string | null>(null)
   const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
   const requirementType = useMemo<RequirementType>(() => {
@@ -115,6 +118,59 @@ export function RequirementCoachModal({
   }, [activeGap, company, evidenceItems, jobTitle, requirement?.current_proof, requirementType])
 
   if (!activeGap) return null
+
+  const requiresScopedSession = !!(requirement?.requirement_id && activeGap)
+
+  useEffect(() => {
+    if (!open || !requiresScopedSession || coachSessionId || sessionLoading) return
+
+    let cancelled = false
+
+    async function resumeOrCreateSession() {
+      setSessionLoading(true)
+      try {
+        const response = await fetch("/api/coach/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId,
+            gapRequirement: activeGap,
+            gapRequirementId: requirement?.requirement_id,
+          }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (cancelled || !response.ok || !data?.sessionId) return
+
+        setCoachSessionId(data.sessionId)
+
+        if (data?.isNew === false && Array.isArray(data.messages)) {
+          const latestAssistant = [...data.messages]
+            .reverse()
+            .find((message) => message?.role === "assistant" && typeof message?.content === "string")
+
+          if (latestAssistant?.content) {
+            setResumeHint(latestAssistant.content.slice(0, 220))
+          }
+        }
+      } finally {
+        if (!cancelled) setSessionLoading(false)
+      }
+    }
+
+    void resumeOrCreateSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    open,
+    requiresScopedSession,
+    coachSessionId,
+    sessionLoading,
+    jobId,
+    activeGap,
+    requirement?.requirement_id,
+  ])
 
   async function postCoachStep(body: Record<string, unknown>, mode: "answer" | "skip") {
     setSaving(mode)
@@ -254,28 +310,40 @@ export function RequirementCoachModal({
               </div>
             </div>
           </div>
-          <CoachChat
-            compact
-            className="min-h-[420px] lg:min-h-0"
-            jobContext={{
-              jobId,
-              title: jobTitle,
-              company,
-              score,
-              status,
-            }}
-            gapContext={{
-              jobTitle,
-              company,
-              gap: {
-                requirement_id: requirement?.requirement_id,
-                requirement: activeGap,
-                category: requirementType,
-                coach_question: requirement?.coach_question ?? `Have you done anything related to ${activeGap}?`,
-              },
-            }}
-            initialMessage={initialMessage}
-          />
+          {requiresScopedSession && !coachSessionId ? (
+            <div className="flex min-h-[420px] items-center justify-center border-t border-border bg-background px-6 text-center text-sm text-muted-foreground lg:min-h-0 lg:border-t-0">
+              {sessionLoading ? "Loading your requirement session..." : "Preparing coach session..."}
+            </div>
+          ) : (
+            <CoachChat
+              key={`coach-${coachSessionId ?? "adhoc"}`}
+              compact
+              className="min-h-[420px] lg:min-h-0"
+              sessionId={coachSessionId ?? undefined}
+              jobContext={{
+                jobId,
+                title: jobTitle,
+                company,
+                score,
+                status,
+              }}
+              gapContext={{
+                jobTitle,
+                company,
+                gap: {
+                  requirement_id: requirement?.requirement_id,
+                  requirement: activeGap,
+                  category: requirementType,
+                  coach_question: requirement?.coach_question ?? `Have you done anything related to ${activeGap}?`,
+                },
+              }}
+              initialMessage={
+                resumeHint
+                  ? `${initialMessage ?? ""} Resume the prior session. Last coach summary: ${resumeHint}`
+                  : initialMessage
+              }
+            />
+          )}
         </div>
       </DialogContent>
     </Dialog>
