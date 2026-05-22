@@ -172,6 +172,19 @@ export async function POST(
         .eq("id", anchoredJobId)
         .eq("user_id", userId)
         .is("deleted_at", null)
+
+      await handleDomainEvent({
+        supabase,
+        event_type: "package_invalidated",
+        job_id: anchoredJobId,
+        user_id: userId,
+        source: "coach_route",
+        payload: {
+          reason: "new_evidence_confirmed",
+          evidence_id: evidenceRow.id,
+          requirement_id: anchoredRequirementId,
+        },
+      })
     }
 
     return NextResponse.json({
