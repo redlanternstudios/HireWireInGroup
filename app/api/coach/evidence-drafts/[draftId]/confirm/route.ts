@@ -180,6 +180,9 @@ export async function POST(
         user_id: userId,
         source: "coach_route",
         payload: {
+          reason: "new_evidence_confirmed",
+          evidence_id: evidenceRow.id,
+          requirement_id: anchoredRequirementId,
           cause: "evidence_confirmation",
           trigger_event: "evidence_mapped",
           requirement_id: anchoredRequirementId,
