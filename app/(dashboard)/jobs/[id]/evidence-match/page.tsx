@@ -91,7 +91,7 @@ export default async function EvidenceMatchPage({
       .order("created_at", { ascending: false }),
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, qualifications_required")
+      .select("matched_skills, known_gaps, qualifications_required, responsibilities")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -99,6 +99,7 @@ export default async function EvidenceMatchPage({
 
   const requirements: string[] = [
     ...(Array.isArray(analysis?.qualifications_required) ? analysis.qualifications_required : []),
+    ...(Array.isArray(analysis?.responsibilities) ? analysis.responsibilities : []),
   ].filter(Boolean)
 
   const evidenceMap = asCanonicalEvidenceMap(job.evidence_map)

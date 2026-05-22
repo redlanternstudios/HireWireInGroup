@@ -110,10 +110,11 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
 }
 
 /** The always-visible next step CTA banner — never returns null */
-function NextStepBanner({ workflow, jobId, hasDocs }: {
+function NextStepBanner({ workflow, jobId, hasDocs, hasUrl }: {
   workflow: ReturnType<typeof getWorkflowState>
   jobId: string
   hasDocs: boolean
+  hasUrl: boolean
 }) {
   const { stage, nextAction, blockers } = workflow
 
@@ -169,7 +170,7 @@ function NextStepBanner({ workflow, jobId, hasDocs }: {
           <p className="text-xs text-muted-foreground">Extract requirements, score your fit, and unlock coaching.</p>
         </div>
         <div className="shrink-0">
-          <AnalyzeJobButton jobId={jobId} hasUrl={true} label="Analyze Job" size="sm" />
+          <AnalyzeJobButton jobId={jobId} hasUrl={hasUrl} label="Analyze Job" size="sm" />
         </div>
       </div>
     )
@@ -348,7 +349,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               </div>
             )}
           </div>
-          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} />
+          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
           {hasDocs && readiness.outcome === "active" && (
             <div className="mt-4 flex justify-end">
               <Link href="/ready-to-apply">

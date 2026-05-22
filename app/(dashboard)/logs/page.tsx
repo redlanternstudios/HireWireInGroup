@@ -91,6 +91,7 @@ const EVENT_LABELS: Record<string, string> = {
   evidence_updated: "Evidence updated",
   evidence_deleted: "Evidence removed",
   evidence_mapped: "Evidence mapped",
+  requirement_addressed: "Requirement addressed",
   resume_uploaded: "Resume uploaded",
   voice_profile_extracted: "Voice profile extracted",
   documents_generated: "Documents generated",
