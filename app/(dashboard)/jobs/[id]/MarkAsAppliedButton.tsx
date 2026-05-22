@@ -15,7 +15,17 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 
-export function MarkAsAppliedButton({ jobId, disabled }: { jobId: string, disabled?: boolean }) {
+export function MarkAsAppliedButton({
+  jobId,
+  disabled,
+  variant = "primary",
+  label = "Mark as Applied",
+}: {
+  jobId: string
+  disabled?: boolean
+  variant?: "primary" | "ghost"
+  label?: string
+}) {
   const [isPending, startTransition] = useTransition()
   const [blockedReasons, setBlockedReasons] = useState<string[]>([])
   const [overrideReason, setOverrideReason] = useState("")
@@ -53,12 +63,13 @@ export function MarkAsAppliedButton({ jobId, disabled }: { jobId: string, disabl
   return (
     <>
       <Button
-        className="hw-btn-primary"
+        className={variant === "ghost" ? "text-xs text-muted-foreground hover:text-foreground h-auto p-0 font-normal underline-offset-2 hover:underline" : "hw-btn-primary"}
+        variant={variant === "ghost" ? "ghost" : undefined}
         disabled={isPending || disabled}
         onClick={() => setConfirmOpen(true)}
         type="button"
       >
-        {isPending ? "Marking..." : "Mark as Applied"}
+        {isPending ? "Marking..." : label}
       </Button>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

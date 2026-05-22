@@ -5,7 +5,7 @@ import DocumentsEditor from "./DocumentsEditor";
 import ApplicationPackagePreview from "@/components/documents/ApplicationPackagePreview";
 import VoiceIntegritySection from "@/components/documents/VoiceIntegritySection";
 import ResumeVersionHistory from "@/components/documents/ResumeVersionHistory";
-import { ApplyButton } from "@/components/jobs/ApplyButton";
+
 import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { getResumeVersions } from "@/lib/actions/resume-versions";
 import {
@@ -195,7 +195,11 @@ export default async function DocumentsPage({
             }
           />
           <ResumeVersionHistory jobId={id} versions={versions} />
-          <ApplyButton jobId={id} disabled={!packageReadiness.canApply} />
+          <Link href={`/ready-to-apply?jobId=${id}`} className="block w-full">
+            <button className="w-full hw-btn-primary text-sm font-medium py-2 px-4 rounded-lg">
+              Continue to Apply
+            </button>
+          </Link>
         </aside>
       </div>
     </div>
