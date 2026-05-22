@@ -9,6 +9,76 @@ type CoachStepBody =
   | { action: "skip"; gap?: string; requirementId?: string }
   | { action: "complete" }
 
+async function buildConflictResponse(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  jobId: string,
+) {
+  const { data: latest } = await supabase
+    .from("jobs")
+    .select("evidence_map_version")
+    .eq("id", jobId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle()
+
+  return NextResponse.json(
+    {
+      success: false,
+      error: "evidence_map_conflict",
+      currentVersion: latest?.evidence_map_version ?? null,
+      user_message:
+        "This job was updated in another tab. Refresh and try again so you don't overwrite newer coach updates.",
+    },
+    { status: 409 },
+  )
+}
+
+async function guardedCoachStepUpdate({
+  supabase,
+  userId,
+  jobId,
+  currentVersion,
+  values,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  userId: string
+  jobId: string
+  currentVersion: string | null
+  values: Record<string, unknown>
+}) {
+  const nextVersion = crypto.randomUUID()
+  const update = supabase
+    .from("jobs")
+    .update({
+      ...values,
+      evidence_map_version: nextVersion,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+
+  const guardedUpdate = currentVersion
+    ? update.eq("evidence_map_version", currentVersion)
+    : update.is("evidence_map_version", null)
+
+  const { data, error } = await guardedUpdate.select("id")
+  if (error) {
+    return { ok: false as const, error: true as const, conflict: false as const }
+  }
+  if (!data || data.length === 0) {
+    return { ok: false as const, error: false as const, conflict: true as const }
+  }
+
+  return {
+    ok: true as const,
+    error: false as const,
+    conflict: false as const,
+    nextVersion,
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -23,7 +93,7 @@ export async function POST(
   const body = (await request.json()) as CoachStepBody
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id,evidence_map,score,score_gaps,gap_clarifications,gaps_addressed")
+    .select("id,evidence_map,evidence_map_version,score,score_gaps,gap_clarifications,gaps_addressed")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -40,46 +110,64 @@ export async function POST(
         ? body.requirementId
         : null
 
-    const update = await supabase
-      .from("jobs")
-      .update({
+    const update = await guardedCoachStepUpdate({
+      supabase,
+      userId: user.id,
+      jobId: id,
+      currentVersion: job.evidence_map_version ?? null,
+      values: {
         evidence_map: withCoachStepMeta(job.evidence_map, "skipped", {
           skipped_at: new Date().toISOString(),
           skipped_gap: skippedGap,
           skipped_requirement_id: skippedRequirementId,
         }),
-      })
-      .eq("id", id)
-      .eq("user_id", user.id)
+      },
+    })
 
     if (update.error) {
       return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
+    }
+    if (update.conflict) {
+      return buildConflictResponse(supabase, user.id, id)
     }
 
     await emitCoachEvent(supabase, user.id, id, "skipped", {
       gap: skippedGap,
       requirement_id: skippedRequirementId,
     })
-    return NextResponse.json({ success: true, coachStep: { status: "skipped" } })
+    return NextResponse.json({
+      success: true,
+      coachStep: { status: "skipped" },
+      evidenceMapVersion: update.nextVersion,
+    })
   }
 
   if (body.action === "complete") {
-    const update = await supabase
-      .from("jobs")
-      .update({
+    const update = await guardedCoachStepUpdate({
+      supabase,
+      userId: user.id,
+      jobId: id,
+      currentVersion: job.evidence_map_version ?? null,
+      values: {
         evidence_map: withCoachStepMeta(job.evidence_map, "completed", {
           completed_at: new Date().toISOString(),
         }),
-      })
-      .eq("id", id)
-      .eq("user_id", user.id)
+      },
+    })
 
     if (update.error) {
       return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
     }
+    if (update.conflict) {
+      return buildConflictResponse(supabase, user.id, id)
+    }
 
     await emitCoachEvent(supabase, user.id, id, "completed", {})
-    return NextResponse.json({ success: true, coachStep: { status: "completed" } })
+    return NextResponse.json({
+      success: true,
+      coachStep: { status: "completed" },
+      evidenceMapVersion: update.nextVersion,
+    })
   }
 
   if (body.action !== "answer") {
@@ -163,23 +251,29 @@ export async function POST(
       : { remaining_gaps: nextState.remainingGaps },
   )
 
-  const update = await supabase
-    .from("jobs")
-    .update({
+  const update = await guardedCoachStepUpdate({
+    supabase,
+    userId: user.id,
+    jobId: id,
+    currentVersion: job.evidence_map_version ?? null,
+    values: {
       evidence_map: evidenceMap,
       gap_clarifications: updatedClarifications,
       gaps_addressed: updatedAddressed,
-    })
-    .eq("id", id)
-    .eq("user_id", user.id)
+    },
+  })
 
   if (update.error) {
     return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
+  }
+  if (update.conflict) {
+    return buildConflictResponse(supabase, user.id, id)
   }
 
   await emitCoachEvent(supabase, user.id, id, "answered", { gap, requirement_id: body.requirementId ?? null })
   return NextResponse.json({
     success: true,
+    evidenceMapVersion: update.nextVersion,
     coachStep: getCoachStepState({
       ...provisionalJob,
       evidence_map: evidenceMap,
