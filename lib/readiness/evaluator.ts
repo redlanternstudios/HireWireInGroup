@@ -121,6 +121,60 @@ function getEvidenceBlockedReasons(job: ReadinessJob): string[] {
     );
 }
 
+function requirementAnchorId(requirementId: string): string {
+  const safeId = requirementId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `req-${safeId || "unknown"}`;
+}
+
+function getFirstUnresolvedRequirementId(job: ReadinessJob): string | null {
+  const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
+  if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) return null;
+
+  const matches = evidenceMap.requirement_matches;
+
+  const pick = (priority: "required" | "preferred") =>
+    matches.find(
+      (match) =>
+        match.priority === priority &&
+        (match.status === "gap" ||
+          match.status === "unknown" ||
+          match.status === "partial") &&
+        typeof match.requirement_id === "string" &&
+        match.requirement_id.trim().length > 0,
+    );
+
+  const required = pick("required");
+  if (required?.requirement_id) return required.requirement_id;
+
+  const preferred = pick("preferred");
+  if (preferred?.requirement_id) return preferred.requirement_id;
+
+  const any = matches.find(
+    (match) =>
+      (match.status === "gap" ||
+        match.status === "unknown" ||
+        match.status === "partial") &&
+      typeof match.requirement_id === "string" &&
+      match.requirement_id.trim().length > 0,
+  );
+
+  return any?.requirement_id ?? null;
+}
+
+function evidenceFixHref(job: ReadinessJob): string {
+  if (!job.id) return "/evidence";
+
+  const requirementId = getFirstUnresolvedRequirementId(job);
+  if (!requirementId) return `/jobs/${job.id}/evidence-match`;
+
+  const anchor = requirementAnchorId(requirementId);
+  return `/jobs/${job.id}/evidence-match?resolve=${encodeURIComponent(requirementId)}#${anchor}`;
+}
+
 export function evaluateReadiness(
   job: ReadinessJob & { voice_drift_result?: any },
 ): ReadinessResult {
@@ -201,7 +255,7 @@ function getNextAction(
   if (!checklist.evidence) {
     return {
       label: "Fix evidence",
-      href: job.id ? `/jobs/${job.id}/evidence-match` : "/evidence",
+      href: evidenceFixHref(job),
       description: "Add or map proof points before this job can move forward.",
     };
   }

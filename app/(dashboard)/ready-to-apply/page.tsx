@@ -198,7 +198,7 @@ export default async function ReadyToApplyPage() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <Link href={`/jobs/${job.id}`}>
+                        <Link href={readiness.nextAction?.href ?? `/jobs/${job.id}`}>
                           <Button size="sm" variant="outline">Fix readiness</Button>
                         </Link>
                         <MarkAsAppliedButton jobId={job.id} />
