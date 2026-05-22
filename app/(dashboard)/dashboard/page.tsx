@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { NextStepButton } from "@/components/workflow/NextStepButton";
+
 
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { getNextStep } from "@/lib/workflow/get-next-step";
@@ -409,15 +409,11 @@ export default async function DashboardPage() {
 
               {/* Action footer */}
               <div className="px-6 py-3.5 flex items-center gap-2.5 border-t border-border/70 bg-muted/35">
-                {heroJob ? (
-                  <NextStepButton job={heroJob} label={heroAction.cta} />
-                ) : (
-                  <Link href={heroAction.href}>
-                    <Button size="sm" className="hw-btn-primary gap-1.5 px-5 h-9">
-                      {heroAction.cta} <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
-                )}
+                <Link href={heroAction.href}>
+                  <Button size="sm" className="hw-btn-primary gap-1.5 px-5 h-9">
+                    {heroAction.cta} <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
                 <Link href="/jobs">
                   <Button
                     size="sm"

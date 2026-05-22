@@ -28,9 +28,7 @@ import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
-import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
-import type { CoachRecommendation } from "@/lib/coach/recommendations"
 
 export const dynamic = "force-dynamic"
 
@@ -57,19 +55,6 @@ function ScoreBar({ label, value, note }: { label: string; value: number; note?:
       {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
     </div>
   )
-}
-
-function buildGapCoachRecommendations(gaps: string[], jobId: string): CoachRecommendation[] {
-  return gaps.slice(0, 3).map((gap, index) => {
-    const requirement = gap.replace(/^Gap:\s*/i, "").trim()
-    return {
-      id: `job-${jobId}-gap-${index}`,
-      message: `Can you share a concrete example, project, certification, or adjacent experience that covers "${requirement}"?`,
-      context: "fit_scored",
-      priority: index + 1,
-      type: "improvement",
-    }
-  })
 }
 
 /** Horizontal stage progress strip */
@@ -321,7 +306,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
-  const gapCoachRecommendations = buildGapCoachRecommendations(knownGaps, id)
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const isAnalyzed = !!(
@@ -409,9 +393,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
-      {/* NEXT STEP CTA — always visible, never a dead end */}
+      {/* NEXT STEP — single command surface */}
       {!stillProcessing && (
         <>
+          <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
+          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
           <ReadinessNextStepCard readiness={readiness} jobId={id} />
           <div className="space-y-2">
             <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
@@ -556,6 +542,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           )}
 
           {coachStep.required && !hasDocs && (
+            <RequirementCoachModal
+              jobId={id}
+              jobTitle={jobWithAnalysis.title}
+              company={jobWithAnalysis.company}
+              score={overallScore}
+              status={job.status}
+              gaps={coachStep.gaps}
+              autoOpen={!coachStep.complete}
+            />
             <>
               <RequirementCoachModal
                 jobId={id}

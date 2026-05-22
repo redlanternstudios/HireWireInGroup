@@ -207,11 +207,11 @@ export default async function ReadyToApplyPage() {
                         <p className="text-sm text-rose-600 mt-2">{readiness.blockedReasons.join(", ")}</p>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <Link href={readiness.nextAction?.href ?? `/jobs/${job.id}`}>
-                          <Button size="sm" variant="outline">Fix readiness</Button>
+                          <Button size="sm" className="hw-btn-primary">Fix readiness</Button>
                         </Link>
-                        <MarkAsAppliedButton jobId={job.id} />
+                        <MarkAsAppliedButton jobId={job.id} variant="ghost" label="Apply anyway" />
                       </div>
                     </div>
 
