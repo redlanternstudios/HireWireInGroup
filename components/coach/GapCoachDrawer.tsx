@@ -40,6 +40,9 @@ export type RequirementCoachModalProps = {
     source_type: string | null
   }[]
   autoOpen?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  onStepSaved?: (mode: "answer" | "skip") => void
 }
 
 type RequirementType =
@@ -92,8 +95,11 @@ export function RequirementCoachModal({
   requirement,
   evidenceItems = [],
   autoOpen = false,
+  open: controlledOpen,
+  onOpenChange,
+  onStepSaved,
 }: RequirementCoachModalProps) {
-  const [open, setOpen] = useState(autoOpen && gaps.length > 0)
+  const [internalOpen, setInternalOpen] = useState(autoOpen && gaps.length > 0)
   const [answer, setAnswer] = useState("")
   const [saving, setSaving] = useState<"answer" | "skip" | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +108,13 @@ export function RequirementCoachModal({
   const [resumeHint, setResumeHint] = useState<string | null>(null)
   const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) {
+      setInternalOpen(nextOpen)
+    }
+    onOpenChange?.(nextOpen)
+  }
   const requirementType = useMemo<RequirementType>(() => {
     if (!activeGap) return "other"
     return requirement?.requirement_type ?? inferRequirementType(activeGap)
@@ -196,6 +209,7 @@ export function RequirementCoachModal({
       }
       setAnswer("")
       setOpen(false)
+      onStepSaved?.(mode)
       router.refresh()
     } catch {
       setError("Network error. Please try again.")

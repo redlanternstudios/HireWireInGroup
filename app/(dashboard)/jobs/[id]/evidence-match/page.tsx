@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
+import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
@@ -181,16 +182,40 @@ export default async function EvidenceMatchPage({
           )}
 
           {requirementMatches.length > 0 && (
-            <div className="space-y-3">
-              {requirementMatches.map((match) => {
-                const status = uiStatus(match)
-                const requirementType = inferRequirementType(match.requirement_text)
-                return (
-                  <div
-                    id={requirementAnchorId(match.requirement_id)}
-                    key={match.requirement_id}
-                    className="hw-card hw-requirement-card px-5 py-4"
-                  >
+            <div className="space-y-4">
+              <GuidedRequirementCoachFlow
+                jobId={id}
+                jobTitle={job.role_title ?? "this role"}
+                company={job.company_name ?? "this company"}
+                score={job.score}
+                status={job.status}
+                requirementMatches={requirementMatches}
+                requestedRequirementId={requestedRequirementId}
+                evidenceItems={(evidenceItems ?? []).map((item) => ({
+                  id: item.id,
+                  source_title: item.source_title,
+                  source_type: item.source_type,
+                }))}
+              />
+
+              <details className="hw-card px-5 py-4">
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                  View all requirements ({requirementMatches.length})
+                </summary>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use this expanded list for full context. Guided Coach Flow above handles one gap at a time.
+                </p>
+
+                <div className="mt-3 space-y-3">
+                  {requirementMatches.map((match) => {
+                    const status = uiStatus(match)
+                    const requirementType = inferRequirementType(match.requirement_text)
+                    return (
+                      <div
+                        id={requirementAnchorId(match.requirement_id)}
+                        key={match.requirement_id}
+                        className="hw-requirement-card rounded-md border border-border bg-background px-5 py-4"
+                      >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -210,35 +235,35 @@ export default async function EvidenceMatchPage({
                           {match.employer_intent ?? match.normalized_requirement}
                         </p>
                       </div>
-                      {(match.status === "gap" || match.status === "unknown" || match.status === "partial") && (
-                        <RequirementCoachModal
-                          jobId={id}
-                          jobTitle={job.role_title ?? "this role"}
-                          company={job.company_name ?? "this company"}
-                          score={job.score}
-                          status={job.status}
-                          gaps={[match.requirement_text]}
-                          autoOpen={
-                            !!requestedRequirementId &&
-                            requestedRequirementId === match.requirement_id
-                          }
-                          requirement={{
-                            requirement_id: match.requirement_id,
-                            requirement_text: match.requirement_text,
-                            requirement_type: requirementType,
-                            priority: match.priority,
-                            status: match.status,
-                            current_proof: match.matched_evidence_titles,
-                            proof_needed: match.proof_needed,
-                            coach_question: match.evidence_questions?.[0],
-                          }}
-                          evidenceItems={(evidenceItems ?? []).map((item) => ({
-                            id: item.id,
-                            source_title: item.source_title,
-                            source_type: item.source_type,
-                          }))}
-                        />
-                      )}
+                        {(match.status === "gap" || match.status === "unknown" || match.status === "partial") && (
+                          <RequirementCoachModal
+                            jobId={id}
+                            jobTitle={job.role_title ?? "this role"}
+                            company={job.company_name ?? "this company"}
+                            score={job.score}
+                            status={job.status}
+                            gaps={[match.requirement_text]}
+                            autoOpen={
+                              !!requestedRequirementId &&
+                              requestedRequirementId === match.requirement_id
+                            }
+                            requirement={{
+                              requirement_id: match.requirement_id,
+                              requirement_text: match.requirement_text,
+                              requirement_type: requirementType,
+                              priority: match.priority,
+                              status: match.status,
+                              current_proof: match.matched_evidence_titles,
+                              proof_needed: match.proof_needed,
+                              coach_question: match.evidence_questions?.[0],
+                            }}
+                            evidenceItems={(evidenceItems ?? []).map((item) => ({
+                              id: item.id,
+                              source_title: item.source_title,
+                              source_type: item.source_type,
+                            }))}
+                          />
+                        )}
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="hw-panel p-3">
@@ -254,9 +279,11 @@ export default async function EvidenceMatchPage({
                         </p>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                      </div>
+                    )
+                  })}
+                </div>
+              </details>
             </div>
           )}
 
