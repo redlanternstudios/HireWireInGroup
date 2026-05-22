@@ -51,8 +51,11 @@ export function MarkAsAppliedButton({
   }
 
   async function handleOverride() {
+    const reason = overrideReason.trim()
+    if (!reason) return
+
     startTransition(async () => {
-      const result = await applyToJob(jobId, true, overrideReason)
+      const result = await applyToJob(jobId, true, reason)
       if (result.success) {
         setIsDialogOpen(false)
         router.refresh()
@@ -121,7 +124,9 @@ export function MarkAsAppliedButton({
             <Textarea
               value={overrideReason}
               onChange={event => setOverrideReason(event.target.value)}
-              placeholder="Optional override reason"
+              placeholder="Reason for override..."
+              maxLength={280}
+              required
             />
 
             <label className="flex items-start gap-2 text-sm">
@@ -131,13 +136,16 @@ export function MarkAsAppliedButton({
               />
               <span>I understand this application is not ready and want to log an override.</span>
             </label>
+            <p className="text-xs text-muted-foreground">
+              Overriding readiness will submit this application without all checks passing. This action is logged.
+            </p>
           </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={!acknowledged || isPending} onClick={handleOverride}>
+            <Button type="button" disabled={!acknowledged || overrideReason.trim().length === 0 || isPending} onClick={handleOverride}>
               Override and Apply
             </Button>
           </DialogFooter>

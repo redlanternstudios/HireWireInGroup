@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { getNextStep } from "@/lib/workflow/get-next-step";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   Briefcase,
@@ -196,6 +197,18 @@ export default async function DashboardPage() {
     (j) => evaluateReadiness(j).outcome === "active",
   );
   const needAttention = needsActionJobs.length + needsReviewJobs.length;
+  const reentryJob =
+    needsActionJobs[0] ??
+    needsReviewJobs[0] ??
+    jobList.find((job) => {
+      const readiness = evaluateReadiness(job);
+      return readiness.outcome === "active" && readiness.stage !== "ready";
+    }) ??
+    null;
+  const reentryReadiness = reentryJob ? evaluateReadiness(reentryJob) : null;
+  const recentPipelineJobs = reentryJob
+    ? jobList.filter((job) => job.id !== reentryJob.id)
+    : jobList;
 
   // "Applications this week" — jobs applied since Monday 00:00 local time
   const weekStart = new Date();
@@ -303,6 +316,38 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {reentryJob && reentryReadiness?.nextAction && (
+        <div
+          className={cn(
+            "hw-card mb-5 border-l-4 px-5 py-4",
+            reentryReadiness.blockedReasons.length > 0
+              ? "border-l-amber-500"
+              : "border-l-primary",
+          )}
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="hw-section-label mb-1">Resume where you left off</p>
+              <h2 className="text-sm font-semibold text-foreground">
+                {reentryJob.role_title ?? "Untitled role"}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {reentryJob.company_name ?? "—"}
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {reentryReadiness.nextAction.description}
+              </p>
+            </div>
+            <Link href={reentryReadiness.nextAction.href} className="shrink-0">
+              <Button size="sm" className="hw-btn-primary gap-1.5">
+                {reentryReadiness.nextAction.label}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* ─── TWO-COLUMN WORKSPACE ─── */}
       <div className="hw-workspace">
@@ -555,7 +600,7 @@ export default async function DashboardPage() {
               </Link>
             </div>
 
-            {jobList.length === 0 ? (
+            {recentPipelineJobs.length === 0 ? (
               <div
                 className="rounded-2xl px-5 py-10 flex flex-col items-center text-center gap-3"
                 style={{
@@ -568,13 +613,14 @@ export default async function DashboardPage() {
                 </div>
                 <p className="text-sm font-semibold">No jobs yet</p>
                 <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
-                  Add a job posting to start building your intelligence
-                  pipeline.
+                  {jobList.length === 0
+                    ? "Add a job posting to start building your intelligence pipeline."
+                    : "No other recent jobs to show."}
                 </p>
               </div>
             ) : (
               <div className="rounded-2xl overflow-hidden hw-card">
-                {jobList.slice(0, 5).map((job, i) => {
+                {recentPipelineJobs.slice(0, 5).map((job, i) => {
                   const tier = urgencyTier(job);
                   const ss = statusStyle(job.status);
                   const displayStatus = STATUS_LABEL[job.status] ?? job.status;

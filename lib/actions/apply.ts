@@ -31,7 +31,7 @@ export async function applyToJob(
   jobId: string,
   methodOrOverride: ApplyMethod | boolean = "manual",
   overrideOrReason: boolean | string = false,
-  overrideReason?: string
+  overrideReason?: string | null
 ): Promise<ApplyResult> {
   const correlationId = createCorrelationId()
   const method: ApplyMethod = typeof methodOrOverride === "string" ? methodOrOverride : "manual"
@@ -41,6 +41,7 @@ export async function applyToJob(
   const overrideNote = typeof methodOrOverride === "boolean" && typeof overrideOrReason === "string"
     ? overrideOrReason
     : overrideReason
+  const normalizedOverrideReason = overrideNote?.trim() || null
 
   try {
     const supabase = await createClient()
@@ -82,13 +83,22 @@ export async function applyToJob(
       }
     }
 
+    if (!readiness.isReady && shouldOverride && !normalizedOverrideReason) {
+      return {
+        success: false,
+        error: "OVERRIDE_REASON_REQUIRED",
+        reasons: ["Override reason is required."],
+        correlationId,
+      }
+    }
+
     if (!readiness.isReady && shouldOverride) {
       await logOverride({
         supabase,
         jobId,
         userId: user.id,
         reasons: readiness.blockedReasons,
-        overrideReason: overrideNote,
+        overrideReason: normalizedOverrideReason,
         correlationId,
       })
 
@@ -100,8 +110,12 @@ export async function applyToJob(
         source: "apply_action",
         payload: {
           reasons: readiness.blockedReasons,
-          override_reason: overrideNote ?? null,
+          override_reason: normalizedOverrideReason,
           correlation_id: correlationId,
+        },
+        metadata: {
+          correlation_id: correlationId,
+          override_reason: normalizedOverrideReason,
         },
       })
     }
@@ -170,9 +184,13 @@ export async function applyToJob(
         applied_at: appliedAt,
         application_id: application?.id,
         was_override: shouldOverride && !readiness.isReady,
+        override_reason: shouldOverride && !readiness.isReady ? normalizedOverrideReason : null,
         correlation_id: correlationId,
       },
-      metadata: { correlation_id: correlationId },
+      metadata: {
+        correlation_id: correlationId,
+        override_reason: shouldOverride && !readiness.isReady ? normalizedOverrideReason : null,
+      },
     })
 
     return {
@@ -199,7 +217,7 @@ async function logOverride({
   jobId: string
   userId: string
   reasons: string[]
-  overrideReason?: string
+  overrideReason?: string | null
   correlationId: string
 }) {
   const createdAt = new Date().toISOString()

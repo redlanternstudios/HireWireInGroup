@@ -40,6 +40,11 @@ export type RequirementCoachModalProps = {
     source_type: string | null
   }[]
   autoOpen?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  onStepSaved?: (mode: "answer" | "skip") => void
+  progressLabel?: string
+  showGenerationUnlock?: boolean
 }
 
 type RequirementType =
@@ -92,8 +97,13 @@ export function RequirementCoachModal({
   requirement,
   evidenceItems = [],
   autoOpen = false,
+  open: controlledOpen,
+  onOpenChange,
+  onStepSaved,
+  progressLabel,
+  showGenerationUnlock = false,
 }: RequirementCoachModalProps) {
-  const [open, setOpen] = useState(autoOpen && gaps.length > 0)
+  const [internalOpen, setInternalOpen] = useState(autoOpen && gaps.length > 0)
   const [answer, setAnswer] = useState("")
   const [saving, setSaving] = useState<"answer" | "skip" | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +112,13 @@ export function RequirementCoachModal({
   const [resumeHint, setResumeHint] = useState<string | null>(null)
   const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) {
+      setInternalOpen(nextOpen)
+    }
+    onOpenChange?.(nextOpen)
+  }
   const requirementType = useMemo<RequirementType>(() => {
     if (!activeGap) return "other"
     return requirement?.requirement_type ?? inferRequirementType(activeGap)
@@ -116,8 +133,6 @@ export function RequirementCoachModal({
       `Requirement type: ${requirementType.replace(/_/g, " ")}. Start with one simple question. If this is an experience-duration requirement, help me tally roles into composite evidence and save it only after I confirm.`,
     ].join(" ")
   }, [activeGap, company, evidenceItems, jobTitle, requirement?.current_proof, requirementType])
-
-  if (!activeGap) return null
 
   const requiresScopedSession = !!(requirement?.requirement_id && activeGap)
 
@@ -172,6 +187,8 @@ export function RequirementCoachModal({
     requirement?.requirement_id,
   ])
 
+  if (!activeGap) return null
+
   async function postCoachStep(body: Record<string, unknown>, mode: "answer" | "skip") {
     setSaving(mode)
     setError(null)
@@ -196,6 +213,7 @@ export function RequirementCoachModal({
       }
       setAnswer("")
       setOpen(false)
+      onStepSaved?.(mode)
       router.refresh()
     } catch {
       setError("Network error. Please try again.")
@@ -237,9 +255,19 @@ export function RequirementCoachModal({
 
       <DialogContent className="flex max-h-[92vh] w-[min(980px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4 pr-10">
-          <DialogTitle className="text-base">Match evidence to this requirement</DialogTitle>
+          <DialogTitle className="text-base">
+            Match evidence to this requirement
+            {progressLabel ? (
+              <span className="ml-2 rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                {progressLabel}
+              </span>
+            ) : null}
+          </DialogTitle>
           <DialogDescription>
             Answer one question at a time. Only confirmed details get saved.
+            {showGenerationUnlock ? (
+              <span className="mt-1 block">Completing all gaps enables document generation.</span>
+            ) : null}
           </DialogDescription>
         </DialogHeader>
         <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

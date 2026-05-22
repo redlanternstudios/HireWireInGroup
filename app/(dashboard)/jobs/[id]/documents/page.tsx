@@ -3,9 +3,12 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import DocumentsEditor from "./DocumentsEditor";
 import ApplicationPackagePreview from "@/components/documents/ApplicationPackagePreview";
+import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner";
 import VoiceIntegritySection from "@/components/documents/VoiceIntegritySection";
 import ResumeVersionHistory from "@/components/documents/ResumeVersionHistory";
 
+import { ApplyButton } from "@/components/jobs/ApplyButton";
+import { Button } from "@/components/ui/button";
 import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { getResumeVersions } from "@/lib/actions/resume-versions";
 import {
@@ -163,6 +166,21 @@ export default async function DocumentsPage({
           )}
         </div>
       </div>
+
+      {job.quality_passed === false && (
+        <div className="space-y-3">
+          <ReadinessContextBanner
+            stage={packageReadiness.stage}
+            blockedReasons={packageReadiness.blockedReasons}
+            nextAction={packageReadiness.nextAction}
+          />
+          <Link href={`/jobs/${id}`}>
+            <Button size="sm" variant="outline">
+              Return to job
+            </Button>
+          </Link>
+        </div>
+      )}
 
       <div className="hw-workspace">
         <div className="hw-workspace-main min-w-0">

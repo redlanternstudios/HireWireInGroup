@@ -4,6 +4,7 @@ import Link from "next/link"
 import { AlertTriangle, CheckSquare, FileText, Plus, ShieldCheck, Star } from "lucide-react"
 
 import ReadinessChecklist from "@/components/ReadinessChecklist"
+import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
@@ -61,6 +62,7 @@ export default async function ReadyToApplyPage() {
   const readyJobs = evaluatedJobs.filter(({ readiness }) => readiness.isReady)
   const blockedJobs = evaluatedJobs.filter(({ readiness }) => !readiness.isReady)
   const justClearedJobs = readyJobs.filter(({ job }) => recentlyReadyJobIds.has(job.id))
+  const firstBlockedReadiness = blockedJobs[0]?.readiness ?? null
 
   return (
     <div className="hw-page">
@@ -91,6 +93,14 @@ export default async function ReadyToApplyPage() {
           <span className="hw-stat-label">Active jobs</span>
         </div>
       </div>
+
+      {firstBlockedReadiness && (
+        <ReadinessContextBanner
+          stage={firstBlockedReadiness.stage}
+          blockedReasons={firstBlockedReadiness.blockedReasons}
+          nextAction={firstBlockedReadiness.nextAction}
+        />
+      )}
 
       {evaluatedJobs.length === 0 ? (
         <div className="hw-empty">
