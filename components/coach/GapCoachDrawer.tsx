@@ -183,6 +183,14 @@ export function RequirementCoachModal({
       })
       const data = await response.json()
       if (!response.ok || !data.success) {
+        if (response.status === 409 || data.error === "evidence_map_conflict") {
+          setError(
+            data.user_message ??
+              "This requirement was updated in another tab. The page has been refreshed with the latest state. Try again.",
+          )
+          router.refresh()
+          return
+        }
         setError(data.user_message ?? "Could not save the coach step. Please try again.")
         return
       }
