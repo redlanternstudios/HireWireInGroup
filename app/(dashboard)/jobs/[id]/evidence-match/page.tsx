@@ -33,6 +33,28 @@ function requirementAnchorId(requirementId: string) {
   return `req-${safeId || "unknown"}`
 }
 
+type RequirementType =
+  | "years_experience"
+  | "credential"
+  | "tool"
+  | "domain"
+  | "outcome"
+  | "responsibility"
+  | "skill"
+  | "other"
+
+function inferRequirementType(text: string): RequirementType {
+  const value = text.toLowerCase()
+  if (/(\d+\+?\s*years?|years?\s+of\s+experience|experience\s+in)/.test(value)) return "years_experience"
+  if (/(bachelor|master|mba|phd|degree|certified|certification|license|pmp|cka)/.test(value)) return "credential"
+  if (/(salesforce|sap|jira|figma|supabase|openai|api|tableau|excel|python|sql)/.test(value)) return "tool"
+  if (/(healthcare|finance|enterprise\s+saas|construction|education|government|retail)/.test(value)) return "domain"
+  if (/(increase|improve|reduce|delivered|impact|outcome|kpi|adoption|revenue|efficiency)/.test(value)) return "outcome"
+  if (/(own|lead|manage|partner|coordinate|launch|roadmap|stakeholder|cross-functional)/.test(value)) return "responsibility"
+  if (/(analytical|problem solving|communication|strategy|leadership|skill|ability)/.test(value)) return "skill"
+  return "other"
+}
+
 export default async function EvidenceMatchPage({
   params,
   searchParams,
@@ -161,6 +183,7 @@ export default async function EvidenceMatchPage({
             <div className="space-y-3">
               {requirementMatches.map((match) => {
                 const status = uiStatus(match)
+                const requirementType = inferRequirementType(match.requirement_text)
                 return (
                   <div
                     id={requirementAnchorId(match.requirement_id)}
@@ -173,6 +196,9 @@ export default async function EvidenceMatchPage({
                           <Target className="h-4 w-4 text-primary" />
                           <span className="hw-section-label">
                             {match.priority === "required" ? "Important" : match.priority === "preferred" ? "Nice to have" : "Keyword"}
+                          </span>
+                          <span className="rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                            {requirementType.replace(/_/g, " ")}
                           </span>
                           <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}>
                             {status.label}
@@ -198,6 +224,7 @@ export default async function EvidenceMatchPage({
                           requirement={{
                             requirement_id: match.requirement_id,
                             requirement_text: match.requirement_text,
+                            requirement_type: requirementType,
                             priority: match.priority,
                             status: match.status,
                             current_proof: match.matched_evidence_titles,

@@ -27,6 +27,7 @@ export type RequirementCoachModalProps = {
   requirement?: {
     requirement_id: string
     requirement_text: string
+    requirement_type?: RequirementType
     priority?: string
     status?: string
     current_proof?: string[]
@@ -39,6 +40,42 @@ export type RequirementCoachModalProps = {
     source_type: string | null
   }[]
   autoOpen?: boolean
+}
+
+type RequirementType =
+  | "years_experience"
+  | "credential"
+  | "tool"
+  | "domain"
+  | "outcome"
+  | "responsibility"
+  | "skill"
+  | "other"
+
+function inferRequirementType(text: string): RequirementType {
+  const value = text.toLowerCase()
+  if (/(\d+\+?\s*years?|years?\s+of\s+experience|experience\s+in)/.test(value)) {
+    return "years_experience"
+  }
+  if (/(bachelor|master|mba|phd|degree|certified|certification|license|pmp|cka)/.test(value)) {
+    return "credential"
+  }
+  if (/(salesforce|sap|jira|figma|supabase|openai|api|tableau|excel|python|sql)/.test(value)) {
+    return "tool"
+  }
+  if (/(healthcare|finance|enterprise\s+saas|construction|education|government|retail)/.test(value)) {
+    return "domain"
+  }
+  if (/(increase|improve|reduce|delivered|impact|outcome|kpi|adoption|revenue|efficiency)/.test(value)) {
+    return "outcome"
+  }
+  if (/(own|lead|manage|partner|coordinate|launch|roadmap|stakeholder|cross-functional)/.test(value)) {
+    return "responsibility"
+  }
+  if (/(analytical|problem solving|communication|strategy|leadership|skill|ability)/.test(value)) {
+    return "skill"
+  }
+  return "other"
 }
 
 function cleanGap(gap: string) {
@@ -62,6 +99,10 @@ export function RequirementCoachModal({
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
+  const requirementType = useMemo<RequirementType>(() => {
+    if (!activeGap) return "other"
+    return requirement?.requirement_type ?? inferRequirementType(activeGap)
+  }, [activeGap, requirement?.requirement_type])
 
   const initialMessage = useMemo(() => {
     if (!activeGap) return undefined
@@ -69,9 +110,9 @@ export function RequirementCoachModal({
       `Help me find a real example for ${jobTitle} at ${company}: "${activeGap}".`,
       requirement?.current_proof?.length ? `Possible examples already found: ${requirement.current_proof.join("; ")}.` : "No strong example has been found yet.",
       evidenceItems.length ? `Evidence options visible in this dialog: ${evidenceItems.map((item) => item.source_title ?? "Untitled evidence").slice(0, 8).join("; ")}.` : "",
-      "Start with one simple question. If this is an experience-duration requirement, help me tally roles into composite evidence and save it only after I confirm.",
+      `Requirement type: ${requirementType.replace(/_/g, " ")}. Start with one simple question. If this is an experience-duration requirement, help me tally roles into composite evidence and save it only after I confirm.`,
     ].join(" ")
-  }, [activeGap, company, evidenceItems, jobTitle, requirement?.current_proof])
+  }, [activeGap, company, evidenceItems, jobTitle, requirement?.current_proof, requirementType])
 
   if (!activeGap) return null
 
@@ -142,6 +183,9 @@ export function RequirementCoachModal({
             <div className="rounded-md border border-border bg-background p-4">
               <p className="text-[11px] font-semibold uppercase text-muted-foreground">
                 Requirement
+              </p>
+              <p className="mt-1 text-[10px] font-semibold uppercase text-primary">
+                {requirementType.replace(/_/g, " ")}
               </p>
               <p className="mt-2 text-sm font-semibold text-foreground">{activeGap}</p>
               {requirement?.proof_needed?.length ? (
@@ -222,7 +266,7 @@ export function RequirementCoachModal({
               gap: {
                 requirement_id: requirement?.requirement_id,
                 requirement: activeGap,
-                category: requirement?.priority ?? "requirement",
+                category: requirementType,
                 coach_question: requirement?.coach_question ?? `Have you done anything related to ${activeGap}?`,
               },
             }}
