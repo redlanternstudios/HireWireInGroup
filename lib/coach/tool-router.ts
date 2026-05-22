@@ -186,6 +186,13 @@ export async function routeToolCall(
         )
         break
 
+      case "deriveCompositeEvidence":
+        result = await toolExecution.executeDeriveCompositeEvidence(
+          input.args as unknown as Parameters<typeof toolExecution.executeDeriveCompositeEvidence>[0],
+          context
+        )
+        break
+
       case "unmapEvidence":
         result = await toolExecution.executeUnmapEvidence(
           input.args as unknown as Parameters<typeof toolExecution.executeUnmapEvidence>[0],
@@ -283,6 +290,9 @@ export function formatToolResultForStream(
 
       case "markRequirementAddressed":
         return `Marked this requirement as addressed. Status: **${data.status}**.`
+
+      case "deriveCompositeEvidence":
+        return `Created derived evidence: **${data.title}** (${data.total_years} years). Mapped it to this requirement. Status: **${data.status}**.`
 
       case "unmapEvidence":
         return `Removed that evidence from the requirement. Status: **${data.status}**.`

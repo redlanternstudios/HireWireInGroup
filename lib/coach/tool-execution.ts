@@ -573,6 +573,186 @@ export async function executeMarkRequirementAddressed(
   }
 }
 
+// ─── Derive Composite Evidence ─────────────────────────────────────────────
+
+interface DeriveCompositeEvidenceParams {
+  job_id: string
+  requirement_id: string
+  title: string
+  requirement_summary: string
+  total_years: number
+  role_breakdown: Array<{
+    role: string
+    company?: string
+    years: number
+    date_range?: string
+    evidence_id?: string
+  }>
+  supporting_evidence_ids?: string[]
+  notes?: string
+}
+
+export async function executeDeriveCompositeEvidence(
+  params: DeriveCompositeEvidenceParams,
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    if (!context.confirmed) {
+      const roles = params.role_breakdown
+        .map((item) => `${item.role}${item.company ? ` at ${item.company}` : ""}: ${item.years} year${item.years === 1 ? "" : "s"}`)
+        .join("; ")
+
+      return {
+        success: false,
+        needsConfirmation: true,
+        confirmationPrompt: `Create derived evidence "${params.title}" totaling ${params.total_years} years from: ${roles}?`,
+      }
+    }
+
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const userId = auth.userId
+    const supabase = auth.supabase
+
+    const { data: job } = await supabase
+      .from("jobs")
+      .select("id, user_id, evidence_map")
+      .eq("id", params.job_id)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .single()
+
+    if (!job) return { success: false, error: "Job not found" }
+
+    const evidenceMap = job.evidence_map as { requirement_matches?: Array<Record<string, unknown>> } | null
+    const requirement = evidenceMap?.requirement_matches?.find(
+      (match) => match.requirement_id === params.requirement_id
+    )
+
+    if (!requirement) return { success: false, error: "Requirement not found" }
+
+    const supportingIds = Array.from(new Set([
+      ...(params.supporting_evidence_ids ?? []),
+      ...params.role_breakdown.map((item) => item.evidence_id).filter((id): id is string => Boolean(id)),
+    ]))
+
+    let supportingTitles: string[] = []
+    if (supportingIds.length > 0) {
+      const { data: supportingEvidence, error: supportingError } = await supabase
+        .from("evidence_library")
+        .select("id, source_title")
+        .in("id", supportingIds)
+        .eq("user_id", userId)
+        .eq("is_active", true)
+
+      if (supportingError) throw supportingError
+      supportingTitles = (supportingEvidence ?? []).map((item) => item.source_title)
+    }
+
+    const breakdownLines = params.role_breakdown.map((item) => {
+      const label = [item.role, item.company].filter(Boolean).join(" at ")
+      const range = item.date_range ? ` (${item.date_range})` : ""
+      return `${label}${range}: ${item.years} year${item.years === 1 ? "" : "s"}`
+    })
+
+    const proofSnippet = [
+      `${params.requirement_summary}: ${params.total_years} total years based on user-confirmed role history.`,
+      `Breakdown: ${breakdownLines.join("; ")}.`,
+      supportingTitles.length ? `Linked supporting evidence: ${supportingTitles.join("; ")}.` : null,
+      params.notes ? `Notes: ${params.notes}` : null,
+    ].filter(Boolean).join(" ")
+
+    const { data: evidence, error: insertError } = await supabase
+      .from("evidence_library")
+      .insert({
+        user_id: userId,
+        source_title: params.title,
+        source_type: "work_experience",
+        proof_snippet: proofSnippet,
+        outcomes: [`${params.total_years} total years of relevant experience`],
+        responsibilities: breakdownLines,
+        confidence_level: "medium",
+        evidence_weight: "composite",
+        is_user_approved: true,
+        created_at: new Date().toISOString(),
+      })
+      .select("id, source_title, source_type")
+      .single()
+
+    if (insertError) throw insertError
+
+    const mappingResult = await mapConfirmedEvidenceToRequirement({
+      supabase,
+      userId,
+      jobId: params.job_id,
+      sessionId: context.sessionId,
+      requirementId: params.requirement_id,
+      evidenceId: evidence.id,
+      evidenceTitle: evidence.source_title,
+      evidenceType: evidence.source_type,
+    })
+
+    await handleDomainEvent({
+      supabase,
+      event_type: "evidence_added",
+      job_id: params.job_id,
+      user_id: userId,
+      source: "coach_tool",
+      payload: {
+        evidence_id: evidence.id,
+        title: evidence.source_title,
+        requirement_id: params.requirement_id,
+        total_years: params.total_years,
+        role_breakdown: params.role_breakdown,
+        supporting_evidence_ids: supportingIds,
+        session_id: context.sessionId,
+        derived: true,
+      },
+    })
+
+    await handleDomainEvent({
+      supabase,
+      event_type: "evidence_mapped",
+      job_id: params.job_id,
+      user_id: userId,
+      source: "coach_tool",
+      payload: {
+        requirement_id: params.requirement_id,
+        evidence_id: evidence.id,
+        prev_status: mappingResult.prevStatus,
+        new_status: mappingResult.newStatus,
+        via: "derive_composite_evidence",
+        session_id: context.sessionId,
+      },
+    })
+
+    revalidatePath("/evidence")
+    revalidatePath(`/jobs/${params.job_id}`)
+    revalidatePath(`/jobs/${params.job_id}/evidence-match`)
+
+    return {
+      success: true,
+      data: {
+        id: evidence.id,
+        title: evidence.source_title,
+        total_years: params.total_years,
+        status: mappingResult.newStatus,
+      },
+      undoable: true,
+      undoAction: "deleteEvidence",
+      metadata: {
+        tool_call_id: context.toolCallId,
+        supporting_evidence_ids: supportingIds,
+      },
+    }
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to derive composite evidence",
+    }
+  }
+}
+
 // ─── Record Outcome ────────────────────────────────────────────────────────
 
 interface RecordOutcomeParams {

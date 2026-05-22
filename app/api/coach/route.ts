@@ -351,6 +351,7 @@ export async function POST(request: Request) {
     systemPrompt += `\n\n## Available Actions\nWhen helpful, you can take the following actions directly:\n`
     systemPrompt += `- **createEvidence**: Ask the user first. "Should I create an evidence entry for your database optimization work?" Only call if they say yes.\n`
     systemPrompt += `- **mapEvidenceToRequirement**: Auto-map if evidence clearly matches requirement (>80% confidence). Show result: "Mapped your AWS experience to Infrastructure requirement."\n`
+    systemPrompt += `- **deriveCompositeEvidence**: For requirements like "10+ years experience", tally user-confirmed roles or existing evidence into one derived evidence entry. Ask/verify the breakdown first, then call this tool so the user can confirm before saving.\n`
     systemPrompt += `- **recordOutcome**: Only when user explicitly tells you the result: "I got rejected" or "They scheduled an interview."\n`
     systemPrompt += `- **markRequirementAddressed**: Use when you've successfully mapped sufficient evidence to a gap.\n`
     systemPrompt += `- **archiveJob** & **deleteEvidence**: Require explicit user request ("Archive this job" / "Delete that evidence").\n`

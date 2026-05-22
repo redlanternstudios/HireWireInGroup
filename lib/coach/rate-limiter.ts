@@ -33,6 +33,7 @@ export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
     mapEvidenceToRequirement: { per_day: 50 },
     unmapEvidence: { per_day: 30 },
     markRequirementAddressed: { per_day: 30 },
+    deriveCompositeEvidence: { per_day: 10 },
     recordOutcome: { per_day: 20 },
     archiveJob: { per_day: 10 },
     markSessionComplete: { per_day: 50 },

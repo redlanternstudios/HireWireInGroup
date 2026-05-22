@@ -3,9 +3,8 @@ import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
-import { GapCoachDrawer } from "@/components/coach/GapCoachDrawer"
+import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
-import { ConfirmRequirementEvidenceForm } from "@/components/jobs/ConfirmRequirementEvidenceForm"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 
@@ -174,7 +173,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                         </p>
                       </div>
                       {(match.status === "gap" || match.status === "unknown" || match.status === "partial") && (
-                        <GapCoachDrawer
+                        <RequirementCoachModal
                           jobId={id}
                           jobTitle={job.role_title ?? "this role"}
                           company={job.company_name ?? "this company"}
@@ -190,6 +189,11 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                             proof_needed: match.proof_needed,
                             coach_question: match.evidence_questions?.[0],
                           }}
+                          evidenceItems={(evidenceItems ?? []).map((item) => ({
+                            id: item.id,
+                            source_title: item.source_title,
+                            source_type: item.source_type,
+                          }))}
                         />
                       )}
                     </div>
@@ -205,15 +209,6 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                         <p className="mt-1 text-xs text-foreground">
                           {(match.proof_needed ?? [])[0] ?? "Share a real project, responsibility, or result that shows this."}
                         </p>
-                        <ConfirmRequirementEvidenceForm
-                          jobId={id}
-                          requirementId={match.requirement_id}
-                          evidenceItems={(evidenceItems ?? []).map((item) => ({
-                            id: item.id,
-                            source_title: item.source_title,
-                            source_type: item.source_type,
-                          }))}
-                        />
                       </div>
                     </div>
                   </div>
@@ -237,7 +232,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                 ))}
               </ul>
               <div className="mt-4 pt-3 border-t border-border">
-                <GapCoachDrawer
+                <RequirementCoachModal
                   jobId={id}
                   jobTitle={job.role_title ?? "this role"}
                   company={job.company_name ?? "this company"}

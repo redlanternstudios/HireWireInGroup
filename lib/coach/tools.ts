@@ -126,6 +126,35 @@ export const markRequirementAddressedTool = {
   }),
 }
 
+export const deriveCompositeEvidenceTool = {
+  description:
+    "Create a derived evidence entry by combining multiple roles or evidence items into a single factual tally, such as total years of product management experience. Use only after the user confirms the role durations and the requirement it supports.",
+  parameters: z.object({
+    job_id: z.string().uuid().describe("ID of the job"),
+    requirement_id: z.string().describe("ID of the requirement this derived evidence supports"),
+    title: z.string().min(5).max(200).describe("Short title for the derived evidence"),
+    requirement_summary: z.string().min(5).max(300).describe("Plain-language requirement being supported"),
+    total_years: z.number().min(0).max(80).describe("Total years derived from the role breakdown"),
+    role_breakdown: z
+      .array(z.object({
+        role: z.string().min(2).max(120),
+        company: z.string().max(120).optional(),
+        years: z.number().min(0).max(80),
+        date_range: z.string().max(120).optional(),
+        evidence_id: z.string().uuid().optional(),
+      }))
+      .min(1)
+      .max(12)
+      .describe("Roles or evidence items that add up to the total"),
+    supporting_evidence_ids: z
+      .array(z.string().uuid())
+      .max(12)
+      .optional()
+      .describe("Existing evidence IDs that support the tally"),
+    notes: z.string().max(500).optional().describe("Any caveats or user-confirmed nuance"),
+  }),
+}
+
 // ─── Application Outcome Tools ────────────────────────────────────────────
 
 export const recordOutcomeTool = {
@@ -201,6 +230,7 @@ export const COACH_TOOLS = {
   mapEvidenceToRequirement: mapEvidenceToRequirementTool,
   unmapEvidence: unmapEvidenceTool,
   markRequirementAddressed: markRequirementAddressedTool,
+  deriveCompositeEvidence: deriveCompositeEvidenceTool,
   recordOutcome: recordOutcomeTool,
   archiveJob: archiveJobTool,
   markSessionComplete: markSessionCompleteTool,

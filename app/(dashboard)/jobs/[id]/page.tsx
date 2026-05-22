@@ -28,7 +28,7 @@ import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
 import { WorkflowCoachPanelClient } from "@/components/coach/WorkflowCoachPanelClient"
-import { GapCoachDrawer } from "@/components/coach/GapCoachDrawer"
+import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import type { CoachRecommendation } from "@/lib/coach/recommendations"
 
 export const dynamic = "force-dynamic"
@@ -459,7 +459,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
           {coachStep.required && !hasDocs && (
             <>
-              <GapCoachDrawer
+              <RequirementCoachModal
                 jobId={id}
                 jobTitle={jobWithAnalysis.title}
                 company={jobWithAnalysis.company}
