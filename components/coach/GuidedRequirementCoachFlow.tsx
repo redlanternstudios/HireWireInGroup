@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { CheckCircle2, MessageSquareText, Target } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,15 @@ function isUnresolved(status: RequirementEvidenceMatch["status"]) {
   return status === "gap" || status === "unknown" || status === "partial"
 }
 
+function requirementAnchorId(requirementId: string) {
+  const safeId = requirementId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+  return `req-${safeId || "unknown"}`
+}
+
 export function GuidedRequirementCoachFlow({
   jobId,
   jobTitle,
@@ -56,6 +66,10 @@ export function GuidedRequirementCoachFlow({
   }>
   requestedRequirementId?: string | null
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
   const unresolvedMatches = useMemo(() => {
     const required = requirementMatches.filter(
       (match) => match.priority === "required" && isUnresolved(match.status),
@@ -78,7 +92,11 @@ export function GuidedRequirementCoachFlow({
   }, [requestedRequirementId, unresolvedMatches])
 
   const [activeIndex, setActiveIndex] = useState(initialIndex)
-  const [flowOpen, setFlowOpen] = useState(Boolean(requestedRequirementId))
+  const [flowOpen, setFlowOpen] = useState(unresolvedMatches.length > 0)
+
+  useEffect(() => {
+    setActiveIndex(initialIndex)
+  }, [initialIndex])
 
   const safeActiveIndex =
     unresolvedMatches.length === 0
@@ -101,6 +119,22 @@ export function GuidedRequirementCoachFlow({
   }
 
   const stepLabel = `Gap ${safeActiveIndex + 1} of ${unresolvedMatches.length}`
+
+  const setResolveParam = (requirementId: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (requirementId) {
+      params.set("resolve", requirementId)
+    } else {
+      params.delete("resolve")
+    }
+
+    const query = params.toString()
+    const target = requirementId
+      ? `${pathname}${query ? `?${query}` : ""}#${requirementAnchorId(requirementId)}`
+      : `${pathname}${query ? `?${query}` : ""}`
+
+    router.replace(target, { scroll: false })
+  }
 
   return (
     <div className="hw-card px-5 py-4 border-l-4 border-l-primary">
@@ -136,9 +170,15 @@ export function GuidedRequirementCoachFlow({
           if (mode === "answer" || mode === "skip") {
             const hasNext = safeActiveIndex + 1 < unresolvedMatches.length
             if (hasNext) {
-              setActiveIndex(safeActiveIndex + 1)
+              const nextIndex = safeActiveIndex + 1
+              const next = unresolvedMatches[nextIndex]
+              setActiveIndex(nextIndex)
+              if (next) {
+                setResolveParam(next.requirement_id)
+              }
               setTimeout(() => setFlowOpen(true), 0)
             } else {
+              setResolveParam(null)
               setFlowOpen(false)
             }
           }
