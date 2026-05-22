@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
 import ReadinessChecklist from "@/components/ReadinessChecklist"
+import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
 import {
   ChevronLeft,
   ExternalLink,
@@ -201,6 +202,63 @@ function NextStepBanner({ workflow, jobId, hasDocs, hasUrl }: {
   )
 }
 
+function ReadinessNextStepCard({
+  readiness,
+  jobId,
+}: {
+  readiness: ReturnType<typeof evaluateReadiness>
+  jobId: string
+}) {
+  if (readiness.outcome !== "active") {
+    return (
+      <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="hw-section-label mb-1">Next step</p>
+            <p className="text-sm font-semibold text-foreground">
+              {readiness.outcome.replace(/_/g, " ")} — tracking outcomes
+            </p>
+            <p className="text-xs text-muted-foreground">
+              This job has moved into outcome tracking.
+            </p>
+          </div>
+          <Link href="/applications" className="shrink-0">
+            <Button size="sm" variant="outline" className="gap-1.5">
+              View applications <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  const action = readiness.isReady && readiness.canApply
+    ? {
+        label: "Apply now",
+        href: `/ready-to-apply?jobId=${encodeURIComponent(jobId)}`,
+        description: "Submit through the readiness gate.",
+      }
+    : readiness.nextAction
+
+  if (!action) return null
+
+  return (
+    <div className="hw-card border-l-4 border-l-primary px-5 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="hw-section-label mb-1">Next step</p>
+          <p className="text-sm text-muted-foreground">{action.description}</p>
+        </div>
+        <Link href={action.href} className="shrink-0">
+          <Button size="sm" className="hw-btn-primary gap-1.5">
+            {action.label} <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
@@ -273,6 +331,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     (jobWithAnalysis.responsibilities?.length ?? 0) > 0
   )
   const overallScore = scores?.overall_score ?? job.score ?? null
+  const scoreGaps: string[] = Array.isArray(job.score_gaps)
+    ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
+    : []
+  const coachProgressTotal = coachStep.gaps.length || (coachStep.required ? 1 : 0)
+  const coachProgressCurrent = coachProgressTotal > 0
+    ? Math.min(coachProgressTotal, coachStep.addressedGaps.length + 1)
+    : 0
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
 
@@ -335,12 +400,19 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
+      <ReadinessContextBanner
+        stage={readiness.stage}
+        blockedReasons={readiness.blockedReasons}
+        nextAction={readiness.nextAction}
+      />
+
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
       {/* NEXT STEP CTA — always visible, never a dead end */}
       {!stillProcessing && (
         <>
+          <ReadinessNextStepCard readiness={readiness} jobId={id} />
           <div className="space-y-2">
             <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
             {!readiness.isReady && (
@@ -352,7 +424,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
           {hasDocs && readiness.outcome === "active" && (
             <div className="mt-4 flex justify-end">
-              <Link href="/ready-to-apply">
+              <Link href={`/ready-to-apply?jobId=${encodeURIComponent(id)}`}>
                 <Button className="hw-btn-primary">Ready to Apply</Button>
               </Link>
             </div>
@@ -393,12 +465,37 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               <div className="flex items-center justify-between mb-4">
                 <h2 className="hw-section-label">Fit Analysis</h2>
                 {overallScore !== null && (
-                  <span className="text-2xl font-bold tabular-nums text-foreground">
-                    {Math.round(Number(overallScore))}
-                    <span className="text-sm font-normal text-muted-foreground">/100</span>
-                  </span>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold tabular-nums text-foreground">
+                      {Math.round(Number(overallScore))}
+                      <span className="text-sm font-normal text-muted-foreground">/100</span>
+                    </span>
+                  </div>
                 )}
               </div>
+              {overallScore !== null && (
+                <div className="mb-4 rounded-md border border-border bg-muted/30 px-3 py-2">
+                  {scoreGaps.length > 0 ? (
+                    <div>
+                      <p className="hw-section-label mb-2">Top gaps</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {scoreGaps.slice(0, 3).map((gap) => (
+                          <span
+                            key={gap}
+                            className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                          >
+                            {gap}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Score reflects how well your evidence covers this role&apos;s requirements.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-3">
                 {coachStep.evidenceCoverage != null && (
                   <ScoreBar
@@ -466,9 +563,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 company={jobWithAnalysis.company}
                 score={overallScore}
                 status={job.status}
-                gaps={coachStep.gaps}
-                autoOpen={!coachStep.complete}
-              />
+	                gaps={coachStep.gaps}
+	                autoOpen={!coachStep.complete}
+                    progressLabel={
+                      coachProgressTotal > 0
+                        ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
+                        : undefined
+                    }
+                    showGenerationUnlock={!readiness.canGenerate}
+	              />
               {gapCoachRecommendations.length > 0 && (
                 <WorkflowCoachPanelClient
                   recommendations={gapCoachRecommendations}

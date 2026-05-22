@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import {
   saveDocumentEdits,
   resetDocumentEdits,
@@ -214,6 +215,7 @@ export default function DocumentsEditor({
       />
       <div className="space-y-6">
         <PackageGate
+          jobId={job.id}
           isAccepted={isAccepted}
           packageStatus={packageStatus}
           isPending={isPending}
@@ -410,6 +412,7 @@ export default function DocumentsEditor({
 // ---------------------------------------------------------------------------
 
 interface PackageGateProps {
+  jobId: string;
   isAccepted: boolean;
   packageStatus: string;
   isPending: boolean;
@@ -418,6 +421,7 @@ interface PackageGateProps {
 }
 
 function PackageGate({
+  jobId,
   isAccepted,
   packageStatus,
   isPending,
@@ -448,6 +452,12 @@ function PackageGate({
         >
           Flag for review
         </button>
+        <Link
+          href={`/ready-to-apply?jobId=${jobId}`}
+          className="rounded bg-foreground px-4 py-2 text-xs font-semibold text-background"
+        >
+          Continue to apply
+        </Link>
       </div>
     );
   }

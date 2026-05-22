@@ -52,6 +52,7 @@ export function GuidedRequirementCoachFlow({
   requirementMatches,
   evidenceItems,
   requestedRequirementId,
+  generationBlocked = false,
 }: {
   jobId: string
   jobTitle: string
@@ -65,6 +66,7 @@ export function GuidedRequirementCoachFlow({
     source_type: string | null
   }>
   requestedRequirementId?: string | null
+  generationBlocked?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -200,6 +202,8 @@ export function GuidedRequirementCoachFlow({
           coach_question: active.evidence_questions?.[0],
         }}
         evidenceItems={evidenceItems}
+        progressLabel={stepLabel}
+        showGenerationUnlock={generationBlocked}
       />
     </div>
   )

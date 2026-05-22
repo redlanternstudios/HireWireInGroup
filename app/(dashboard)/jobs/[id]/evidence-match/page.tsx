@@ -7,6 +7,8 @@ import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
 import { getCoachStepState } from "@/lib/coach-step"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 
 export const dynamic = "force-dynamic"
@@ -61,11 +63,20 @@ export default async function EvidenceMatchPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ resolve?: string | string[] }>
+  searchParams: Promise<{ resolve?: string | string[]; req?: string | string[] }>
 }) {
   const { id } = await params
   const resolvedSearchParams = await searchParams
   const resolveParam = resolvedSearchParams?.resolve
+  const reqParam = resolvedSearchParams?.req
+  const requestedReqParam = Array.isArray(reqParam)
+    ? (reqParam[0] ?? null)
+    : (reqParam ?? null)
+  if (!resolveParam && requestedReqParam) {
+    redirect(
+      `/jobs/${id}/evidence-match?resolve=${encodeURIComponent(requestedReqParam)}#${requirementAnchorId(requestedReqParam)}`,
+    )
+  }
   const requestedRequirementId = Array.isArray(resolveParam)
     ? (resolveParam[0] ?? null)
     : (resolveParam ?? null)
@@ -75,7 +86,7 @@ export default async function EvidenceMatchPage({
 
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed")
+    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed, generated_resume, generated_cover_letter, quality_passed, applied_at")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -117,9 +128,15 @@ export default async function EvidenceMatchPage({
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
   const evidenceCount = evidenceItems?.length ?? 0
   const coachStep = getCoachStepState({ ...job, score_gaps: job.score_gaps ?? gaps })
+  const readiness = evaluateReadiness(job)
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
   const proofGaps = requirementMatches.filter(match => match.status === "gap" || match.status === "unknown")
+  const requiredGaps = requirementMatches.filter(
+    (match) =>
+      match.priority === "required" &&
+      (match.status === "gap" || match.status === "unknown" || match.status === "partial"),
+  )
 
   return (
     <div className="hw-page">
@@ -196,9 +213,25 @@ export default async function EvidenceMatchPage({
                   source_title: item.source_title,
                   source_type: item.source_type,
                 }))}
+                generationBlocked={!readiness.canGenerate}
               />
 
-              <details className="hw-card px-5 py-4">
+              {requiredGaps.length === 0 && (
+                <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-semibold text-foreground">
+                      All required gaps addressed — return to job to generate documents
+                    </p>
+                    <Link href={`/jobs/${id}`} className="shrink-0">
+                      <Button size="sm" className="hw-btn-primary gap-1.5">
+                        Return to job <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              <details className="hw-card px-5 py-4" open={!!requestedRequirementId}>
                 <summary className="cursor-pointer text-sm font-semibold text-foreground">
                   View all requirements ({requirementMatches.length})
                 </summary>
@@ -214,7 +247,12 @@ export default async function EvidenceMatchPage({
                       <div
                         id={requirementAnchorId(match.requirement_id)}
                         key={match.requirement_id}
-                        className="hw-requirement-card rounded-md border border-border bg-background px-5 py-4"
+                        className={cn(
+                          "hw-requirement-card rounded-md border bg-background px-5 py-4",
+                          requestedRequirementId === match.requirement_id
+                            ? "border-primary bg-primary/5"
+                            : "border-border",
+                        )}
                       >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
@@ -262,6 +300,7 @@ export default async function EvidenceMatchPage({
                               source_title: item.source_title,
                               source_type: item.source_type,
                             }))}
+                            showGenerationUnlock={!readiness.canGenerate}
                           />
                         )}
                     </div>

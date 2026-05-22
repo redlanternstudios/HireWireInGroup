@@ -75,7 +75,7 @@ export default function ApplicationPackagePreview({
         setStatus(result.error)
       } else {
         setStatus("Accepted! Redirecting...")
-        router.push(`/ready-to-apply?job=${job.id}`)
+        router.push(`/ready-to-apply?jobId=${job.id}`)
       }
     })
   }
