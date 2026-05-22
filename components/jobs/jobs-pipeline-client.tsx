@@ -138,6 +138,65 @@ function scoreColor(score: number | null): string {
   return "text-stone-500";
 }
 
+function requirementAnchorId(requirementId: string): string {
+  const safeId = requirementId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `req-${safeId || "unknown"}`;
+}
+
+function getFirstUnresolvedRequirementId(job: EnrichedJob): string | null {
+  const map = job.evidence_map as
+    | {
+        requirement_matches?: Array<{
+          requirement_id?: string;
+          status?: string;
+          priority?: string;
+        }>;
+      }
+    | null;
+
+  const matches = Array.isArray(map?.requirement_matches)
+    ? map.requirement_matches
+    : [];
+
+  const pick = (priority: string) =>
+    matches.find(
+      (match) =>
+        match.priority === priority &&
+        (match.status === "gap" ||
+          match.status === "unknown" ||
+          match.status === "partial") &&
+        typeof match.requirement_id === "string" &&
+        match.requirement_id.trim().length > 0,
+    );
+
+  const required = pick("required");
+  if (required?.requirement_id) return required.requirement_id;
+
+  const preferred = pick("preferred");
+  if (preferred?.requirement_id) return preferred.requirement_id;
+
+  const any = matches.find(
+    (match) =>
+      (match.status === "gap" ||
+        match.status === "unknown" ||
+        match.status === "partial") &&
+      typeof match.requirement_id === "string" &&
+      match.requirement_id.trim().length > 0,
+  );
+
+  return any?.requirement_id ?? null;
+}
+
+function requirementResolveHref(job: EnrichedJob): string | null {
+  const requirementId = getFirstUnresolvedRequirementId(job);
+  if (!requirementId) return null;
+  const anchor = requirementAnchorId(requirementId);
+  return `/jobs/${job.id}/evidence-match?resolve=${encodeURIComponent(requirementId)}#${anchor}`;
+}
+
 // ─── Enriched job ─────────────────────────────────────────────────────────────
 
 function enrichJob(job: PipelineJob) {
@@ -262,6 +321,7 @@ function JobRow({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const action = nextActionFor(job);
+  const resolveHref = requirementResolveHref(job);
   const stageLabel = DISPLAY_STAGE_LABEL[job.displayStage];
   const stageColor = DISPLAY_STAGE_COLOR[job.displayStage];
   const tags = tagsFor(job);
@@ -370,6 +430,13 @@ function JobRow({
           </p>
           <p className="text-[10px] text-muted-foreground">{action.desc}</p>
         </button>
+        {resolveHref && (
+          <Link href={resolveHref} className="mt-1 inline-flex">
+            <span className="text-[10px] font-semibold text-primary hover:underline">
+              Fix gaps
+            </span>
+          </Link>
+        )}
       </div>
 
       {/* Overflow menu */}
@@ -394,6 +461,14 @@ function JobRow({
           >
             {[
               { label: "View job", href: `/jobs/${job.id}` },
+              ...(resolveHref
+                ? [
+                    {
+                      label: "Fix gaps with coach",
+                      href: resolveHref,
+                    },
+                  ]
+                : []),
               { label: "Review documents", href: `/jobs/${job.id}/documents` },
               {
                 label: "Evidence match",

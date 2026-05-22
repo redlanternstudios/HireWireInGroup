@@ -33,8 +33,19 @@ function requirementAnchorId(requirementId: string) {
   return `req-${safeId || "unknown"}`
 }
 
-export default async function EvidenceMatchPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EvidenceMatchPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ resolve?: string | string[] }>
+}) {
   const { id } = await params
+  const resolvedSearchParams = await searchParams
+  const resolveParam = resolvedSearchParams?.resolve
+  const requestedRequirementId = Array.isArray(resolveParam)
+    ? (resolveParam[0] ?? null)
+    : (resolveParam ?? null)
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
@@ -180,6 +191,10 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                           score={job.score}
                           status={job.status}
                           gaps={[match.requirement_text]}
+                          autoOpen={
+                            !!requestedRequirementId &&
+                            requestedRequirementId === match.requirement_id
+                          }
                           requirement={{
                             requirement_id: match.requirement_id,
                             requirement_text: match.requirement_text,
