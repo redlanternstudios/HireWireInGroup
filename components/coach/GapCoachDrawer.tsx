@@ -242,7 +242,11 @@ export function RequirementCoachModal({
                     variant="outline"
                     className="text-xs"
                     disabled={saving !== null}
-                    onClick={() => postCoachStep({ action: "skip" }, "skip")}
+                    onClick={() => postCoachStep({
+                      action: "skip",
+                      gap: activeGap,
+                      requirementId: requirement?.requirement_id,
+                    }, "skip")}
                   >
                     {saving === "skip" ? "Skipping..." : "Skip and accept weaker output"}
                   </Button>

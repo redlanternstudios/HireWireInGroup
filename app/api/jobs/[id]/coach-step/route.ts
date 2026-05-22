@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server"
 
 type CoachStepBody =
   | { action: "answer"; gap: string; requirementId?: string; answer: string }
-  | { action: "skip" }
+  | { action: "skip"; gap?: string; requirementId?: string }
   | { action: "complete" }
 
 export async function POST(
@@ -34,11 +34,19 @@ export async function POST(
   }
 
   if (body.action === "skip") {
+    const skippedGap = typeof body.gap === "string" ? cleanGapLabel(body.gap) : null
+    const skippedRequirementId =
+      typeof body.requirementId === "string" && body.requirementId.trim().length > 0
+        ? body.requirementId
+        : null
+
     const update = await supabase
       .from("jobs")
       .update({
         evidence_map: withCoachStepMeta(job.evidence_map, "skipped", {
           skipped_at: new Date().toISOString(),
+          skipped_gap: skippedGap,
+          skipped_requirement_id: skippedRequirementId,
         }),
       })
       .eq("id", id)
@@ -48,7 +56,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
     }
 
-    await emitCoachEvent(supabase, user.id, id, "skipped", {})
+    await emitCoachEvent(supabase, user.id, id, "skipped", {
+      gap: skippedGap,
+      requirement_id: skippedRequirementId,
+    })
     return NextResponse.json({ success: true, coachStep: { status: "skipped" } })
   }
 
