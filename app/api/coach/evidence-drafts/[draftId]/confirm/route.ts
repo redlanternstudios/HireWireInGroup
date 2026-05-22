@@ -183,6 +183,12 @@ export async function POST(
           reason: "new_evidence_confirmed",
           evidence_id: evidenceRow.id,
           requirement_id: anchoredRequirementId,
+          cause: "evidence_confirmation",
+          trigger_event: "evidence_mapped",
+          requirement_id: anchoredRequirementId,
+          evidence_id: evidenceRow.id,
+          generation_status_before: "ready",
+          generation_status_after: "needs_review",
         },
       })
     }
