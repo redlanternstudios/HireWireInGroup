@@ -138,6 +138,42 @@ export async function POST(
       },
     })
 
+    await handleDomainEvent({
+      supabase,
+      event_type: "requirement_addressed",
+      job_id: anchoredJobId,
+      user_id: userId,
+      source: "coach_route",
+      payload: {
+        evidence_id: evidenceRow.id,
+        requirement_id: anchoredRequirementId,
+        prev_status: mappingResult.prevStatus,
+        new_status: mappingResult.newStatus,
+        via: "coach_draft_confirm",
+      },
+    })
+
+    const { data: jobState } = await supabase
+      .from("jobs")
+      .select("generation_status, generated_resume, generated_cover_letter")
+      .eq("id", anchoredJobId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle()
+
+    const hasGeneratedDocuments = !!(
+      jobState?.generated_resume || jobState?.generated_cover_letter
+    )
+
+    if (jobState?.generation_status === "ready" && hasGeneratedDocuments) {
+      await supabase
+        .from("jobs")
+        .update({ generation_status: "needs_review" })
+        .eq("id", anchoredJobId)
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+    }
+
     return NextResponse.json({
       success: true,
       evidenceId: evidenceRow.id,

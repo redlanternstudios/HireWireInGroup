@@ -79,7 +79,7 @@ export const INVALIDATION_MAP: PropagationMap = {
   evidence_mapped: {
     invalidates: ["readiness", "coach_state"],
     recomputes: ["readiness"],
-    routeTemplates: ["/jobs/[id]", "/jobs/[id]/evidence-match", "/ready-to-apply"],
+    routeTemplates: ["/jobs/[id]", "/jobs/[id]/evidence-match", "/jobs/[id]/documents", "/ready-to-apply"],
     severity: "info",
   },
 
