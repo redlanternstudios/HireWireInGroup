@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
+import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
@@ -54,6 +55,56 @@ function inferRequirementType(text: string): RequirementType {
   if (/(own|lead|manage|partner|coordinate|launch|roadmap|stakeholder|cross-functional)/.test(value)) return "responsibility"
   if (/(analytical|problem solving|communication|strategy|leadership|skill|ability)/.test(value)) return "skill"
   return "other"
+}
+
+function usablePacketRequirementIds(evidenceMap: CanonicalJobEvidenceMap | null) {
+  const packets = Array.isArray(evidenceMap?.capability_packets)
+    ? evidenceMap.capability_packets
+    : []
+
+  return new Set(
+    packets
+      .filter(
+        (packet) =>
+          packet.matchStrength !== "weak" &&
+          packet.matchedEvidenceIds.length > 0 &&
+          (packet.allowedUsage === "resume_allowed" ||
+            packet.allowedUsage === "resume_allowed_with_reframe"),
+      )
+      .map((packet) => String(packet.packet_id).replace(/^pkt_/, "")),
+  )
+}
+
+function needsEvidenceFix(
+  match: RequirementEvidenceMatch,
+  usableRequirementIds: Set<string>,
+) {
+  return (
+    match.priority === "required" &&
+    (match.status === "gap" ||
+      match.status === "unknown" ||
+      match.status === "partial" ||
+      !usableRequirementIds.has(match.requirement_id))
+  )
+}
+
+function normalizeFixableMatch(
+  match: RequirementEvidenceMatch,
+  usableRequirementIds: Set<string>,
+): RequirementEvidenceMatch {
+  if (!needsEvidenceFix(match, usableRequirementIds)) return match
+
+  return {
+    ...match,
+    status: match.status === "met" ? "partial" : match.status,
+    confidence: match.status === "met" ? "low" : match.confidence,
+    proof_needed:
+      (match.proof_needed?.length ?? 0) > 0
+        ? match.proof_needed
+        : [
+            `Confirm a concrete proof point HireWire can safely use for: ${match.requirement_text}`,
+          ],
+  }
 }
 
 export default async function EvidenceMatchPage({
@@ -129,11 +180,15 @@ export default async function EvidenceMatchPage({
   const readiness = evaluateReadiness(job)
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
-  const proofGaps = requirementMatches.filter(match => match.status === "gap" || match.status === "unknown")
+  const usableRequirementIds = usablePacketRequirementIds(evidenceMap)
+  const normalizedRequirementMatches = requirementMatches.map((match) =>
+    normalizeFixableMatch(match, usableRequirementIds),
+  )
+  const proofGaps = normalizedRequirementMatches.filter((match) =>
+    needsEvidenceFix(match, usableRequirementIds),
+  )
   const requiredGaps = requirementMatches.filter(
-    (match) =>
-      match.priority === "required" &&
-      (match.status === "gap" || match.status === "unknown" || match.status === "partial"),
+    (match) => needsEvidenceFix(match, usableRequirementIds),
   )
 
   return (
@@ -196,7 +251,7 @@ export default async function EvidenceMatchPage({
             </div>
           )}
 
-          {requirementMatches.length > 0 && (
+          {normalizedRequirementMatches.length > 0 && (
             <div className="space-y-4">
               <GuidedRequirementCoachFlow
                 jobId={id}
@@ -204,7 +259,7 @@ export default async function EvidenceMatchPage({
                 company={job.company_name ?? "this company"}
                 score={job.score}
                 status={job.status}
-                requirementMatches={requirementMatches}
+                requirementMatches={normalizedRequirementMatches}
                 requestedRequirementId={requestedRequirementId}
                 evidenceItems={(evidenceItems ?? []).map((item) => ({
                   id: item.id,
@@ -241,7 +296,7 @@ export default async function EvidenceMatchPage({
                 </p>
 
                 <div className="mt-3 space-y-3">
-                  {requirementMatches.map((match) => {
+                  {normalizedRequirementMatches.map((match) => {
                     const status = uiStatus(match)
                     const requirementType = inferRequirementType(match.requirement_text)
                     return (
@@ -312,11 +367,15 @@ export default async function EvidenceMatchPage({
                 ))}
               </ul>
               <div className="mt-4 pt-3 border-t border-border">
-                <Link href={`/jobs/${id}`}>
-                  <Button size="sm" variant="outline" className="gap-1.5">
-                    Return to job <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                </Link>
+                <RequirementCoachModal
+                  jobId={id}
+                  jobTitle={job.role_title ?? "this role"}
+                  company={job.company_name ?? "this company"}
+                  score={job.score}
+                  status={job.status}
+                  gaps={gaps}
+                  showGenerationUnlock={!readiness.canGenerate}
+                />
               </div>
             </div>
           )}

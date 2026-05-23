@@ -179,16 +179,25 @@ function getFirstUnresolvedRequirementId(job: ReadinessJob): string | null {
   if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) return null;
 
   const matches = evidenceMap.requirement_matches;
+  const usablePacketRequirementIds = new Set(
+    packetsForResume(
+      Array.isArray(evidenceMap.capability_packets)
+        ? evidenceMap.capability_packets
+        : [],
+    ).map((packet) => String(packet.packet_id).replace(/^pkt_/, "")),
+  );
+
+  const isBlocking = (match: RequirementEvidenceMatch) =>
+    (match.status === "gap" ||
+      match.status === "unknown" ||
+      match.status === "partial" ||
+      !usablePacketRequirementIds.has(match.requirement_id)) &&
+    typeof match.requirement_id === "string" &&
+    match.requirement_id.trim().length > 0;
 
   const pick = (priority: "required" | "preferred") =>
     matches.find(
-      (match) =>
-        match.priority === priority &&
-        (match.status === "gap" ||
-          match.status === "unknown" ||
-          match.status === "partial") &&
-        typeof match.requirement_id === "string" &&
-        match.requirement_id.trim().length > 0,
+      (match) => match.priority === priority && isBlocking(match),
     );
 
   const required = pick("required");
@@ -197,14 +206,7 @@ function getFirstUnresolvedRequirementId(job: ReadinessJob): string | null {
   const preferred = pick("preferred");
   if (preferred?.requirement_id) return preferred.requirement_id;
 
-  const any = matches.find(
-    (match) =>
-      (match.status === "gap" ||
-        match.status === "unknown" ||
-        match.status === "partial") &&
-      typeof match.requirement_id === "string" &&
-      match.requirement_id.trim().length > 0,
-  );
+  const any = matches.find(isBlocking);
 
   return any?.requirement_id ?? null;
 }
