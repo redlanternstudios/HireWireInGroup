@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Send,
   ArrowRight,
-  CheckSquare,
   MessageSquare,
   Trophy,
   XCircle,
@@ -170,11 +169,6 @@ export default async function ApplicationsPage() {
             outcome.
           </p>
         </div>
-        <Link href="/ready-to-apply">
-          <Button size="sm" variant="outline" className="gap-1.5">
-            <CheckSquare className="h-3.5 w-3.5" /> Ready to Apply
-          </Button>
-        </Link>
       </div>
 
       {/* ─── Metric Strip ─── */}
@@ -218,14 +212,13 @@ export default async function ApplicationsPage() {
               <div>
                 <p className="text-sm font-semibold">No applications yet</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                  Applications appear here when you submit through the readiness
-                  gate. Start by reviewing Ready to Apply and launching your
-                  strongest packages.
+                  Applications appear here after confirmed submissions through
+                  the readiness gate.
                 </p>
               </div>
-              <Link href="/ready-to-apply">
-                <Button size="sm" className="hw-btn-primary gap-1.5">
-                  <CheckSquare className="h-3.5 w-3.5" /> Go to Ready to Apply
+              <Link href="/jobs">
+                <Button size="sm" variant="outline">
+                  View pipeline
                 </Button>
               </Link>
             </div>
@@ -340,40 +333,6 @@ export default async function ApplicationsPage() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <h2 className="hw-section-label mb-2">Quick Links</h2>
-            <div className="space-y-2">
-              {[
-                {
-                  href: "/ready-to-apply",
-                  icon: CheckSquare,
-                  label: "Ready to Apply",
-                  desc: "Submit your next package",
-                },
-                {
-                  href: "/jobs",
-                  icon: Send,
-                  label: "Pipeline",
-                  desc: "All jobs in progress",
-                },
-              ].map((item) => (
-                <Link key={item.href} href={item.href}>
-                  <div className="hw-card px-3.5 py-3 flex items-center gap-3 group">
-                    <item.icon className="h-3.5 w-3.5 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-foreground">
-                        {item.label}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {item.desc}
-                      </p>
-                    </div>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground/40 group-hover:text-primary transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

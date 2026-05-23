@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { AlertTriangle, CheckSquare, FileText, Plus, ShieldCheck, Star } from "lucide-react"
+import { AlertTriangle, CheckSquare, FileText, ShieldCheck, Star } from "lucide-react"
 
 import ReadinessChecklist from "@/components/ReadinessChecklist"
 import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
@@ -72,11 +72,6 @@ export default async function ReadyToApplyPage() {
           <h1 className="hw-page-title">Ready to Apply</h1>
           <p className="hw-page-subtitle">Apply only after the readiness checklist clears, or log an explicit override.</p>
         </div>
-        <Link href="/jobs?add=true">
-            <Button size="sm" className="hw-btn-primary gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Add Job
-          </Button>
-        </Link>
       </div>
 
       <div className="hw-metrics">
@@ -110,12 +105,12 @@ export default async function ReadyToApplyPage() {
           <div>
             <p className="text-sm font-semibold">No active jobs to evaluate</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              Add a job, generate materials, and HireWire will show whether the application can be submitted.
+              Jobs appear here after their materials are ready for the application gate.
             </p>
           </div>
-          <Link href="/jobs?add=true">
-              <Button size="sm" className="hw-btn-primary gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Add Job
+          <Link href="/jobs">
+            <Button size="sm" variant="outline">
+              View pipeline
             </Button>
           </Link>
         </div>
@@ -240,13 +235,6 @@ export default async function ReadyToApplyPage() {
                 <li>Evidence threshold met</li>
                 <li>Quality pass complete</li>
               </ul>
-            </div>
-
-            <div className="hw-panel p-4">
-              <p className="hw-section-label mb-2">Next Best Action</p>
-              <p className="text-xs text-muted-foreground">
-                If blocked, open the job and resolve the first checklist item in red. If ready, review docs one more time and apply from this gate.
-              </p>
             </div>
           </aside>
         </div>
