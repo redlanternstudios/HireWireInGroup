@@ -244,7 +244,7 @@ export default async function DashboardPage() {
       return {
         label: "Add a job",
         desc: "Paste a job description to start your pipeline.",
-        href: "/jobs/new",
+        href: "/jobs?add=true",
         cta: "Add job",
         timeEst: null,
       };
@@ -309,7 +309,7 @@ export default async function DashboardPage() {
               </span>
             )}
           </button>
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
             <Button size="sm" className="hw-btn-primary gap-1.5 px-4 h-9">
               <Plus className="h-3.5 w-3.5" /> Add Job
             </Button>
@@ -460,7 +460,7 @@ export default async function DashboardPage() {
                   your career context and tell you exactly what to do next.
                 </p>
               </div>
-              <Link href="/jobs/new">
+              <Link href="/jobs?add=true">
                 <Button size="sm" className="hw-btn-primary gap-1.5 mt-1 px-5">
                   <Plus className="h-3.5 w-3.5" /> Paste a job description
                 </Button>
@@ -885,7 +885,7 @@ export default async function DashboardPage() {
             <div className="space-y-0.5">
               {[
                 {
-                  href: "/jobs/new",
+                  href: "/jobs?add=true",
                   icon: Plus,
                   label: "Paste a job description",
                   desc: "Analyze a new opportunity",

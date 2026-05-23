@@ -127,7 +127,7 @@ export function AppSidebar() {
 
         {/* Add Job CTA */}
         <div className="px-2 pb-1">
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
             <Button
               size="sm"
               variant="outline"

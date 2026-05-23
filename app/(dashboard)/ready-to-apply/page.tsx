@@ -72,7 +72,7 @@ export default async function ReadyToApplyPage() {
           <h1 className="hw-page-title">Ready to Apply</h1>
           <p className="hw-page-subtitle">Apply only after the readiness checklist clears, or log an explicit override.</p>
         </div>
-        <Link href="/jobs/new">
+        <Link href="/jobs?add=true">
             <Button size="sm" className="hw-btn-primary gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add Job
           </Button>
@@ -113,7 +113,7 @@ export default async function ReadyToApplyPage() {
               Add a job, generate materials, and HireWire will show whether the application can be submitted.
             </p>
           </div>
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
               <Button size="sm" className="hw-btn-primary gap-1.5">
               <Plus className="h-3.5 w-3.5" /> Add Job
             </Button>

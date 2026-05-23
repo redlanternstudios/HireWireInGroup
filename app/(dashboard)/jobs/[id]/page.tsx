@@ -542,15 +542,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           )}
 
           {coachStep.required && !hasDocs && (
-            <RequirementCoachModal
-              jobId={id}
-              jobTitle={jobWithAnalysis.title}
-              company={jobWithAnalysis.company}
-              score={overallScore}
-              status={job.status}
-              gaps={coachStep.gaps}
-              autoOpen={!coachStep.complete}
-            />
             <>
               <RequirementCoachModal
                 jobId={id}
@@ -558,23 +549,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 company={jobWithAnalysis.company}
                 score={overallScore}
                 status={job.status}
-	                gaps={coachStep.gaps}
-	                autoOpen={!coachStep.complete}
-                    progressLabel={
-                      coachProgressTotal > 0
-                        ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
-                        : undefined
-                    }
-                    showGenerationUnlock={!readiness.canGenerate}
-	              />
-              {gapCoachRecommendations.length > 0 && (
-                <WorkflowCoachPanelClient
-                  recommendations={gapCoachRecommendations}
-                  blockers={["Address the highest-impact gaps before generating materials."]}
-                  insights={[]}
-                  momentum="Answer one prompt and HireWire can turn it into evidence for this role."
-                />
-              )}
+                gaps={coachStep.gaps}
+                autoOpen={!coachStep.complete}
+                progressLabel={
+                  coachProgressTotal > 0
+                    ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
+                    : undefined
+                }
+                showGenerationUnlock={!readiness.canGenerate}
+              />
             </>
           )}
 

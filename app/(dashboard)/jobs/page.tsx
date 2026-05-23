@@ -25,7 +25,16 @@ type JobsRow = {
   job_scores: Array<{ overall_score?: number }> | null
 }
 
-export default async function JobsPage() {
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ add?: string | string[] }>
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const addParam = resolvedSearchParams?.add
+  const initialShowAddJob = Array.isArray(addParam)
+    ? addParam[0] === "true"
+    : addParam === "true"
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
@@ -83,5 +92,5 @@ export default async function JobsPage() {
     }
   })
 
-  return <JobsPipelineClient jobs={pipeline} />
+  return <JobsPipelineClient jobs={pipeline} initialShowAddJob={initialShowAddJob} />
 }

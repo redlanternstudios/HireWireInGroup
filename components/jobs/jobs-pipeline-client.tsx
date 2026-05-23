@@ -765,12 +765,18 @@ function IntelligencePanel({
 
 // ─── Main Client Component ────────────────────────────────────────────────────
 
-export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
+export function JobsPipelineClient({
+  jobs: rawJobs,
+  initialShowAddJob = false,
+}: {
+  jobs: PipelineJob[]
+  initialShowAddJob?: boolean
+}) {
   const [activeView, setActiveView] = useState<ViewTab>("active");
   const [activeFilter, setActiveFilter] = useState<FilterChip>("all");
   const [sortKey, setSortKey] = useState<SortKey>("needs_action_first");
   const [showSort, setShowSort] = useState(false);
-  const [showAddJob, setShowAddJob] = useState(false);
+  const [showAddJob, setShowAddJob] = useState(initialShowAddJob);
   const [guidedJob, setGuidedJob] = useState<EnrichedJob | null>(null);
 
   const jobs = useMemo(() => rawJobs.map(enrichJob), [rawJobs]);
