@@ -63,10 +63,10 @@ export function AppSidebar() {
   const pathname = usePathname()
 
   const renderNavItem = (item: NavItem) => {
-    // /jobs active on exact match or any /jobs/* except /jobs/new
+    // /jobs active on exact match or any /jobs/* except /jobs?add=true
     const isActive =
       pathname === item.href ||
-      (item.href === "/jobs" && pathname.startsWith("/jobs/") && pathname !== "/jobs/new") ||
+      (item.href === "/jobs" && pathname.startsWith("/jobs/") && pathname !== "/jobs?add=true") ||
       (item.href !== "/dashboard" && item.href !== "/" && item.href !== "/jobs" && pathname.startsWith(item.href))
 
     return (

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Zap } from "lucide-react"
+import { toast } from "sonner"
 
 interface AnalyzeJobButtonProps {
   jobId: string
@@ -56,8 +57,13 @@ export function AnalyzeJobButton({ jobId, hasUrl, label = "Analyze Job", size = 
         return
       }
 
-      // Refresh the page to show updated analysis
-      router.refresh()
+      // Show success toast and auto-advance to evidence matching
+      toast.success("Analysis complete — ready to match evidence")
+
+      // Wait 2 seconds then redirect to evidence-match
+      setTimeout(() => {
+        router.push(`/jobs/${jobId}/evidence-match`)
+      }, 2000)
     } catch {
       setError("Network error. Please try again.")
     } finally {

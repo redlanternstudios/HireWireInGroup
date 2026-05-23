@@ -58,7 +58,7 @@ export function MarkAsAppliedButton({
       const result = await applyToJob(jobId, true, reason)
       if (result.success) {
         setIsDialogOpen(false)
-        router.refresh()
+        router.push("/applications")
       }
     })
   }
