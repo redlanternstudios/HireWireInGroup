@@ -161,7 +161,7 @@ export default function DocumentsEditor({
       if (result.success) {
         setIsAccepted(true);
         setPackageStatus("ready");
-        flash("Package accepted — Apply button now unlocked");
+        flash("Package accepted — ready-to-apply gate unlocked");
       } else {
         flash(`Error: ${result.error}`);
       }
@@ -441,7 +441,7 @@ function PackageGate({
               Package accepted
             </p>
             <p className="text-xs text-muted-foreground">
-              Apply button is now unlocked. Edit documents to re-review.
+              The ready-to-apply gate is now unlocked. Edit documents to re-review.
             </p>
           </div>
         </div>
@@ -475,8 +475,7 @@ function PackageGate({
               Review before applying
             </p>
             <p className="text-xs text-muted-foreground">
-              Read through both documents, then accept to unlock the Apply
-              button.
+              Read through both documents, then accept to unlock the ready-to-apply gate.
             </p>
           </div>
         </div>

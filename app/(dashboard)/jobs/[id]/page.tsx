@@ -6,17 +6,15 @@ import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
 import ReadinessChecklist from "@/components/ReadinessChecklist"
-
+import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
 import {
   ChevronLeft,
   ExternalLink,
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
-  FileText,
   Lock,
   ArrowRight,
-  Zap,
 } from "lucide-react"
 import {
   getWorkflowState,
@@ -95,20 +93,13 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
   )
 }
 
-
-
 function ReadinessNextStepCard({
   readiness,
   jobId,
-  stage,
-  hasUrl,
 }: {
   readiness: ReturnType<typeof evaluateReadiness>
   jobId: string
-  stage: string
-  hasUrl: boolean
 }) {
-  // Applied / outcome tracking
   if (readiness.outcome !== "active") {
     return (
       <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
@@ -132,30 +123,11 @@ function ReadinessNextStepCard({
     )
   }
 
-  // Not yet analyzed — Analyze is the only action
-  if (stage === "job_ingested") {
-    return (
-      <div className="hw-card border-l-4 border-l-primary px-5 py-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="hw-section-label mb-1">Next step</p>
-            <p className="text-sm text-muted-foreground">
-              Extract requirements, score your fit, and unlock coaching.
-            </p>
-          </div>
-          <div className="shrink-0">
-            <AnalyzeJobButton jobId={jobId} hasUrl={hasUrl} label="Analyze Job" size="sm" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   const action = readiness.isReady && readiness.canApply
     ? {
-        label: "Continue to Apply",
+        label: "Apply now",
         href: `/ready-to-apply?jobId=${encodeURIComponent(jobId)}`,
-        description: "Your materials are accepted and readiness gate is clear.",
+        description: "Submit through the readiness gate.",
       }
     : readiness.nextAction
 
@@ -167,15 +139,6 @@ function ReadinessNextStepCard({
         <div className="min-w-0">
           <p className="hw-section-label mb-1">Next step</p>
           <p className="text-sm text-muted-foreground">{action.description}</p>
-          {readiness.blockedReasons.length > 0 && !readiness.isReady && (
-            <ul className="mt-1.5 space-y-0.5">
-              {readiness.blockedReasons.map((r) => (
-                <li key={r} className="flex items-center gap-1 text-[11px] text-amber-600">
-                  <AlertTriangle className="h-3 w-3 shrink-0" /> {r}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
         <Link href={action.href} className="shrink-0">
           <Button size="sm" className="hw-btn-primary gap-1.5">
@@ -327,13 +290,19 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
+      <ReadinessContextBanner
+        stage={readiness.stage}
+        blockedReasons={readiness.blockedReasons}
+        nextAction={readiness.nextAction}
+      />
+
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
-      {/* NEXT STEP — single command surface, one brain: evaluateReadiness */}
+      {/* NEXT STEP — single command surface */}
       {!stillProcessing && (
         <>
-          <ReadinessNextStepCard readiness={readiness} jobId={id} stage={workflow.stage} hasUrl={hasUrl} />
+          <ReadinessNextStepCard readiness={readiness} jobId={id} />
           <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
           {/* Outcome Tracker — visible once applied or in active pipeline */}
           {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
@@ -462,21 +431,23 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           )}
 
           {coachStep.required && !hasDocs && (
-            <RequirementCoachModal
-              jobId={id}
-              jobTitle={jobWithAnalysis.title}
-              company={jobWithAnalysis.company}
-              score={overallScore}
-              status={job.status}
-              gaps={coachStep.gaps}
-              autoOpen={!coachStep.complete}
-              progressLabel={
-                coachProgressTotal > 0
-                  ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
-                  : undefined
-              }
-              showGenerationUnlock={!readiness.canGenerate}
-            />
+            <>
+              <RequirementCoachModal
+                jobId={id}
+                jobTitle={jobWithAnalysis.title}
+                company={jobWithAnalysis.company}
+                score={overallScore}
+                status={job.status}
+                gaps={coachStep.gaps}
+                autoOpen={!coachStep.complete}
+                progressLabel={
+                  coachProgressTotal > 0
+                    ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
+                    : undefined
+                }
+                showGenerationUnlock={!readiness.canGenerate}
+              />
+            </>
           )}
 
           {!hasDocs && (

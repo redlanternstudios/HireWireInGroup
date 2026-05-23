@@ -72,14 +72,15 @@ export default async function EvidenceMatchPage({
   const requestedReqParam = Array.isArray(reqParam)
     ? (reqParam[0] ?? null)
     : (reqParam ?? null)
-  if (!resolveParam && requestedReqParam) {
-    redirect(
-      `/jobs/${id}/evidence-match?resolve=${encodeURIComponent(requestedReqParam)}#${requirementAnchorId(requestedReqParam)}`,
-    )
-  }
-  const requestedRequirementId = Array.isArray(resolveParam)
+  const legacyResolveParam = Array.isArray(resolveParam)
     ? (resolveParam[0] ?? null)
     : (resolveParam ?? null)
+  if (!requestedReqParam && legacyResolveParam) {
+    redirect(
+      `/jobs/${id}/evidence-match?req=${encodeURIComponent(legacyResolveParam)}#${requirementAnchorId(legacyResolveParam)}`,
+    )
+  }
+  const requestedRequirementId = requestedReqParam ?? legacyResolveParam
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")

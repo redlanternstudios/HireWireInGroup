@@ -1562,7 +1562,7 @@ export async function POST(request: NextRequest) {
           next_action: {
             label: "Resolve proof gaps",
             href: blockedRequirements[0]?.requirement_id
-              ? `/jobs/${job_id}/evidence-match#${requirementAnchorId(blockedRequirements[0].requirement_id)}`
+              ? `/jobs/${job_id}/evidence-match?req=${encodeURIComponent(blockedRequirements[0].requirement_id)}#${requirementAnchorId(blockedRequirements[0].requirement_id)}`
               : `/jobs/${job_id}/evidence-match`,
             description:
               "Review the unmatched requirements and confirm or add evidence before generating again.",

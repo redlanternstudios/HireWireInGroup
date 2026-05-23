@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -10,7 +9,6 @@ import {
   Plus,
   ArrowRight,
   Target,
-  Sparkles,
   CheckSquare,
   Send,
   Filter,
@@ -194,7 +192,7 @@ function requirementResolveHref(job: EnrichedJob): string | null {
   const requirementId = getFirstUnresolvedRequirementId(job);
   if (!requirementId) return null;
   const anchor = requirementAnchorId(requirementId);
-  return `/jobs/${job.id}/evidence-match?resolve=${encodeURIComponent(requirementId)}#${anchor}`;
+  return `/jobs/${job.id}/evidence-match?req=${encodeURIComponent(requirementId)}#${anchor}`;
 }
 
 // ─── Enriched job ─────────────────────────────────────────────────────────────
@@ -210,7 +208,7 @@ function enrichJob(job: PipelineJob) {
 
 type EnrichedJob = ReturnType<typeof enrichJob>;
 
-// ─── Next action per job — sourced from canonical readiness engine ───────────
+// ─── Next action per display stage ───────────────────────────────────────────
 
 function nextActionFor(job: EnrichedJob): {
   label: string;
@@ -218,7 +216,23 @@ function nextActionFor(job: EnrichedJob): {
   href: string;
 } {
   const readiness = evaluateReadiness(job);
-  
+
+  if (readiness.outcome !== "active") {
+    return {
+      label: "View application",
+      desc: "Track outcome",
+      href: "/applications",
+    };
+  }
+
+  if (readiness.isReady && readiness.canApply) {
+    return {
+      label: "Apply now",
+      desc: "Submit through readiness gate",
+      href: `/ready-to-apply?jobId=${encodeURIComponent(job.id)}`,
+    };
+  }
+
   if (readiness.nextAction) {
     return {
       label: readiness.nextAction.label,
@@ -227,17 +241,7 @@ function nextActionFor(job: EnrichedJob): {
     };
   }
 
-  // Fallback for applied/closed outcomes
-  if (readiness.outcome !== "active") {
-    return {
-      label: "View application",
-      desc: "Track status",
-      href: `/jobs/${job.id}`,
-    };
-  }
-
-  // Final fallback
-  return { label: "View", desc: "Open job", href: `/jobs/${job.id}` };
+  return { label: "View job", desc: "Open job detail", href: `/jobs/${job.id}` };
 }
 
 // ─── Tags per job ─────────────────────────────────────────────────────────────
@@ -373,19 +377,12 @@ function JobRow({
 
       {/* NEXT ACTION column */}
       <div>
-        <Link href={action.href} className="text-left block">
+        <Link href={action.href} className="block text-left">
           <p className="text-xs font-semibold text-foreground hover:text-primary transition-colors">
             {action.label}
           </p>
           <p className="text-[10px] text-muted-foreground">{action.desc}</p>
         </Link>
-        {resolveHref && (
-          <Link href={resolveHref} className="mt-1 inline-flex">
-            <span className="text-[10px] font-semibold text-primary hover:underline">
-              Fix gaps
-            </span>
-          </Link>
-        )}
       </div>
 
       {/* Overflow menu */}
@@ -445,10 +442,8 @@ function JobRow({
 
 function IntelligencePanel({
   jobs,
-  onAddJob,
 }: {
   jobs: EnrichedJob[];
-  onAddJob: () => void;
 }) {
   const total = jobs.length;
   const active = jobs.filter((j) =>
@@ -472,37 +467,21 @@ function IntelligencePanel({
     label: string;
     time: string;
     href: string;
-  }[] = [];
-  const evidenceJob = jobs.find((j) => j.displayStage === "needs_evidence");
-  if (evidenceJob)
-    todayQueue.push({
-      num: 1,
-      label: `Add missing evidence for ${evidenceJob.role_title ?? "role"}`,
-      time: "~15 min",
-      href: `/jobs/${evidenceJob.id}/evidence-match`,
-    });
-  const reviewJob = jobs.find(
-    (j) => j.displayStage === "needs_review" && evidenceJob?.id !== j.id,
-  );
-  if (reviewJob)
-    todayQueue.push({
-      num: todayQueue.length + 1,
-      label: `Review application for ${reviewJob.role_title ?? "role"}`,
-      time: "~10 min",
-      href: `/jobs/${reviewJob.id}/documents`,
-    });
-  const materialJob = jobs.find(
-    (j) =>
-      j.displayStage === "ready_to_generate" &&
-      evidenceJob?.id !== j.id &&
-      reviewJob?.id !== j.id,
-  );
-  if (materialJob)
-    todayQueue.push({
-      num: todayQueue.length + 1,
-      label: `Upload materials for ${materialJob.role_title ?? "role"}`,
-      time: "~10 min",
-      href: `/jobs/${materialJob.id}`,
+  }[] = jobs
+    .filter((job) => {
+      const readiness = evaluateReadiness(job);
+      return readiness.outcome === "active" && !readiness.isReady && !!readiness.nextAction;
+    })
+    .sort((a, b) => PRIORITY_SORT_WEIGHT[a.priority] - PRIORITY_SORT_WEIGHT[b.priority])
+    .slice(0, 3)
+    .map((job, index) => {
+      const action = nextActionFor(job);
+      return {
+        num: index + 1,
+        label: `${action.label} for ${job.role_title ?? "role"}`,
+        time: "Next",
+        href: action.href,
+      };
     });
 
   return (
@@ -640,94 +619,24 @@ function IntelligencePanel({
         </div>
       )}
 
-      {/* Quick Actions */}
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{
-          background: "hsl(var(--card))",
-          border: "1px solid rgba(26,23,20,0.07)",
-          boxShadow:
-            "0 1px 3px rgba(26,23,20,0.04),0 3px 8px rgba(26,23,20,0.04)",
-        }}
-      >
-        <div className="px-4 py-3 border-b border-border/60">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-foreground">
-            Quick Actions
-          </p>
-        </div>
-        <div className="divide-y divide-border/60">
-          {[
-            {
-              href: "#add",
-              icon: Plus,
-              label: "Paste a new job",
-              desc: "Analyze a job description",
-              onClick: onAddJob,
-            },
-            {
-              href: "/coach",
-              icon: Sparkles,
-              label: "Ask Coach",
-              desc: "Get personalized guidance",
-              onClick: undefined,
-            },
-          ].map((item) =>
-            item.onClick ? (
-              <button
-                key={item.label}
-                onClick={item.onClick}
-                className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors text-left"
-              >
-                <item.icon className="h-3.5 w-3.5 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-semibold text-foreground">
-                    {item.label}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {item.desc}
-                  </p>
-                </div>
-                <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-              </button>
-            ) : (
-              <Link key={item.label} href={item.href}>
-                <div className="px-4 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors">
-                  <item.icon className="h-3.5 w-3.5 text-primary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-semibold text-foreground">
-                      {item.label}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {item.desc}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                </div>
-              </Link>
-            ),
-          )}
-        </div>
-      </div>
     </div>
   );
 }
 
 // ─── Main Client Component ────────────────────────────────────────────────────
 
-export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
-  const searchParams = useSearchParams();
+export function JobsPipelineClient({
+  jobs: rawJobs,
+  initialShowAddJob = false,
+}: {
+  jobs: PipelineJob[]
+  initialShowAddJob?: boolean
+}) {
   const [activeView, setActiveView] = useState<ViewTab>("active");
   const [activeFilter, setActiveFilter] = useState<FilterChip>("all");
   const [sortKey, setSortKey] = useState<SortKey>("needs_action_first");
   const [showSort, setShowSort] = useState(false);
-  const [showAddJob, setShowAddJob] = useState(false);
-
-  // Auto-open add job form when ?add=true is present
-  useEffect(() => {
-    if (searchParams.get("add") === "true") {
-      setShowAddJob(true);
-    }
-  }, [searchParams]);
+  const [showAddJob, setShowAddJob] = useState(initialShowAddJob);
 
   const jobs = useMemo(() => rawJobs.map(enrichJob), [rawJobs]);
 
@@ -1122,10 +1031,7 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
         </div>
 
         {/* Right rail */}
-        <IntelligencePanel
-          jobs={jobs}
-          onAddJob={() => setShowAddJob((v) => !v)}
-        />
+        <IntelligencePanel jobs={jobs} />
       </div>
     </div>
   );
