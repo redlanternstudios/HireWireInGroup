@@ -63,10 +63,10 @@ export function AppSidebar() {
   const pathname = usePathname()
 
   const renderNavItem = (item: NavItem) => {
-    // /jobs active on exact match or any /jobs/* except /jobs/new
+    // /jobs active on exact match or any /jobs/* except /jobs?add=true
     const isActive =
       pathname === item.href ||
-      (item.href === "/jobs" && pathname.startsWith("/jobs/") && pathname !== "/jobs/new") ||
+      (item.href === "/jobs" && pathname.startsWith("/jobs/") && pathname !== "/jobs?add=true") ||
       (item.href !== "/dashboard" && item.href !== "/" && item.href !== "/jobs" && pathname.startsWith(item.href))
 
     return (
@@ -127,7 +127,7 @@ export function AppSidebar() {
 
         {/* Add Job CTA */}
         <div className="px-2 pb-1">
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
             <Button
               size="sm"
               variant="outline"

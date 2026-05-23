@@ -542,21 +542,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               </div>
             </div>
           </div>
-
-          <div className="hw-panel p-4">
-            <p className="hw-section-label mb-2">Quick Links</p>
-            <div className="space-y-2">
-              <Link href={`/jobs/${id}/evidence-match`} className="block text-xs text-primary hover:underline">
-                Open Evidence Match
-              </Link>
-              <Link href={`/jobs/${id}/documents`} className="block text-xs text-primary hover:underline">
-                Open Documents
-              </Link>
-              <Link href="/ready-to-apply" className="block text-xs text-primary hover:underline">
-                Ready to Apply Gate
-              </Link>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -41,7 +41,7 @@ export default async function DocumentsPage() {
               </Button>
             </Link>
           )}
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
             <Button size="sm" className="hw-btn-primary gap-1.5">
               <Plus className="h-3.5 w-3.5" /> Add Job
             </Button>
@@ -64,7 +64,7 @@ export default async function DocumentsPage() {
               Add a job and run document generation to see your materials here.
             </p>
           </div>
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
             <Button size="sm" className="hw-btn-primary gap-1.5 mt-1">
               <Plus className="h-3.5 w-3.5" /> Add Job
             </Button>

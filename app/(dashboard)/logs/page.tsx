@@ -246,7 +246,7 @@ export default async function LogsPage() {
               <Briefcase className="h-3.5 w-3.5" /> View Pipeline
             </Button>
           </Link>
-          <Link href="/jobs/new">
+          <Link href="/jobs?add=true">
             <Button size="sm" className="hw-btn-primary gap-1.5">
               <Plus className="h-3.5 w-3.5" /> Add Job
             </Button>
@@ -292,7 +292,7 @@ export default async function LogsPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Link href="/jobs/new">
+                <Link href="/jobs?add=true">
                   <Button size="sm" className="hw-btn-primary gap-1.5">
                     <Plus className="h-3.5 w-3.5" /> Add a job
                   </Button>
@@ -420,7 +420,7 @@ export default async function LogsPage() {
             <div className="space-y-2">
               {[
                 {
-                  href: "/jobs/new",
+                  href: "/jobs?add=true",
                   icon: Plus,
                   label: "Add Job",
                   desc: "Start new analysis",

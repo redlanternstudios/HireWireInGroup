@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,8 +36,7 @@ import {
 import { JobInputForm } from "@/app/(dashboard)/jobs/JobInputForm";
 import { cn } from "@/lib/utils";
 import { getCoachStepState } from "@/lib/coach-step";
-import { getNextStep } from "@/lib/workflow/get-next-step";
-import { NextStepModal } from "@/components/workflow/NextStepModal";
+import { evaluateReadiness } from "@/lib/readiness/evaluator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -210,79 +210,34 @@ function enrichJob(job: PipelineJob) {
 
 type EnrichedJob = ReturnType<typeof enrichJob>;
 
-// ─── Next action per display stage ───────────────────────────────────────────
+// ─── Next action per job — sourced from canonical readiness engine ───────────
 
 function nextActionFor(job: EnrichedJob): {
   label: string;
   desc: string;
   href: string;
 } {
-  const guided = getNextStep(job);
-  if (guided.type !== "done") {
+  const readiness = evaluateReadiness(job);
+  
+  if (readiness.nextAction) {
     return {
-      label: guided.primaryLabel,
-      desc: guided.title,
+      label: readiness.nextAction.label,
+      desc: readiness.nextAction.description,
+      href: readiness.nextAction.href,
+    };
+  }
+
+  // Fallback for applied/closed outcomes
+  if (readiness.outcome !== "active") {
+    return {
+      label: "View application",
+      desc: "Track status",
       href: `/jobs/${job.id}`,
     };
   }
 
-  if (job.coachStep.required && !job.coachStep.complete) {
-    return {
-      label: "Start coach",
-      desc: "Resolve fit gaps",
-      href: `/jobs/${job.id}/evidence-match`,
-    };
-  }
-
-  switch (job.displayStage) {
-    case "inbox":
-    case "analyzed":
-      return {
-        label: "View job",
-        desc: "Review analysis",
-        href: `/jobs/${job.id}`,
-      };
-    case "needs_evidence":
-      return {
-        label: "Add missing evidence",
-        desc: "Match key requirements",
-        href: `/jobs/${job.id}/evidence-match`,
-      };
-    case "ready_to_generate":
-      return {
-        label: "Generate package",
-        desc: "Build resume & cover letter",
-        href: `/jobs/${job.id}`,
-      };
-    case "package_drafted":
-    case "needs_review":
-      return {
-        label: "Review application",
-        desc: "Package needs review",
-        href: `/jobs/${job.id}/documents`,
-      };
-    case "ready_to_apply":
-      return {
-        label: "Apply now",
-        desc: "Package ready to submit",
-        href: "/ready-to-apply",
-      };
-    case "applied":
-    case "follow_up_due":
-      return {
-        label: "View application",
-        desc: "Track status",
-        href: `/jobs/${job.id}`,
-      };
-    case "stale":
-      return {
-        label: "Continue",
-        desc: "Resume progress",
-        href: `/jobs/${job.id}`,
-      };
-    default:
-      return { label: "View", desc: "Open job", href: `/jobs/${job.id}` };
-  }
+  // Final fallback
+  return { label: "View", desc: "Open job", href: `/jobs/${job.id}` };
 }
 
 // ─── Tags per job ─────────────────────────────────────────────────────────────
@@ -313,11 +268,9 @@ function tagsFor(job: EnrichedJob): string[] {
 function JobRow({
   job,
   isLast,
-  onContinue,
 }: {
   job: EnrichedJob;
   isLast: boolean;
-  onContinue: (job: EnrichedJob) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const action = nextActionFor(job);
@@ -420,16 +373,12 @@ function JobRow({
 
       {/* NEXT ACTION column */}
       <div>
-        <button
-          type="button"
-          onClick={() => onContinue(job)}
-          className="text-left"
-        >
+        <Link href={action.href} className="text-left block">
           <p className="text-xs font-semibold text-foreground hover:text-primary transition-colors">
             {action.label}
           </p>
           <p className="text-[10px] text-muted-foreground">{action.desc}</p>
-        </button>
+        </Link>
         {resolveHref && (
           <Link href={resolveHref} className="mt-1 inline-flex">
             <span className="text-[10px] font-semibold text-primary hover:underline">
@@ -766,12 +715,19 @@ function IntelligencePanel({
 // ─── Main Client Component ────────────────────────────────────────────────────
 
 export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
+  const searchParams = useSearchParams();
   const [activeView, setActiveView] = useState<ViewTab>("active");
   const [activeFilter, setActiveFilter] = useState<FilterChip>("all");
   const [sortKey, setSortKey] = useState<SortKey>("needs_action_first");
   const [showSort, setShowSort] = useState(false);
   const [showAddJob, setShowAddJob] = useState(false);
-  const [guidedJob, setGuidedJob] = useState<EnrichedJob | null>(null);
+
+  // Auto-open add job form when ?add=true is present
+  useEffect(() => {
+    if (searchParams.get("add") === "true") {
+      setShowAddJob(true);
+    }
+  }, [searchParams]);
 
   const jobs = useMemo(() => rawJobs.map(enrichJob), [rawJobs]);
 
@@ -1153,7 +1109,6 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
                   key={job.id}
                   job={job}
                   isLast={i === visible.length - 1}
-                  onContinue={setGuidedJob}
                 />
               ))}
               <div className="px-4 py-2.5 border-t border-border/60">
@@ -1172,13 +1127,6 @@ export function JobsPipelineClient({ jobs: rawJobs }: { jobs: PipelineJob[] }) {
           onAddJob={() => setShowAddJob((v) => !v)}
         />
       </div>
-      <NextStepModal
-        job={guidedJob}
-        open={guidedJob !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) setGuidedJob(null);
-        }}
-      />
     </div>
   );
 }

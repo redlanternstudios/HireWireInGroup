@@ -201,7 +201,7 @@ export default async function AnalyticsPage() {
                   applications. Start by analyzing your first job posting.
                 </p>
               </div>
-              <Link href="/jobs/new">
+              <Link href="/jobs?add=true">
                 <Button size="sm" className="hw-btn-primary gap-1.5">
                   <Target className="h-3.5 w-3.5" /> Add a job
                 </Button>
