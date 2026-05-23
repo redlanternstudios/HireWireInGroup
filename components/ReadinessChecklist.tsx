@@ -1,12 +1,16 @@
 import Link from "next/link"
 import { CheckCircle2, Sparkles, XCircle } from "lucide-react"
 
-import type { ReadinessChecklistState } from "@/lib/readiness/evaluator"
+import type {
+  ReadinessChecklistState,
+  ReadinessNextAction,
+} from "@/lib/readiness/evaluator"
 import { Button } from "@/components/ui/button"
 
 type ReadinessChecklistProps = {
   checklist: ReadinessChecklistState
   jobId?: string
+  nextAction?: ReadinessNextAction | null
 }
 
 function Item({ label, value }: { label: string; value: boolean }) {
@@ -23,7 +27,14 @@ function Item({ label, value }: { label: string; value: boolean }) {
   )
 }
 
-export default function ReadinessChecklist({ checklist, jobId }: ReadinessChecklistProps) {
+export default function ReadinessChecklist({
+  checklist,
+  jobId,
+  nextAction,
+}: ReadinessChecklistProps) {
+  const shouldShowRepairAction =
+    jobId && nextAction && (!checklist.evidence || !checklist.coach)
+
   return (
     <div className="hw-card p-4">
       <h3 className="font-semibold mb-2 text-sm">Readiness</h3>
@@ -33,12 +44,12 @@ export default function ReadinessChecklist({ checklist, jobId }: ReadinessCheckl
       <Item label="Evidence Match" value={checklist.evidence} />
       <Item label="Coach Step" value={checklist.coach} />
       <Item label="Quality Check" value={checklist.quality} />
-      {!checklist.coach && jobId && (
+      {shouldShowRepairAction && (
         <div className="mt-3 border-t border-border pt-3">
-          <Link href={`/jobs/${jobId}/evidence-match`}>
+          <Link href={nextAction.href}>
             <Button size="sm" variant="outline" className="w-full gap-1.5 text-xs">
               <Sparkles className="h-3.5 w-3.5" />
-              Start Coach
+              {nextAction.label}
             </Button>
           </Link>
         </div>

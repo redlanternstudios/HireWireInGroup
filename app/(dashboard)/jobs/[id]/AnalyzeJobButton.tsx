@@ -57,12 +57,15 @@ export function AnalyzeJobButton({ jobId, hasUrl, label = "Analyze Job", size = 
         return
       }
 
-      // Show success toast and auto-advance to evidence matching
-      toast.success("Analysis complete — ready to match evidence")
+      const nextHref =
+        typeof data.nextAction?.href === "string"
+          ? data.nextAction.href
+          : `/jobs/${jobId}`
 
-      // Wait 2 seconds then redirect to evidence-match
+      toast.success("Analysis complete — next action is ready")
+
       setTimeout(() => {
-        router.push(`/jobs/${jobId}/evidence-match`)
+        router.push(nextHref)
       }, 2000)
     } catch {
       setError("Network error. Please try again.")

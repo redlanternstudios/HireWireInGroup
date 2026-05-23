@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 
 /**
  * POST /api/re-analyze
@@ -95,7 +96,17 @@ export async function POST(request: NextRequest) {
       payload: { triggeredAt: new Date().toISOString(), reanalysis: true },
     })
 
-    return NextResponse.json({ success: true, job_id, job: result.job })
+    const readiness =
+      result.job && typeof result.job === "object"
+        ? evaluateReadiness(result.job)
+        : null
+
+    return NextResponse.json({
+      success: true,
+      job_id,
+      job: result.job,
+      nextAction: readiness?.nextAction ?? null,
+    })
   } catch (error) {
     console.error("Error in re-analyze:", error)
     return NextResponse.json(

@@ -293,7 +293,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {!stillProcessing && (
         <>
           <ReadinessNextStepCard readiness={readiness} jobId={id} hasUrl={hasUrl} />
-          <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
+          <ReadinessChecklist
+            checklist={readiness.checklist}
+            jobId={id}
+            nextAction={readiness.nextAction}
+          />
           {/* Outcome Tracker — visible once applied or in active pipeline */}
           {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
             <OutcomeTracker
