@@ -110,6 +110,7 @@ export function RequirementCoachModal({
   const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [resumeHint, setResumeHint] = useState<string | null>(null)
+  const [savedState, setSavedState] = useState<{ mode: "answer" | "skip"; allDone: boolean } | null>(null)
   const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
   const open = controlledOpen ?? internalOpen
@@ -212,8 +213,10 @@ export function RequirementCoachModal({
         return
       }
       setAnswer("")
-      setOpen(false)
+      const allDone = data?.allGapsResolved === true || showGenerationUnlock
+      setSavedState({ mode, allDone })
       onStepSaved?.(mode)
+      // Refresh server data but stay open to show progression
       router.refresh()
     } catch {
       setError("Network error. Please try again.")
@@ -270,7 +273,54 @@ export function RequirementCoachModal({
             ) : null}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        {/* Post-save progression state */}
+        {savedState && (
+          <div className="flex flex-col items-center justify-center gap-5 px-8 py-12 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-base font-semibold text-foreground">
+                {savedState.mode === "skip"
+                  ? "Skipped — generation will be conservative for this requirement."
+                  : "Saved."}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {savedState.allDone
+                  ? "All gaps addressed. You can now generate your materials."
+                  : "Moving to the next unresolved gap."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {savedState.allDone ? (
+                <>
+                  <Button
+                    size="sm"
+                    className="hw-btn-primary gap-1.5"
+                    onClick={() => { setOpen(false); router.push(`/jobs/${jobId}/documents`) }}
+                  >
+                    Generate materials
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+                    Back to job
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button size="sm" className="hw-btn-primary gap-1.5" onClick={() => { setSavedState(null) }}>
+                    Next gap
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+                    Return to job
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Main content — hidden while showing post-save state */}
+        <div className={`grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] ${savedState ? "hidden" : ""}`}>
           <div className="min-h-0 overflow-y-auto border-b border-border bg-muted/25 px-5 py-4 lg:border-b-0 lg:border-r">
             <div className="rounded-md border border-border bg-background p-4">
               <p className="text-[11px] font-semibold uppercase text-muted-foreground">

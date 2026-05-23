@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
 import ReadinessChecklist from "@/components/ReadinessChecklist"
-import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
+
 import {
   ChevronLeft,
   ExternalLink,
@@ -95,105 +95,20 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
   )
 }
 
-/** The always-visible next step CTA banner — never returns null */
-function NextStepBanner({ workflow, jobId, hasDocs, hasUrl }: {
-  workflow: ReturnType<typeof getWorkflowState>
-  jobId: string
-  hasDocs: boolean
-  hasUrl: boolean
-}) {
-  const { stage, nextAction, blockers } = workflow
 
-  if (stage === "applied") {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-emerald-500">
-        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-        <div>
-          <p className="text-sm font-semibold text-foreground">Application submitted</p>
-          <p className="text-xs text-muted-foreground">Track your progress in the Applications tab.</p>
-        </div>
-        <Link href="/applications" className="ml-auto shrink-0">
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-            Track <ArrowRight className="h-3 w-3" />
-          </Button>
-        </Link>
-      </div>
-    )
-  }
-
-  if (hasDocs) {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-        <Zap className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Materials ready</p>
-          <p className="text-xs text-muted-foreground">Your tailored resume and cover letter are generated.</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link href={`/jobs/${jobId}/resume`}>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-              <Zap className="h-3.5 w-3.5" /> Intelligence
-            </Button>
-          </Link>
-          <Link href={`/jobs/${jobId}/documents`}>
-            <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-              <FileText className="h-3.5 w-3.5" /> Documents
-            </Button>
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  if (!nextAction) return null
-
-  if (stage === "job_ingested") {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-        <ArrowRight className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Next: Analyze Job</p>
-          <p className="text-xs text-muted-foreground">Extract requirements, score your fit, and unlock coaching.</p>
-        </div>
-        <div className="shrink-0">
-          <AnalyzeJobButton jobId={jobId} hasUrl={hasUrl} label="Analyze Job" size="sm" />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-      <ArrowRight className="h-5 w-5 text-primary shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground">Next: {nextAction.label}</p>
-        <p className="text-xs text-muted-foreground">{nextAction.description}</p>
-        {blockers.length > 0 && (
-          <ul className="mt-1 space-y-0.5">
-            {blockers.map((b) => (
-              <li key={b} className="flex items-center gap-1 text-[11px] text-amber-600">
-                <AlertTriangle className="h-3 w-3 shrink-0" /> {b}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <Link href={nextAction.href} className="shrink-0">
-        <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-          {nextAction.label} <ArrowRight className="h-3 w-3" />
-        </Button>
-      </Link>
-    </div>
-  )
-}
 
 function ReadinessNextStepCard({
   readiness,
   jobId,
+  stage,
+  hasUrl,
 }: {
   readiness: ReturnType<typeof evaluateReadiness>
   jobId: string
+  stage: string
+  hasUrl: boolean
 }) {
+  // Applied / outcome tracking
   if (readiness.outcome !== "active") {
     return (
       <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
@@ -217,11 +132,30 @@ function ReadinessNextStepCard({
     )
   }
 
+  // Not yet analyzed — Analyze is the only action
+  if (stage === "job_ingested") {
+    return (
+      <div className="hw-card border-l-4 border-l-primary px-5 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="hw-section-label mb-1">Next step</p>
+            <p className="text-sm text-muted-foreground">
+              Extract requirements, score your fit, and unlock coaching.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <AnalyzeJobButton jobId={jobId} hasUrl={hasUrl} label="Analyze Job" size="sm" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const action = readiness.isReady && readiness.canApply
     ? {
-        label: "Apply now",
+        label: "Continue to Apply",
         href: `/ready-to-apply?jobId=${encodeURIComponent(jobId)}`,
-        description: "Submit through the readiness gate.",
+        description: "Your materials are accepted and readiness gate is clear.",
       }
     : readiness.nextAction
 
@@ -233,6 +167,15 @@ function ReadinessNextStepCard({
         <div className="min-w-0">
           <p className="hw-section-label mb-1">Next step</p>
           <p className="text-sm text-muted-foreground">{action.description}</p>
+          {readiness.blockedReasons.length > 0 && !readiness.isReady && (
+            <ul className="mt-1.5 space-y-0.5">
+              {readiness.blockedReasons.map((r) => (
+                <li key={r} className="flex items-center gap-1 text-[11px] text-amber-600">
+                  <AlertTriangle className="h-3 w-3 shrink-0" /> {r}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <Link href={action.href} className="shrink-0">
           <Button size="sm" className="hw-btn-primary gap-1.5">
@@ -384,37 +327,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      <ReadinessContextBanner
-        stage={readiness.stage}
-        blockedReasons={readiness.blockedReasons}
-        nextAction={readiness.nextAction}
-      />
-
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
-      {/* NEXT STEP — single command surface */}
+      {/* NEXT STEP — single command surface, one brain: evaluateReadiness */}
       {!stillProcessing && (
         <>
+          <ReadinessNextStepCard readiness={readiness} jobId={id} stage={workflow.stage} hasUrl={hasUrl} />
           <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
-          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
-          <ReadinessNextStepCard readiness={readiness} jobId={id} />
-          <div className="space-y-2">
-            <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
-            {!readiness.isReady && (
-              <div className="text-sm text-rose-600">
-                {readiness.blockedReasons.join(", ")}
-              </div>
-            )}
-          </div>
-          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
-          {hasDocs && readiness.outcome === "active" && (
-            <div className="mt-4 flex justify-end">
-              <Link href={`/ready-to-apply?jobId=${encodeURIComponent(id)}`}>
-                <Button className="hw-btn-primary">Ready to Apply</Button>
-              </Link>
-            </div>
-          )}
           {/* Outcome Tracker — visible once applied or in active pipeline */}
           {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
             <OutcomeTracker
@@ -550,32 +470,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               status={job.status}
               gaps={coachStep.gaps}
               autoOpen={!coachStep.complete}
+              progressLabel={
+                coachProgressTotal > 0
+                  ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
+                  : undefined
+              }
+              showGenerationUnlock={!readiness.canGenerate}
             />
-            <>
-              <RequirementCoachModal
-                jobId={id}
-                jobTitle={jobWithAnalysis.title}
-                company={jobWithAnalysis.company}
-                score={overallScore}
-                status={job.status}
-	                gaps={coachStep.gaps}
-	                autoOpen={!coachStep.complete}
-                    progressLabel={
-                      coachProgressTotal > 0
-                        ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
-                        : undefined
-                    }
-                    showGenerationUnlock={!readiness.canGenerate}
-	              />
-              {gapCoachRecommendations.length > 0 && (
-                <WorkflowCoachPanelClient
-                  recommendations={gapCoachRecommendations}
-                  blockers={["Address the highest-impact gaps before generating materials."]}
-                  insights={[]}
-                  momentum="Answer one prompt and HireWire can turn it into evidence for this role."
-                />
-              )}
-            </>
           )}
 
           {!hasDocs && (

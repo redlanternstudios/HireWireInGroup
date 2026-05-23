@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 
 
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
-import { getNextStep } from "@/lib/workflow/get-next-step";
 import { cn } from "@/lib/utils";
 import {
   Plus,
@@ -221,52 +220,38 @@ export default async function DashboardPage() {
     (j) => j.applied_at && new Date(j.applied_at) >= weekStart,
   );
 
-  // "Your Next Move" — highest-urgency job
+  // "Resume where you left off" — sourced exclusively from evaluateReadiness
   const heroJob =
     needsActionJobs[0] ??
     needsReviewJobs[0] ??
     readyJobs[0] ??
     jobList[0] ??
     null;
-  const heroTier = heroJob ? urgencyTier(heroJob) : null;
 
-  function heroNextStep(
-    tier: UrgencyTier | null,
-    job: typeof heroJob,
-  ): {
-    label: string;
-    desc: string;
-    href: string;
-    cta: string;
-    timeEst: string | null;
-  } {
-    if (!job || !tier)
-      return {
-        label: "Add a job",
-        desc: "Paste a job description to start your pipeline.",
-        href: "/jobs/new",
-        cta: "Add job",
-        timeEst: null,
-      };
-    const guided = getNextStep(job);
-    return {
-      label: guided.title,
-      desc: guided.description,
-      href: guided.href ?? `/jobs/${job.id}`,
-      cta: guided.primaryLabel,
-      timeEst: null,
-    };
-  }
+  const heroReadiness = heroJob ? evaluateReadiness(heroJob as Parameters<typeof evaluateReadiness>[0]) : null;
 
-  const heroAction = heroNextStep(heroTier, heroJob);
+  const heroAction = heroReadiness?.nextAction
+    ? {
+        label: heroReadiness.nextAction.label,
+        desc: heroReadiness.nextAction.description,
+        href: heroReadiness.nextAction.href,
+        cta: heroReadiness.nextAction.label,
+      }
+    : readyJobs.length > 0
+      ? {
+          label: "Ready to apply",
+          desc: `${readyJobs.length} job${readyJobs.length !== 1 ? "s" : ""} cleared for submission.`,
+          href: "/ready-to-apply",
+          cta: "Go to apply queue",
+        }
+      : {
+          label: "Add a job",
+          desc: "Paste a job description to start your pipeline.",
+          href: "/jobs/new",
+          cta: "Add job",
+        };
 
-  const heroWarning =
-    heroJob
-      ? (() => {
-          const guided = getNextStep(heroJob);
-          return guided.readiness.blockedReasons[0] ?? null;
-        })()
-      : null;
+  const heroWarning = heroReadiness?.blockedReasons[0] ?? null;
 
   const attentionItems = needsActionJobs.length + needsReviewJobs.length;
   const subtitle =
@@ -398,11 +383,7 @@ export default async function DashboardPage() {
                     <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                       {heroAction.desc}
                     </p>
-                    {heroAction.timeEst && (
-                      <div className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground font-medium bg-muted">
-                        <Clock className="h-3 w-3" /> {heroAction.timeEst}
-                      </div>
-                    )}
+
                   </div>
                 </div>
               </div>

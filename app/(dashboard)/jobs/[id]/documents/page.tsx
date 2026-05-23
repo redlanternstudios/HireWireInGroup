@@ -7,7 +7,6 @@ import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBa
 import VoiceIntegritySection from "@/components/documents/VoiceIntegritySection";
 import ResumeVersionHistory from "@/components/documents/ResumeVersionHistory";
 
-import { ApplyButton } from "@/components/jobs/ApplyButton";
 import { Button } from "@/components/ui/button";
 import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { getResumeVersions } from "@/lib/actions/resume-versions";
