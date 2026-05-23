@@ -13,10 +13,8 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
-  FileText,
   Lock,
   ArrowRight,
-  Zap,
 } from "lucide-react"
 import {
   getWorkflowState,
@@ -91,98 +89,6 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
           </div>
         )
       })}
-    </div>
-  )
-}
-
-/** The always-visible next step CTA banner — never returns null */
-function NextStepBanner({ workflow, jobId, hasDocs, hasUrl }: {
-  workflow: ReturnType<typeof getWorkflowState>
-  jobId: string
-  hasDocs: boolean
-  hasUrl: boolean
-}) {
-  const { stage, nextAction, blockers } = workflow
-
-  if (stage === "applied") {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-emerald-500">
-        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-        <div>
-          <p className="text-sm font-semibold text-foreground">Application submitted</p>
-          <p className="text-xs text-muted-foreground">Track your progress in the Applications tab.</p>
-        </div>
-        <Link href="/applications" className="ml-auto shrink-0">
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-            Track <ArrowRight className="h-3 w-3" />
-          </Button>
-        </Link>
-      </div>
-    )
-  }
-
-  if (hasDocs) {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-        <Zap className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Materials ready</p>
-          <p className="text-xs text-muted-foreground">Your tailored resume and cover letter are generated.</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link href={`/jobs/${jobId}/resume`}>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-              <Zap className="h-3.5 w-3.5" /> Intelligence
-            </Button>
-          </Link>
-          <Link href={`/jobs/${jobId}/documents`}>
-            <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-              <FileText className="h-3.5 w-3.5" /> Documents
-            </Button>
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  if (!nextAction) return null
-
-  if (stage === "job_ingested") {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-        <ArrowRight className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Next: Analyze Job</p>
-          <p className="text-xs text-muted-foreground">Extract requirements, score your fit, and unlock coaching.</p>
-        </div>
-        <div className="shrink-0">
-          <AnalyzeJobButton jobId={jobId} hasUrl={hasUrl} label="Analyze Job" size="sm" />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-      <ArrowRight className="h-5 w-5 text-primary shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground">Next: {nextAction.label}</p>
-        <p className="text-xs text-muted-foreground">{nextAction.description}</p>
-        {blockers.length > 0 && (
-          <ul className="mt-1 space-y-0.5">
-            {blockers.map((b) => (
-              <li key={b} className="flex items-center gap-1 text-[11px] text-amber-600">
-                <AlertTriangle className="h-3 w-3 shrink-0" /> {b}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <Link href={nextAction.href} className="shrink-0">
-        <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-          {nextAction.label} <ArrowRight className="h-3 w-3" />
-        </Button>
-      </Link>
     </div>
   )
 }
@@ -396,25 +302,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* NEXT STEP — single command surface */}
       {!stillProcessing && (
         <>
-          <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
-          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
           <ReadinessNextStepCard readiness={readiness} jobId={id} />
-          <div className="space-y-2">
-            <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
-            {!readiness.isReady && (
-              <div className="text-sm text-rose-600">
-                {readiness.blockedReasons.join(", ")}
-              </div>
-            )}
-          </div>
-          <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} hasUrl={hasUrl} />
-          {hasDocs && readiness.outcome === "active" && (
-            <div className="mt-4 flex justify-end">
-              <Link href={`/ready-to-apply?jobId=${encodeURIComponent(id)}`}>
-                <Button className="hw-btn-primary">Ready to Apply</Button>
-              </Link>
-            </div>
-          )}
+          <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
           {/* Outcome Tracker — visible once applied or in active pipeline */}
           {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
             <OutcomeTracker
@@ -622,21 +511,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   {overallScore !== null ? `${Math.round(Number(overallScore))}/100` : "Pending"}
                 </span>
               </div>
-            </div>
-          </div>
-
-          <div className="hw-panel p-4">
-            <p className="hw-section-label mb-2">Quick Links</p>
-            <div className="space-y-2">
-              <Link href={`/jobs/${id}/evidence-match`} className="block text-xs text-primary hover:underline">
-                Open Evidence Match
-              </Link>
-              <Link href={`/jobs/${id}/documents`} className="block text-xs text-primary hover:underline">
-                Open Documents
-              </Link>
-              <Link href="/ready-to-apply" className="block text-xs text-primary hover:underline">
-                Ready to Apply Gate
-              </Link>
             </div>
           </div>
         </div>

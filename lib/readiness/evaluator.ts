@@ -172,7 +172,7 @@ function evidenceFixHref(job: ReadinessJob): string {
   if (!requirementId) return `/jobs/${job.id}/evidence-match`;
 
   const anchor = requirementAnchorId(requirementId);
-  return `/jobs/${job.id}/evidence-match?resolve=${encodeURIComponent(requirementId)}#${anchor}`;
+  return `/jobs/${job.id}/evidence-match?req=${encodeURIComponent(requirementId)}#${anchor}`;
 }
 
 export function evaluateReadiness(

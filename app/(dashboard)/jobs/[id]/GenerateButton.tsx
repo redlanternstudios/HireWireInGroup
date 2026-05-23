@@ -142,7 +142,7 @@ export function GenerateButton({
               <li key={item.requirement_id}>
                 <a
                   className="text-xs text-amber-800 underline hover:text-amber-900"
-                  href={`/jobs/${jobId}/evidence-match#${requirementAnchorId(item.requirement_id)}`}
+                  href={`/jobs/${jobId}/evidence-match?req=${encodeURIComponent(item.requirement_id)}#${requirementAnchorId(item.requirement_id)}`}
                 >
                   {item.requirement_text || item.requirement_id}
                 </a>

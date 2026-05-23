@@ -124,10 +124,11 @@ export function GuidedRequirementCoachFlow({
 
   const setResolveParam = (requirementId: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
+    params.delete("resolve")
     if (requirementId) {
-      params.set("resolve", requirementId)
+      params.set("req", requirementId)
     } else {
-      params.delete("resolve")
+      params.delete("req")
     }
 
     const query = params.toString()

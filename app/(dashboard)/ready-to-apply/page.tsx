@@ -211,7 +211,7 @@ export default async function ReadyToApplyPage() {
                         <Link href={readiness.nextAction?.href ?? `/jobs/${job.id}`}>
                           <Button size="sm" className="hw-btn-primary">Fix readiness</Button>
                         </Link>
-                        <MarkAsAppliedButton jobId={job.id} variant="ghost" label="Apply anyway" />
+                        <MarkAsAppliedButton jobId={job.id} variant="ghost" label="Override readiness" />
                       </div>
                     </div>
 
