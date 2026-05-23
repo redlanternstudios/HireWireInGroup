@@ -100,6 +100,7 @@ const EVENT_LABELS: Record<string, string> = {
   quality_invalidated: "Quality invalidated",
   package_reviewed: "Package accepted",
   package_invalidated: "Package needs review",
+  package_quality_override: "Package quality override",
   readiness_changed: "Readiness updated",
   voice_drift_detected: "Voice drift detected",
   override_logged: "Override logged",

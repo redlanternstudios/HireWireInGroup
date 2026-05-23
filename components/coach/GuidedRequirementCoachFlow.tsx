@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { CheckCircle2, MessageSquareText, Target } from "lucide-react"
+import { MessageSquareText, Target } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
@@ -94,11 +94,16 @@ export function GuidedRequirementCoachFlow({
   }, [requestedRequirementId, unresolvedMatches])
 
   const [activeIndex, setActiveIndex] = useState(initialIndex)
-  const [flowOpen, setFlowOpen] = useState(unresolvedMatches.length > 0)
+  const [flowOpen, setFlowOpen] = useState(
+    !!requestedRequirementId && unresolvedMatches.length > 0,
+  )
 
   useEffect(() => {
     setActiveIndex(initialIndex)
-  }, [initialIndex])
+    if (requestedRequirementId && unresolvedMatches.length > 0) {
+      setFlowOpen(true)
+    }
+  }, [initialIndex, requestedRequirementId, unresolvedMatches.length])
 
   const safeActiveIndex =
     unresolvedMatches.length === 0
@@ -106,19 +111,7 @@ export function GuidedRequirementCoachFlow({
       : Math.min(activeIndex, unresolvedMatches.length - 1)
   const active = unresolvedMatches[safeActiveIndex] ?? null
 
-  if (!active) {
-    return (
-      <div className="hw-card px-5 py-4 border-l-4 border-l-emerald-500">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          <p className="text-sm font-semibold text-foreground">All identified gaps are covered</p>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          You can still open the full list below to review requirement coverage.
-        </p>
-      </div>
-    )
-  }
+  if (!active) return null
 
   const stepLabel = `Gap ${safeActiveIndex + 1} of ${unresolvedMatches.length}`
 

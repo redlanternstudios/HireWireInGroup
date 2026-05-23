@@ -177,6 +177,13 @@ export const INVALIDATION_MAP: PropagationMap = {
     severity: "warning",
   },
 
+  package_quality_override: {
+    invalidates: ["package_review", "readiness", "logs", "coach_state"],
+    recomputes: ["readiness"],
+    routeTemplates: ["/jobs/[id]", "/jobs/[id]/documents", "/ready-to-apply", "/dashboard", "/logs"],
+    severity: "warning",
+  },
+
   // ── Readiness ─────────────────────────────────────────────────────────────
 
   readiness_changed: {

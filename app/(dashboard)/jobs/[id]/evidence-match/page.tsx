@@ -151,10 +151,10 @@ export default async function EvidenceMatchPage({
 
       {/* Header */}
       <div className="hw-card px-6 py-5">
-        <p className="hw-section-label mb-1">Resolving requirement gaps</p>
+        <p className="hw-section-label mb-1">Evidence Match</p>
         <h1 className="hw-page-title">Match Builder</h1>
         <p className="hw-page-subtitle">
-          We found what this job is asking for. Add or clarify examples from your real experience, then HireWire can write stronger materials without guessing.
+          Resolving requirement gaps for {job.role_title ?? "this role"} at {job.company_name ?? "this company"}.
         </p>
       </div>
 
@@ -218,28 +218,16 @@ export default async function EvidenceMatchPage({
                 <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="hw-section-label mb-1">All required gaps addressed</p>
+                      <p className="hw-section-label mb-1">All requirement gaps addressed.</p>
                       <p className="text-sm text-muted-foreground">
-                        {readiness.canGenerate
-                          ? "HireWire has enough evidence to write strong, tailored materials."
-                          : "Some readiness checks are still pending — return to the job to review."}
+                        Return to the job to continue from the readiness engine.
                       </p>
                     </div>
-                    <div className="shrink-0">
-                      {readiness.canGenerate ? (
-                        <Link href={`/jobs/${id}/documents`}>
-                          <Button size="sm" className="hw-btn-primary gap-1.5">
-                            Generate materials <ArrowRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
-                      ) : (
-                        <Link href={`/jobs/${id}`}>
-                          <Button size="sm" variant="outline" className="gap-1.5">
-                            Return to job <ArrowRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
-                      )}
-                    </div>
+                    <Link href={`/jobs/${id}`} className="shrink-0">
+                      <Button size="sm" className="hw-btn-primary gap-1.5">
+                        Return to job <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
                   </div>
                 </div>
               )}

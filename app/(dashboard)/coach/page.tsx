@@ -33,6 +33,7 @@ const EVENT_LABEL: Record<string, string> = {
   readiness_changed: "Readiness updated",
   package_reviewed: "Package accepted",
   package_invalidated: "Package flagged for review",
+  package_quality_override: "Package quality override",
   export_generated: "Document exported",
   resume_preview_opened: "Resume previewed",
   resume_docx_exported: "Resume downloaded (DOCX)",

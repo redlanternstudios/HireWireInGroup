@@ -62,8 +62,8 @@ export default function ApplicationPackagePreview({
   }
 
   const handleAccept = () => {
-    if (job.quality_passed !== true) {
-      setStatus("Quality must pass before this package can be accepted.")
+    if (job.quality_passed === false) {
+      setStatus("Use the quality override path to accept a failed package.")
       return
     }
 
@@ -262,10 +262,10 @@ export default function ApplicationPackagePreview({
 
       {/* Accept/Continue CTA */}
       <div className="mt-6">
-        {job.quality_passed === true ? (
+        {job.quality_passed !== false ? (
           <button
             className="hw-btn-primary w-full"
-            disabled={accepting || !readiness.canApply || job.package_review_status === "accepted"}
+            disabled={accepting || job.package_review_status === "accepted"}
             onClick={handleAccept}
           >
             Accept & Continue to Apply

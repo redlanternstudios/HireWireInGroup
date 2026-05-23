@@ -21,7 +21,8 @@ export interface PackageActionResult {
  * Domain event: package.accepted
  */
 export async function acceptApplicationPackage(
-  jobId: string
+  jobId: string,
+  overrideReason?: string | null,
 ): Promise<PackageActionResult> {
   const supabase = await createClient()
   const {
@@ -48,6 +49,7 @@ export async function acceptApplicationPackage(
   }
 
   const previousStatus = job.generation_status as string | null
+  const normalizedOverrideReason = overrideReason?.trim() || null
 
   const { error: updateError } = await supabase
     .from("jobs")
@@ -61,6 +63,24 @@ export async function acceptApplicationPackage(
 
   if (updateError) return { success: false, error: updateError.message }
 
+  if (job.quality_passed === false && normalizedOverrideReason) {
+    await handleDomainEvent({
+      supabase,
+      event_type: "package_quality_override",
+      job_id: jobId,
+      user_id: user.id,
+      source: "package_review_action",
+      payload: {
+        override_reason: normalizedOverrideReason,
+        previousStatus,
+        overriddenAt: new Date().toISOString(),
+      },
+      metadata: {
+        override_reason: normalizedOverrideReason,
+      },
+    })
+  }
+
   // Emit domain event — also triggers cache invalidation for /ready-queue, /dashboard
   await handleDomainEvent({
     supabase,
@@ -71,6 +91,8 @@ export async function acceptApplicationPackage(
     payload: {
       acceptedAt: new Date().toISOString(),
       previousStatus,
+      was_quality_override: job.quality_passed === false && !!normalizedOverrideReason,
+      override_reason: normalizedOverrideReason,
     },
   })
 

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   saveDocumentEdits,
   resetDocumentEdits,
@@ -54,6 +55,7 @@ export default function DocumentsEditor({
   job,
   candidateName = "",
 }: DocumentsEditorProps) {
+  const router = useRouter();
   const originalResume = job.generated_resume ?? "";
   const originalCover = job.generated_cover_letter ?? "";
 
@@ -69,9 +71,11 @@ export default function DocumentsEditor({
     job.package_review_status ?? "needs_review",
   );
   const [showPreview, setShowPreview] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
   const [isPending, startTransition] = useTransition();
   const formatWarning = getFormatSafetyWarning(resumeFormat, job.job_url);
-  const qualityReady = job.quality_passed === true;
+  const qualityFailed = job.quality_passed === false;
 
   // Saved database state — preview always shows this, not the textarea value
   const savedResumeContent = job.edited_resume ?? originalResume;
@@ -146,8 +150,8 @@ export default function DocumentsEditor({
   };
 
   const handleAccept = () => {
-    if (!qualityReady) {
-      flash("Quality must pass before this package can be accepted.");
+    if (qualityFailed) {
+      flash("Use the quality override path to accept a failed package.");
       return;
     }
 
@@ -168,6 +172,23 @@ export default function DocumentsEditor({
         setIsAccepted(true);
         setPackageStatus("ready");
         flash("Package accepted — ready-to-apply gate unlocked");
+      } else {
+        flash(`Error: ${result.error}`);
+      }
+    });
+  };
+
+  const handleOverrideAccept = () => {
+    const reason = overrideReason.trim();
+    if (reason.length < 10) return;
+
+    startTransition(async () => {
+      const result = await acceptApplicationPackage(job.id, reason);
+      if (result.success) {
+        setIsAccepted(true);
+        setPackageStatus("ready");
+        flash("Override logged — ready-to-apply gate unlocked");
+        router.push(`/ready-to-apply?jobId=${job.id}`);
       } else {
         flash(`Error: ${result.error}`);
       }
@@ -222,13 +243,17 @@ export default function DocumentsEditor({
       <div className="space-y-6">
         <PackageGate
           jobId={job.id}
-          qualityReady={qualityReady}
-          qualityFailed={job.quality_passed === false}
+          qualityFailed={qualityFailed}
           isAccepted={isAccepted}
           packageStatus={packageStatus}
           isPending={isPending}
           onAccept={handleAccept}
           onFlagReview={handleFlagReview}
+          showOverride={showOverride}
+          overrideReason={overrideReason}
+          onShowOverrideChange={setShowOverride}
+          onOverrideReasonChange={setOverrideReason}
+          onOverrideAccept={handleOverrideAccept}
         />
 
         <section className="rounded-lg border border-border bg-card p-4">
@@ -421,48 +446,98 @@ export default function DocumentsEditor({
 
 interface PackageGateProps {
   jobId: string;
-  qualityReady: boolean;
   qualityFailed: boolean;
   isAccepted: boolean;
   packageStatus: string;
   isPending: boolean;
   onAccept: () => void;
   onFlagReview: () => void;
+  showOverride: boolean;
+  overrideReason: string;
+  onShowOverrideChange: (show: boolean) => void;
+  onOverrideReasonChange: (reason: string) => void;
+  onOverrideAccept: () => void;
 }
 
 function PackageGate({
   jobId,
-  qualityReady,
   qualityFailed,
   isAccepted,
   packageStatus,
   isPending,
   onAccept,
   onFlagReview,
+  showOverride,
+  overrideReason,
+  onShowOverrideChange,
+  onOverrideReasonChange,
+  onOverrideAccept,
 }: PackageGateProps) {
-  if (!qualityReady) {
+  if (qualityFailed) {
+    const canOverride = overrideReason.trim().length >= 10;
+
     return (
-      <div className="flex items-center justify-between rounded border border-rose-200 bg-rose-50 px-5 py-4 dark:border-rose-900 dark:bg-rose-950/30">
-        <div className="flex items-center gap-3">
-          <span
-            className="inline-flex h-2 w-2 rounded-full bg-rose-500"
-            aria-hidden
-          />
-          <div>
-            <p className="text-sm font-semibold text-foreground">
-              {qualityFailed ? "Quality check failed" : "Quality review pending"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Return to the job and resolve the package blocker before accepting.
-            </p>
+      <div className="rounded border border-rose-200 bg-rose-50 px-5 py-4 dark:border-rose-900 dark:bg-rose-950/30">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span
+              className="mt-1 inline-flex h-2 w-2 rounded-full bg-rose-500"
+              aria-hidden
+            />
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Quality check failed
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Return to the job and resolve the package blocker before accepting.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href={`/jobs/${jobId}`}
+              className="rounded bg-foreground px-4 py-2 text-xs font-semibold text-background"
+            >
+              Return to job
+            </Link>
+            <button
+              type="button"
+              onClick={() => onShowOverrideChange(!showOverride)}
+              className="rounded border border-rose-200 bg-background px-4 py-2 text-xs font-semibold text-rose-700"
+            >
+              Override and accept
+            </button>
           </div>
         </div>
-        <Link
-          href={`/jobs/${jobId}`}
-          className="rounded border border-border bg-background px-4 py-2 text-xs font-semibold text-foreground"
-        >
-          Return to job
-        </Link>
+
+        {showOverride && (
+          <div className="mt-4 border-t border-rose-200 pt-4">
+            <p className="text-xs font-semibold text-rose-800">
+              Accepting anyway logs a package quality override.
+            </p>
+            <textarea
+              value={overrideReason}
+              onChange={(event) => onOverrideReasonChange(event.target.value)}
+              placeholder="Reason for override..."
+              maxLength={280}
+              required
+              className="mt-2 min-h-20 w-full rounded border border-rose-200 bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-rose-400"
+            />
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-muted-foreground">
+                Minimum 10 characters.
+              </p>
+              <button
+                type="button"
+                onClick={onOverrideAccept}
+                disabled={!canOverride || isPending}
+                className="rounded bg-rose-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {isPending ? "Accepting..." : "Accept anyway"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

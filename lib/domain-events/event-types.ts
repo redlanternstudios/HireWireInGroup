@@ -38,6 +38,7 @@ export type DomainEventType =
   // Package review
   | "package_reviewed"
   | "package_invalidated"
+  | "package_quality_override"
   // Readiness
   | "readiness_changed"
   // Integrity / voice
