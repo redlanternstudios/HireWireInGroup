@@ -219,14 +219,29 @@ export default async function EvidenceMatchPage({
               {requiredGaps.length === 0 && (
                 <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-semibold text-foreground">
-                      All required gaps addressed — return to job to generate documents
-                    </p>
-                    <Link href={`/jobs/${id}`} className="shrink-0">
-                      <Button size="sm" className="hw-btn-primary gap-1.5">
-                        Return to job <ArrowRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </Link>
+                    <div className="min-w-0">
+                      <p className="hw-section-label mb-1">All required gaps addressed</p>
+                      <p className="text-sm text-muted-foreground">
+                        {readiness.canGenerate
+                          ? "HireWire has enough evidence to write strong, tailored materials."
+                          : "Some readiness checks are still pending — return to the job to review."}
+                      </p>
+                    </div>
+                    <div className="shrink-0">
+                      {readiness.canGenerate ? (
+                        <Link href={`/jobs/${id}/documents`}>
+                          <Button size="sm" className="hw-btn-primary gap-1.5">
+                            Generate materials <ArrowRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link href={`/jobs/${id}`}>
+                          <Button size="sm" variant="outline" className="gap-1.5">
+                            Return to job <ArrowRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
