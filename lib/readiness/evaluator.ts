@@ -15,6 +15,19 @@ export type ReadinessStage =
   | "evidence_blocked"
   | "materials_missing";
 
+export type ReadinessDisplayState =
+  | "analyze_needed"
+  | "evidence_needed"
+  | "coach_needed"
+  | "ready_to_generate"
+  | "package_review"
+  | "ready_to_apply"
+  | "applied"
+  | "interviewing"
+  | "offered"
+  | "rejected"
+  | "archived";
+
 export type OutcomeState =
   | "active"
   | "applied"
@@ -34,6 +47,9 @@ export type ReadinessResult = {
   canApply: boolean;
   canGenerate: boolean;
   stage: ReadinessStage;
+  displayState: ReadinessDisplayState;
+  displayLabel: string;
+  displayClassName: string;
   outcome: OutcomeState;
   blockedReasons: string[];
   checklist: ReadinessChecklistState;
@@ -52,6 +68,34 @@ export type ReadinessJob = {
   score_gaps?: string[] | null;
   gap_clarifications?: unknown;
   gaps_addressed?: string[] | null;
+};
+
+export const READINESS_DISPLAY_LABEL: Record<ReadinessDisplayState, string> = {
+  analyze_needed: "Analyze needed",
+  evidence_needed: "Evidence needed",
+  coach_needed: "Coach needed",
+  ready_to_generate: "Ready to generate",
+  package_review: "Package review",
+  ready_to_apply: "Ready to apply",
+  applied: "Applied",
+  interviewing: "Interviewing",
+  offered: "Offered",
+  rejected: "Rejected",
+  archived: "Archived",
+};
+
+export const READINESS_DISPLAY_CLASS: Record<ReadinessDisplayState, string> = {
+  analyze_needed: "bg-stone-100 text-stone-600 border-stone-200",
+  evidence_needed: "bg-orange-50 text-orange-700 border-orange-200",
+  coach_needed: "bg-amber-50 text-amber-700 border-amber-200",
+  ready_to_generate: "bg-sky-50 text-sky-700 border-sky-200",
+  package_review: "bg-violet-50 text-violet-700 border-violet-200",
+  ready_to_apply: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  applied: "bg-blue-50 text-blue-700 border-blue-200",
+  interviewing: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  offered: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  rejected: "bg-rose-50 text-rose-600 border-rose-200",
+  archived: "bg-stone-100 text-stone-500 border-stone-200",
 };
 
 import { getCoachStepState, isEvidenceMapMetadataKey } from "@/lib/coach-step";
@@ -196,7 +240,9 @@ export function evaluateReadiness(
   const canApply = isReady && !isOutcome;
   const canGenerate = checklist.evidence && checklist.coach && !hasMaterials && !isOutcome;
   const stage = getReadinessStage(checklist, outcome);
-  const nextAction = getNextAction(job, checklist, stage, outcome);
+  const hasAnalysis = hasJobAnalysis(job);
+  const displayState = getReadinessDisplayState(job, checklist, outcome, hasAnalysis);
+  const nextAction = getNextAction(job, checklist, stage, outcome, hasAnalysis);
 
   const blockedReasons: string[] = [];
   if (!checklist.resume) blockedReasons.push("Resume not generated");
@@ -214,6 +260,9 @@ export function evaluateReadiness(
     canApply,
     canGenerate,
     stage,
+    displayState,
+    displayLabel: READINESS_DISPLAY_LABEL[displayState],
+    displayClassName: READINESS_DISPLAY_CLASS[displayState],
     outcome,
     blockedReasons,
     checklist,
@@ -237,10 +286,38 @@ function getReadinessStage(
 ): ReadinessStage {
   if (outcome !== "active") return "outcome";
   if (Object.values(checklist).every(Boolean)) return "ready";
-  if (!checklist.resume || !checklist.coverLetter) return "materials_missing";
-  if (!checklist.coach) return "coach_blocked";
   if (!checklist.evidence) return "evidence_blocked";
+  if (!checklist.coach) return "coach_blocked";
+  if (!checklist.resume || !checklist.coverLetter) return "materials_missing";
   return "quality_review";
+}
+
+function hasJobAnalysis(job: ReadinessJob): boolean {
+  const status = job.status ?? "";
+  return (
+    ["analyzed", "generating", "ready", "needs_review"].includes(status) ||
+    (job.score !== null && job.score !== undefined) ||
+    !!job.evidence_map
+  );
+}
+
+function getReadinessDisplayState(
+  job: ReadinessJob,
+  checklist: ReadinessChecklistState,
+  outcome: OutcomeState,
+  hasAnalysis: boolean,
+): ReadinessDisplayState {
+  if (outcome === "applied") return "applied";
+  if (outcome === "interviewing") return "interviewing";
+  if (outcome === "offered") return "offered";
+  if (outcome === "rejected") return "rejected";
+  if (outcome === "archived") return "archived";
+  if (!hasAnalysis) return "analyze_needed";
+  if (!checklist.evidence) return "evidence_needed";
+  if (!checklist.coach) return "coach_needed";
+  if (!checklist.resume || !checklist.coverLetter) return "ready_to_generate";
+  if (!checklist.quality || !checklist.voiceIntegrity) return "package_review";
+  return "ready_to_apply";
 }
 
 function getNextAction(
@@ -248,10 +325,19 @@ function getNextAction(
   checklist: ReadinessChecklistState,
   stage: ReadinessStage,
   outcome: OutcomeState,
+  hasAnalysis: boolean,
 ): ReadinessNextAction | null {
   if (outcome !== "active") return null;
 
   const jobHref = job.id ? `/jobs/${job.id}` : "/jobs";
+  if (!hasAnalysis) {
+    return {
+      label: "Analyze job",
+      href: jobHref,
+      description: "Extract requirements, score fit, and build the first evidence map.",
+    };
+  }
+
   if (!checklist.evidence) {
     return {
       label: "Fix evidence",
@@ -287,7 +373,7 @@ function getNextAction(
   if (stage === "ready") {
     return {
       label: "Apply now",
-      href: "/ready-to-apply",
+      href: job.id ? `/ready-to-apply?jobId=${encodeURIComponent(job.id)}` : "/ready-to-apply",
       description: "Submit through the readiness gate.",
     };
   }

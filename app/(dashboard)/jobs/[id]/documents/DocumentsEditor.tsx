@@ -71,6 +71,7 @@ export default function DocumentsEditor({
   const [showPreview, setShowPreview] = useState(false);
   const [isPending, startTransition] = useTransition();
   const formatWarning = getFormatSafetyWarning(resumeFormat, job.job_url);
+  const qualityReady = job.quality_passed === true;
 
   // Saved database state — preview always shows this, not the textarea value
   const savedResumeContent = job.edited_resume ?? originalResume;
@@ -145,6 +146,11 @@ export default function DocumentsEditor({
   };
 
   const handleAccept = () => {
+    if (!qualityReady) {
+      flash("Quality must pass before this package can be accepted.");
+      return;
+    }
+
     startTransition(async () => {
       if (isDirty) {
         const saveResult = await saveDocumentEdits(
@@ -216,6 +222,8 @@ export default function DocumentsEditor({
       <div className="space-y-6">
         <PackageGate
           jobId={job.id}
+          qualityReady={qualityReady}
+          qualityFailed={job.quality_passed === false}
           isAccepted={isAccepted}
           packageStatus={packageStatus}
           isPending={isPending}
@@ -413,6 +421,8 @@ export default function DocumentsEditor({
 
 interface PackageGateProps {
   jobId: string;
+  qualityReady: boolean;
+  qualityFailed: boolean;
   isAccepted: boolean;
   packageStatus: string;
   isPending: boolean;
@@ -422,12 +432,41 @@ interface PackageGateProps {
 
 function PackageGate({
   jobId,
+  qualityReady,
+  qualityFailed,
   isAccepted,
   packageStatus,
   isPending,
   onAccept,
   onFlagReview,
 }: PackageGateProps) {
+  if (!qualityReady) {
+    return (
+      <div className="flex items-center justify-between rounded border border-rose-200 bg-rose-50 px-5 py-4 dark:border-rose-900 dark:bg-rose-950/30">
+        <div className="flex items-center gap-3">
+          <span
+            className="inline-flex h-2 w-2 rounded-full bg-rose-500"
+            aria-hidden
+          />
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {qualityFailed ? "Quality check failed" : "Quality review pending"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Return to the job and resolve the package blocker before accepting.
+            </p>
+          </div>
+        </div>
+        <Link
+          href={`/jobs/${jobId}`}
+          className="rounded border border-border bg-background px-4 py-2 text-xs font-semibold text-foreground"
+        >
+          Return to job
+        </Link>
+      </div>
+    );
+  }
+
   if (isAccepted && packageStatus === "ready") {
     return (
       <div className="flex items-center justify-between rounded border border-border bg-background px-5 py-4">

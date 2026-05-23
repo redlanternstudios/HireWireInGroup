@@ -6,8 +6,6 @@ import {
   BarChart3,
   Lock,
   TrendingUp,
-  Target,
-  ArrowRight,
   Sparkles,
 } from "lucide-react";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
@@ -201,9 +199,9 @@ export default async function AnalyticsPage() {
                   applications. Start by analyzing your first job posting.
                 </p>
               </div>
-              <Link href="/jobs?add=true">
-                <Button size="sm" className="hw-btn-primary gap-1.5">
-                  <Target className="h-3.5 w-3.5" /> Add a job
+              <Link href="/jobs">
+                <Button size="sm" variant="outline">
+                  View pipeline
                 </Button>
               </Link>
             </div>
@@ -307,25 +305,6 @@ export default async function AnalyticsPage() {
             </div>
           )}
 
-          {/* Next action */}
-          <div className="mt-4">
-            <h2 className="hw-section-label mb-2">Next Best Action</h2>
-            <Link href="/jobs">
-              <div className="hw-next-action group">
-                <Target className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold">Grow your pipeline</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    More jobs means richer analytics. Add 3–5 strong matches to
-                    see trends emerge.
-                  </p>
-                  <span className="text-xs font-medium text-primary mt-1.5 inline-flex items-center gap-1 group-hover:gap-1.5 transition-all">
-                    View pipeline <ArrowRight className="h-3 w-3" />
-                  </span>
-                </div>
-              </div>
-            </Link>
-          </div>
         </div>
       </div>
     </div>

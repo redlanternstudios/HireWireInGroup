@@ -26,19 +26,8 @@ import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
-import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 
 export const dynamic = "force-dynamic"
-
-const STATUS_CLASS: Record<string, string> = {
-  draft: "status-draft", analyzing: "status-analyzing", analyzed: "status-analyzing",
-  generating: "status-analyzing", ready: "status-ready", applied: "status-applied",
-  interviewing: "status-applied", offered: "status-offered", rejected: "status-rejected",
-}
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft", analyzing: "Analyzing", analyzed: "Analyzed", generating: "Generating",
-  ready: "Ready", applied: "Applied", interviewing: "Interviewing", offered: "Offered", rejected: "Rejected",
-}
 
 function ScoreBar({ label, value, note }: { label: string; value: number; note?: string }) {
   return (
@@ -96,9 +85,11 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
 function ReadinessNextStepCard({
   readiness,
   jobId,
+  hasUrl,
 }: {
   readiness: ReturnType<typeof evaluateReadiness>
   jobId: string
+  hasUrl: boolean
 }) {
   if (readiness.outcome !== "active") {
     return (
@@ -123,13 +114,7 @@ function ReadinessNextStepCard({
     )
   }
 
-  const action = readiness.isReady && readiness.canApply
-    ? {
-        label: "Apply now",
-        href: `/ready-to-apply?jobId=${encodeURIComponent(jobId)}`,
-        description: "Submit through the readiness gate.",
-      }
-    : readiness.nextAction
+  const action = readiness.nextAction
 
   if (!action) return null
 
@@ -140,11 +125,20 @@ function ReadinessNextStepCard({
           <p className="hw-section-label mb-1">Next step</p>
           <p className="text-sm text-muted-foreground">{action.description}</p>
         </div>
-        <Link href={action.href} className="shrink-0">
-          <Button size="sm" className="hw-btn-primary gap-1.5">
-            {action.label} <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
-        </Link>
+        {action.label === "Analyze job" ? (
+          <AnalyzeJobButton
+            jobId={jobId}
+            hasUrl={hasUrl}
+            label={action.label}
+            size="sm"
+          />
+        ) : (
+          <Link href={action.href} className="shrink-0">
+            <Button size="sm" className="hw-btn-primary gap-1.5">
+              {action.label} <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   )
@@ -224,10 +218,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const scoreGaps: string[] = Array.isArray(job.score_gaps)
     ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
     : []
-  const coachProgressTotal = coachStep.gaps.length || (coachStep.required ? 1 : 0)
-  const coachProgressCurrent = coachProgressTotal > 0
-    ? Math.min(coachProgressTotal, coachStep.addressedGaps.length + 1)
-    : 0
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
 
@@ -262,9 +252,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             <Badge
               variant="outline"
-              className={`text-[10px] font-medium ${STATUS_CLASS[job.status] ?? "status-draft"}`}
+              className={`text-[10px] font-medium ${readiness.displayClassName}`}
             >
-              {STATUS_LABEL[job.status] ?? job.status}
+              {readiness.displayLabel}
             </Badge>
             {job.fit && (
               <Badge
@@ -302,7 +292,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* NEXT STEP — single command surface */}
       {!stillProcessing && (
         <>
-          <ReadinessNextStepCard readiness={readiness} jobId={id} />
+          <ReadinessNextStepCard readiness={readiness} jobId={id} hasUrl={hasUrl} />
           <ReadinessChecklist checklist={readiness.checklist} jobId={id} />
           {/* Outcome Tracker — visible once applied or in active pipeline */}
           {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
@@ -430,26 +420,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          {coachStep.required && !hasDocs && (
-            <>
-              <RequirementCoachModal
-                jobId={id}
-                jobTitle={jobWithAnalysis.title}
-                company={jobWithAnalysis.company}
-                score={overallScore}
-                status={job.status}
-                gaps={coachStep.gaps}
-                autoOpen={!coachStep.complete}
-                progressLabel={
-                  coachProgressTotal > 0
-                    ? `Gap ${coachProgressCurrent} of ${coachProgressTotal}`
-                    : undefined
-                }
-                showGenerationUnlock={!readiness.canGenerate}
-              />
-            </>
-          )}
-
           {!hasDocs && (
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-1">
@@ -499,11 +469,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Status</span>
-                <span className="font-semibold text-foreground">{STATUS_LABEL[job.status] ?? job.status}</span>
+                <span className="font-semibold text-foreground">{readiness.displayLabel}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Readiness</span>
-                <span className="font-semibold text-foreground">{readiness.stage.replace(/_/g, " ")}</span>
+                <span className="font-semibold text-foreground">{readiness.displayLabel}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Fit Score</span>

@@ -19,8 +19,6 @@ import {
 } from "lucide-react";
 import {
   deriveDisplayStage,
-  DISPLAY_STAGE_LABEL,
-  DISPLAY_STAGE_COLOR,
   STAGE_TO_VIEW,
   type ViewTab,
 } from "@/lib/jobs/display-stage";
@@ -199,11 +197,12 @@ function requirementResolveHref(job: EnrichedJob): string | null {
 
 function enrichJob(job: PipelineJob) {
   const staleness = evaluateStaleness(job);
+  const readiness = evaluateReadiness(job);
   const displayStage = deriveDisplayStage(job, staleness.isStale);
   const view = STAGE_TO_VIEW[displayStage];
   const priority = derivePriority(job, staleness.level === "archive_candidate");
   const coachStep = getCoachStepState(job);
-  return { ...job, staleness, displayStage, view, priority, coachStep };
+  return { ...job, readiness, staleness, displayStage, view, priority, coachStep };
 }
 
 type EnrichedJob = ReturnType<typeof enrichJob>;
@@ -215,21 +214,13 @@ function nextActionFor(job: EnrichedJob): {
   desc: string;
   href: string;
 } {
-  const readiness = evaluateReadiness(job);
+  const readiness = job.readiness;
 
   if (readiness.outcome !== "active") {
     return {
       label: "View application",
       desc: "Track outcome",
       href: "/applications",
-    };
-  }
-
-  if (readiness.isReady && readiness.canApply) {
-    return {
-      label: "Apply now",
-      desc: "Submit through readiness gate",
-      href: `/ready-to-apply?jobId=${encodeURIComponent(job.id)}`,
     };
   }
 
@@ -248,7 +239,7 @@ function nextActionFor(job: EnrichedJob): {
 
 function tagsFor(job: EnrichedJob): string[] {
   const tags: string[] = [];
-  if (job.displayStage === "needs_evidence") {
+  if (job.readiness.displayState === "evidence_needed") {
     const map = job.evidence_map as Record<string, unknown> | null;
     const gaps = (map?.score_gaps as string[] | null) ?? [];
     if (gaps.length > 0)
@@ -257,9 +248,7 @@ function tagsFor(job: EnrichedJob): string[] {
       );
     else tags.push("Evidence mapping incomplete");
   }
-  if (job.displayStage === "needs_review") tags.push("Review resume");
-  if (job.displayStage === "ready_to_generate") tags.push("Needs materials");
-  if (job.coachStep.required && !job.coachStep.complete) tags.push("Coach needed");
+  if (job.readiness.displayState === "package_review") tags.push("Review package");
   if (job.coachStep.skipped) tags.push("Coach skipped");
   if (job.staleness.isStale) tags.push("Stale");
   const ageMs = Date.now() - new Date(job.created_at).getTime();
@@ -279,8 +268,6 @@ function JobRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const action = nextActionFor(job);
   const resolveHref = requirementResolveHref(job);
-  const stageLabel = DISPLAY_STAGE_LABEL[job.displayStage];
-  const stageColor = DISPLAY_STAGE_COLOR[job.displayStage];
   const tags = tagsFor(job);
   const time = timeAgo(job.updated_at || job.created_at);
   const fitColor = scoreColor(job.score);
@@ -329,12 +316,12 @@ function JobRow({
           variant="outline"
           className={cn(
             "text-[10px] font-semibold px-2 py-0.5 whitespace-nowrap",
-            stageColor,
+            job.readiness.displayClassName,
           )}
         >
-          {stageLabel}
+          {job.readiness.displayLabel}
         </Badge>
-        {job.displayStage === "needs_evidence" && (
+        {job.readiness.displayState === "evidence_needed" && (
           <p className="text-[10px] text-muted-foreground mt-1">
             {(
               (job.evidence_map as Record<string, unknown> | null)
@@ -343,8 +330,8 @@ function JobRow({
             blockers
           </p>
         )}
-        {job.displayStage === "needs_review" && (
-          <p className="text-[10px] text-muted-foreground mt-1">1 review</p>
+        {job.readiness.displayState === "package_review" && (
+          <p className="text-[10px] text-muted-foreground mt-1">Review package</p>
         )}
       </div>
 
@@ -469,7 +456,7 @@ function IntelligencePanel({
     href: string;
   }[] = jobs
     .filter((job) => {
-      const readiness = evaluateReadiness(job);
+      const readiness = job.readiness;
       return readiness.outcome === "active" && !readiness.isReady && !!readiness.nextAction;
     })
     .sort((a, b) => PRIORITY_SORT_WEIGHT[a.priority] - PRIORITY_SORT_WEIGHT[b.priority])
@@ -560,7 +547,7 @@ function IntelligencePanel({
             </p>
             <p className="text-[11px] text-foreground mt-2">
               {PRIORITY_LABEL[topJob.priority]} ·{" "}
-              {DISPLAY_STAGE_LABEL[topJob.displayStage]}
+              {topJob.readiness.displayLabel}
             </p>
             <Link href={nextActionFor(topJob).href}>
               <span className="text-xs font-semibold text-primary mt-2 inline-flex items-center gap-1 hover:gap-1.5 transition-all">
@@ -662,16 +649,13 @@ export function JobsPipelineClient({
       list = list.filter((j) => {
         switch (activeFilter) {
           case "needs_evidence":
-            return j.displayStage === "needs_evidence";
+            return j.readiness.displayState === "evidence_needed";
           case "needs_materials":
-            return (
-              j.displayStage === "ready_to_generate" ||
-              j.displayStage === "package_drafted"
-            );
+            return j.readiness.displayState === "ready_to_generate";
           case "needs_review":
-            return j.displayStage === "needs_review";
+            return j.readiness.displayState === "package_review";
           case "ready_to_apply":
-            return j.displayStage === "ready_to_apply";
+            return j.readiness.displayState === "ready_to_apply";
           case "high_fit":
             return (j.score ?? 0) >= 75;
           case "recently_added":
@@ -703,15 +687,17 @@ export function JobsPipelineClient({
           );
         case "closest_ready": {
           const ord = [
-            "inbox",
-            "analyzed",
-            "needs_evidence",
+            "analyze_needed",
+            "evidence_needed",
+            "coach_needed",
             "ready_to_generate",
-            "package_drafted",
-            "needs_review",
+            "package_review",
             "ready_to_apply",
           ];
-          return ord.indexOf(b.displayStage) - ord.indexOf(a.displayStage);
+          return (
+            ord.indexOf(b.readiness.displayState) -
+            ord.indexOf(a.readiness.displayState)
+          );
         }
         case "company_az":
           return (a.company_name ?? "").localeCompare(b.company_name ?? "");

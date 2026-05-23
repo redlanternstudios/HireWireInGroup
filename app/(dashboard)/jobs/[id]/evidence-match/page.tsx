@@ -3,10 +3,8 @@ import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
-import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
-import { getCoachStepState } from "@/lib/coach-step"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
@@ -128,7 +126,6 @@ export default async function EvidenceMatchPage({
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
   const evidenceCount = evidenceItems?.length ?? 0
-  const coachStep = getCoachStepState({ ...job, score_gaps: job.score_gaps ?? gaps })
   const readiness = evaluateReadiness(job)
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
@@ -154,7 +151,7 @@ export default async function EvidenceMatchPage({
 
       {/* Header */}
       <div className="hw-card px-6 py-5">
-        <p className="hw-section-label mb-1">Step 2 of 5</p>
+        <p className="hw-section-label mb-1">Resolving requirement gaps</p>
         <h1 className="hw-page-title">Match Builder</h1>
         <p className="hw-page-subtitle">
           We found what this job is asking for. Add or clarify examples from your real experience, then HireWire can write stronger materials without guessing.
@@ -289,36 +286,6 @@ export default async function EvidenceMatchPage({
                           {match.employer_intent ?? match.normalized_requirement}
                         </p>
                       </div>
-                        {(match.status === "gap" || match.status === "unknown" || match.status === "partial") && (
-                          <RequirementCoachModal
-                            jobId={id}
-                            jobTitle={job.role_title ?? "this role"}
-                            company={job.company_name ?? "this company"}
-                            score={job.score}
-                            status={job.status}
-                            gaps={[match.requirement_text]}
-                            autoOpen={
-                              !!requestedRequirementId &&
-                              requestedRequirementId === match.requirement_id
-                            }
-                            requirement={{
-                              requirement_id: match.requirement_id,
-                              requirement_text: match.requirement_text,
-                              requirement_type: requirementType,
-                              priority: match.priority,
-                              status: match.status,
-                              current_proof: match.matched_evidence_titles,
-                              proof_needed: match.proof_needed,
-                              coach_question: match.evidence_questions?.[0],
-                            }}
-                            evidenceItems={(evidenceItems ?? []).map((item) => ({
-                              id: item.id,
-                              source_title: item.source_title,
-                              source_type: item.source_type,
-                            }))}
-                            showGenerationUnlock={!readiness.canGenerate}
-                          />
-                        )}
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="hw-panel p-3">
@@ -357,14 +324,11 @@ export default async function EvidenceMatchPage({
                 ))}
               </ul>
               <div className="mt-4 pt-3 border-t border-border">
-                <RequirementCoachModal
-                  jobId={id}
-                  jobTitle={job.role_title ?? "this role"}
-                  company={job.company_name ?? "this company"}
-                  score={job.score}
-                  status={job.status}
-                  gaps={coachStep.remainingGaps.length > 0 ? coachStep.remainingGaps : gaps}
-                />
+                <Link href={`/jobs/${id}`}>
+                  <Button size="sm" variant="outline" className="gap-1.5">
+                    Return to job <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
               </div>
             </div>
           )}

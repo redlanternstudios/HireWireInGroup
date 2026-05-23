@@ -62,6 +62,11 @@ export default function ApplicationPackagePreview({
   }
 
   const handleAccept = () => {
+    if (job.quality_passed !== true) {
+      setStatus("Quality must pass before this package can be accepted.")
+      return
+    }
+
     setAccepting(true)
     startTransition(async () => {
       const result = await acceptApplicationPackage(
@@ -257,13 +262,22 @@ export default function ApplicationPackagePreview({
 
       {/* Accept/Continue CTA */}
       <div className="mt-6">
-        <button
-          className="hw-btn-primary w-full"
-          disabled={accepting || !readiness.canApply || job.package_review_status === "accepted"}
-          onClick={handleAccept}
-        >
-          Accept & Continue to Apply
-        </button>
+        {job.quality_passed === true ? (
+          <button
+            className="hw-btn-primary w-full"
+            disabled={accepting || !readiness.canApply || job.package_review_status === "accepted"}
+            onClick={handleAccept}
+          >
+            Accept & Continue to Apply
+          </button>
+        ) : (
+          <button
+            className="w-full rounded border border-border bg-background px-4 py-2 text-sm font-medium text-foreground"
+            onClick={() => router.push(`/jobs/${job.id}`)}
+          >
+            Return to job
+          </button>
+        )}
         {status && <div className="mt-2 text-xs text-muted-foreground">{status}</div>}
       </div>
       <div className="mt-2">

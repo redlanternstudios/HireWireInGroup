@@ -9,10 +9,7 @@ import {
   AlertTriangle,
   Info,
   Clock,
-  Plus,
   Briefcase,
-  ArrowRight,
-  FileText,
   Zap,
 } from "lucide-react";
 
@@ -240,18 +237,6 @@ export default async function LogsPage() {
             Every mutation across your jobs, documents, and pipeline.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/jobs">
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Briefcase className="h-3.5 w-3.5" /> View Pipeline
-            </Button>
-          </Link>
-          <Link href="/jobs?add=true">
-            <Button size="sm" className="hw-btn-primary gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Add Job
-            </Button>
-          </Link>
-        </div>
       </div>
 
       {/* ─── Metric Strip ─── */}
@@ -291,18 +276,11 @@ export default async function LogsPage() {
                   here.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Link href="/jobs?add=true">
-                  <Button size="sm" className="hw-btn-primary gap-1.5">
-                    <Plus className="h-3.5 w-3.5" /> Add a job
-                  </Button>
-                </Link>
-                <Link href="/jobs">
-                  <Button size="sm" variant="outline" className="gap-1.5">
-                    <Briefcase className="h-3.5 w-3.5" /> View pipeline
-                  </Button>
-                </Link>
-              </div>
+              <Link href="/jobs">
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <Briefcase className="h-3.5 w-3.5" /> View pipeline
+                </Button>
+              </Link>
             </div>
           ) : (
             <div className="hw-card overflow-hidden">
@@ -415,46 +393,6 @@ export default async function LogsPage() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <h2 className="hw-section-label mb-2">Quick Links</h2>
-            <div className="space-y-2">
-              {[
-                {
-                  href: "/jobs?add=true",
-                  icon: Plus,
-                  label: "Add Job",
-                  desc: "Start new analysis",
-                },
-                {
-                  href: "/jobs",
-                  icon: Briefcase,
-                  label: "Pipeline",
-                  desc: "View all jobs",
-                },
-                {
-                  href: "/documents",
-                  icon: FileText,
-                  label: "Materials",
-                  desc: "Your documents",
-                },
-              ].map((item) => (
-                <Link key={item.href} href={item.href}>
-                  <div className="hw-card px-3.5 py-3 flex items-center gap-3 group">
-                    <item.icon className="h-3.5 w-3.5 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-foreground">
-                        {item.label}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {item.desc}
-                      </p>
-                    </div>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground/40 group-hover:text-primary transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

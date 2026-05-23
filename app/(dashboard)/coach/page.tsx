@@ -2,12 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { CoachChat } from "@/components/coach-chat";
 import {
-  Briefcase,
-  CheckCircle2,
-  FileText,
-  BookOpen,
   ArrowRight,
-  Plus,
   Zap,
   Activity,
   Star,
@@ -204,62 +199,6 @@ function StatRow({
   return href ? <Link href={href}>{content}</Link> : content;
 }
 
-function ActionItem({
-  label,
-  description,
-  href,
-  icon: Icon,
-  highlight = false,
-}: {
-  label: string;
-  description?: string;
-  href: string;
-  icon: React.ElementType;
-  highlight?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group",
-        highlight
-          ? "bg-primary/8 border border-primary/15 hover:bg-primary/12"
-          : "hover:bg-black/4 border border-transparent",
-      )}
-    >
-      <div
-        className={cn(
-          "h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
-          highlight ? "bg-primary/15" : "bg-foreground/6",
-        )}
-      >
-        <Icon
-          className={cn(
-            "h-3.5 w-3.5",
-            highlight ? "text-primary" : "text-foreground/60",
-          )}
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <span
-          className={cn(
-            "text-xs font-medium block",
-            highlight ? "text-primary" : "text-foreground",
-          )}
-        >
-          {label}
-        </span>
-        {description && (
-          <span className="text-[10px] text-muted-foreground">
-            {description}
-          </span>
-        )}
-      </div>
-      <ArrowRight className="h-3 w-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
-    </Link>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function CoachPage() {
@@ -277,68 +216,6 @@ export default async function CoachPage() {
   const evidenceStrong = evidenceStatus === "Strong";
   const evidenceLow =
     ctx?.evidenceCount === 0 || (ctx?.approvedEvidence ?? 0) < 2;
-
-  // Derive which quick actions are most relevant right now
-  const priorityActions = (() => {
-    if (!ctx) return [];
-    const actions = [];
-    if (ctx.hasNoPipeline) {
-      actions.push({
-        label: "Add your first job",
-        description: "Start your pipeline",
-        href: "/jobs",
-        icon: Plus,
-        highlight: true,
-      });
-    }
-    if (ctx.hasNoEvidence) {
-      actions.push({
-        label: "Build Career Context",
-        description: "Add achievements & proof",
-        href: "/evidence",
-        icon: BookOpen,
-        highlight: !ctx.hasNoPipeline,
-      });
-    }
-    if (ctx.readyCount > 0) {
-      actions.push({
-        label: `${ctx.readyCount} ready to apply`,
-        description: "Jobs cleared all checks",
-        href: "/ready-to-apply",
-        icon: CheckCircle2,
-        highlight: true,
-      });
-    }
-    if (ctx.withMaterials > 0 && !ctx.hasNoPipeline) {
-      actions.push({
-        label: "Review your materials",
-        description: "Resume & cover letter",
-        href: "/documents",
-        icon: FileText,
-        highlight: false,
-      });
-    }
-    if (ctx.activeJobs > 0) {
-      actions.push({
-        label: "View pipeline",
-        description: `${ctx.activeJobs} active job${ctx.activeJobs !== 1 ? "s" : ""}`,
-        href: "/jobs",
-        icon: Briefcase,
-        highlight: false,
-      });
-    }
-    // Always offer pipeline entry
-    if (!ctx.hasNoPipeline) {
-      actions.push({
-        label: "Add another job",
-        description: "Analyze a new opportunity",
-        href: "/jobs",
-        icon: Plus,
-        highlight: false,
-      });
-    }
-    return actions.slice(0, 4);
-  })();
 
   return (
     <div className="flex flex-col h-[calc(100vh-2.5rem)]">
@@ -498,18 +375,6 @@ export default async function CoachPage() {
               </Link>
             )}
           </div>
-
-          {/* Next Best Actions — pipeline-adaptive */}
-          {priorityActions.length > 0 && (
-            <div className="p-4 border-b border-border/70">
-              <RailLabel>Next best actions</RailLabel>
-              <div className="space-y-1">
-                {priorityActions.map((action) => (
-                  <ActionItem key={action.href + action.label} {...action} />
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Recent Activity */}
           {ctx?.recentEvents && ctx.recentEvents.length > 0 && (

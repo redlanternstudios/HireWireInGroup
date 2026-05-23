@@ -212,11 +212,19 @@ export default async function DocumentsPage({
             }
           />
           <ResumeVersionHistory jobId={id} versions={versions} />
-          <Link href={`/ready-to-apply?jobId=${id}`} className="block w-full">
-            <button className="w-full hw-btn-primary text-sm font-medium py-2 px-4 rounded-lg">
-              Continue to Apply
-            </button>
-          </Link>
+          {packageReadiness.canApply ? (
+            <Link href={`/ready-to-apply?jobId=${id}`} className="block w-full">
+              <button className="w-full hw-btn-primary text-sm font-medium py-2 px-4 rounded-lg">
+                Continue to Apply
+              </button>
+            </Link>
+          ) : (
+            <Link href={`/jobs/${id}`} className="block w-full">
+              <button className="w-full rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground">
+                Return to job
+              </button>
+            </Link>
+          )}
         </aside>
       </div>
     </div>

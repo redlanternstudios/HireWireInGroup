@@ -30,81 +30,6 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(days / 7)}w ago`;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft",
-  analyzing: "Analyzing",
-  analyzed: "Analyzed",
-  generating: "Generating",
-  ready: "Ready",
-  applied: "Applied",
-  interviewing: "Interviewing",
-  offered: "Offered",
-  rejected: "Rejected",
-  needs_review: "Needs Review",
-  needs_evidence: "Needs Evidence",
-  quality_review: "Quality Review",
-  error: "Error",
-};
-
-type StatusStyle = { bg: string; text: string; border: string };
-const STATUS_STYLE: Record<string, StatusStyle> = {
-  draft: {
-    bg: "bg-stone-100",
-    text: "text-stone-600",
-    border: "border-stone-200",
-  },
-  analyzing: {
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    border: "border-amber-200",
-  },
-  analyzed: {
-    bg: "bg-blue-50",
-    text: "text-blue-600",
-    border: "border-blue-200",
-  },
-  generating: {
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    border: "border-amber-200",
-  },
-  ready: {
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
-    border: "border-emerald-200",
-  },
-  applied: {
-    bg: "bg-blue-50",
-    text: "text-blue-700",
-    border: "border-blue-200",
-  },
-  needs_review: {
-    bg: "bg-orange-50",
-    text: "text-orange-700",
-    border: "border-orange-200",
-  },
-  needs_evidence: {
-    bg: "bg-rose-50",
-    text: "text-rose-700",
-    border: "border-rose-200",
-  },
-  quality_review: {
-    bg: "bg-violet-50",
-    text: "text-violet-700",
-    border: "border-violet-200",
-  },
-  error: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
-};
-function statusStyle(status: string): StatusStyle {
-  return (
-    STATUS_STYLE[status] ?? {
-      bg: "bg-stone-100",
-      text: "text-stone-600",
-      border: "border-stone-200",
-    }
-  );
-}
-
 const EVENT_LABEL: Record<string, string> = {
   application_submitted: "Application submitted",
   documents_generated: "Documents generated",
@@ -126,28 +51,6 @@ function greeting() {
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
-}
-
-type UrgencyTier = "action" | "review" | "ready" | "submitted" | "other";
-function urgencyTier(job: {
-  id?: string | null;
-  status: string;
-  quality_passed?: boolean | null;
-  generated_resume?: string | null;
-  generated_cover_letter?: string | null;
-  evidence_map?: unknown;
-  applied_at?: string | null;
-  score?: number | null;
-}): UrgencyTier {
-  const readiness = evaluateReadiness(job);
-  if (readiness.outcome !== "active") return "submitted";
-  if (readiness.stage === "ready") return "ready";
-  if (readiness.stage === "quality_review") return "review";
-  if (readiness.stage === "evidence_blocked" || job.status === "error")
-    return "action";
-  if (job.status === "analyzing" || job.status === "generating") return "other";
-  if (readiness.stage === "materials_missing") return "action";
-  return "other";
 }
 
 export default async function DashboardPage() {
@@ -184,10 +87,27 @@ export default async function DashboardPage() {
   const jobList = jobs ?? [];
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
 
-  const needsActionJobs = jobList.filter((j) => urgencyTier(j) === "action");
-  const needsReviewJobs = jobList.filter((j) => urgencyTier(j) === "review");
-  const readyJobs = jobList.filter((j) => urgencyTier(j) === "ready");
-  const submittedJobs = jobList.filter((j) => urgencyTier(j) === "submitted");
+  const evaluatedJobs = jobList.map((job) => ({
+    job,
+    readiness: evaluateReadiness(job),
+  }));
+  const needsActionJobs = evaluatedJobs
+    .filter(
+      ({ readiness }) =>
+        readiness.outcome === "active" &&
+        !readiness.isReady &&
+        readiness.displayState !== "package_review",
+    )
+    .map(({ job }) => job);
+  const needsReviewJobs = evaluatedJobs
+    .filter(({ readiness }) => readiness.displayState === "package_review")
+    .map(({ job }) => job);
+  const readyJobs = evaluatedJobs
+    .filter(({ readiness }) => readiness.canApply)
+    .map(({ job }) => job);
+  const submittedJobs = evaluatedJobs
+    .filter(({ readiness }) => readiness.outcome !== "active")
+    .map(({ job }) => job);
   const activeJobs = jobList.filter(
     (j) => evaluateReadiness(j).outcome === "active",
   );
@@ -195,10 +115,9 @@ export default async function DashboardPage() {
   const reentryJob =
     needsActionJobs[0] ??
     needsReviewJobs[0] ??
-    jobList.find((job) => {
-      const readiness = evaluateReadiness(job);
+    evaluatedJobs.find(({ readiness }) => {
       return readiness.outcome === "active" && readiness.stage !== "ready";
-    }) ??
+    })?.job ??
     null;
   const reentryReadiness = reentryJob ? evaluateReadiness(reentryJob) : null;
   const recentPipelineJobs = reentryJob
@@ -454,9 +373,7 @@ export default async function DashboardPage() {
             ) : (
               <div className="rounded-2xl overflow-hidden hw-card">
                 {recentPipelineJobs.slice(0, 5).map((job, i) => {
-                  const tier = urgencyTier(job);
-                  const ss = statusStyle(job.status);
-                  const displayStatus = STATUS_LABEL[job.status] ?? job.status;
+                  const readiness = evaluateReadiness(job);
                   const gaps = (job.score_gaps as string[] | null) ?? [];
                   return (
                     <div
@@ -482,9 +399,12 @@ export default async function DashboardPage() {
                           </p>
                           <Badge
                             variant="outline"
-                            className={`text-[10px] font-semibold shrink-0 ${ss.bg} ${ss.text} ${ss.border}`}
+                            className={cn(
+                              "text-[10px] font-semibold shrink-0",
+                              readiness.displayClassName,
+                            )}
                           >
-                            {displayStatus}
+                            {readiness.displayLabel}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -502,13 +422,13 @@ export default async function DashboardPage() {
                               </span>
                             </>
                           )}
-                          {gaps.length === 0 && tier === "review" && (
+                          {gaps.length === 0 && readiness.displayState === "package_review" && (
                             <>
                               <span className="text-muted-foreground/30 text-xs">
                                 ·
                               </span>
                               <span className="text-[11px] text-amber-600 font-medium">
-                                Review resume
+                                Review package
                               </span>
                             </>
                           )}

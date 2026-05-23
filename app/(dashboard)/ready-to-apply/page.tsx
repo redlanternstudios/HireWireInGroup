@@ -157,7 +157,9 @@ export default async function ReadyToApplyPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold truncate">{job.role_title ?? "Untitled role"}</h3>
-                          <Badge variant="outline" className="status-ready text-[10px]">Ready</Badge>
+                          <Badge variant="outline" className={`text-[10px] ${readiness.displayClassName}`}>
+                            {readiness.displayLabel}
+                          </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
                           {job.company_name ?? "-"} · Generated {timeAgo(job.generation_timestamp ?? job.created_at)}
@@ -201,7 +203,9 @@ export default async function ReadyToApplyPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold truncate">{job.role_title ?? "Untitled role"}</h3>
-                          <Badge variant="outline" className="text-[10px] text-rose-700 border-rose-200 bg-rose-50">Blocked</Badge>
+                          <Badge variant="outline" className={`text-[10px] ${readiness.displayClassName}`}>
+                            {readiness.displayLabel}
+                          </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">{job.company_name ?? "-"}</p>
                         <p className="text-sm text-rose-600 mt-2">{readiness.blockedReasons.join(", ")}</p>
@@ -209,7 +213,9 @@ export default async function ReadyToApplyPage() {
 
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <Link href={readiness.nextAction?.href ?? `/jobs/${job.id}`}>
-                          <Button size="sm" className="hw-btn-primary">Fix readiness</Button>
+                          <Button size="sm" className="hw-btn-primary">
+                            {readiness.nextAction?.label ?? "Open job"}
+                          </Button>
                         </Link>
                         <MarkAsAppliedButton jobId={job.id} variant="ghost" label="Override readiness" />
                       </div>
