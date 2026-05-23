@@ -251,16 +251,21 @@ function extractJsonFromText(text: string) {
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1].trim()
 
-  const firstObject = trimmed.indexOf("{")
-  const lastObject = trimmed.lastIndexOf("}")
-  if (firstObject !== -1 && lastObject > firstObject) {
-    return trimmed.slice(firstObject, lastObject + 1)
-  }
-
   const firstArray = trimmed.indexOf("[")
   const lastArray = trimmed.lastIndexOf("]")
-  if (firstArray !== -1 && lastArray > firstArray) {
+  const firstObject = trimmed.indexOf("{")
+  const lastObject = trimmed.lastIndexOf("}")
+
+  if (
+    firstArray !== -1 &&
+    lastArray > firstArray &&
+    (firstObject === -1 || firstArray < firstObject)
+  ) {
     return trimmed.slice(firstArray, lastArray + 1)
+  }
+
+  if (firstObject !== -1 && lastObject > firstObject) {
+    return trimmed.slice(firstObject, lastObject + 1)
   }
 
   return trimmed
