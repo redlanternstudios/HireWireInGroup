@@ -235,25 +235,35 @@ function nextActionFor(job: EnrichedJob): {
   return { label: "View job", desc: "Open job detail", href: `/jobs/${job.id}` };
 }
 
-// ─── Tags per job ─────────────────────────────────────────────────────────────
+// ─── Tags per job ───────────────────────��─────────────────────────────────────
 
 function tagsFor(job: EnrichedJob): string[] {
-  const tags: string[] = [];
+  // Return ONLY ONE state tag — the highest-priority visible state
+  // Priority: evidence needed → review package → stale → just added → none
+  
   if (job.readiness.displayState === "evidence_needed") {
     const map = job.evidence_map as Record<string, unknown> | null;
     const gaps = (map?.score_gaps as string[] | null) ?? [];
-    if (gaps.length > 0)
-      tags.push(
-        `Missing ${gaps.length} proof point${gaps.length > 1 ? "s" : ""}`,
-      );
-    else tags.push("Evidence mapping incomplete");
+    if (gaps.length > 0) {
+      return [`${gaps.length} proof point${gaps.length > 1 ? "s" : ""} needed`];
+    }
+    return ["Evidence mapping needed"];
   }
-  if (job.readiness.displayState === "package_review") tags.push("Review package");
-  if (job.coachStep.skipped) tags.push("Coach skipped");
-  if (job.staleness.isStale) tags.push("Stale");
+  
+  if (job.readiness.displayState === "package_review") {
+    return ["Review needed"];
+  }
+  
+  if (job.staleness.isStale) {
+    return ["Stale"];
+  }
+  
   const ageMs = Date.now() - new Date(job.created_at).getTime();
-  if (ageMs < 2 * 86400000) tags.push("Just added");
-  return tags.slice(0, 3);
+  if (ageMs < 2 * 86400000) {
+    return ["Just added"];
+  }
+  
+  return [];
 }
 
 // ─── Job Row (dense table-style) ──────────────────────────────────────────────
