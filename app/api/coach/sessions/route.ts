@@ -8,6 +8,18 @@ import { createClient } from "@/lib/supabase/server"
 import { buildOpeningPrompt } from "@/lib/coach/buildCoachPrompt"
 import { handleDomainEvent } from "@/lib/domain-events"
 
+function logCoachSessionError(
+  action: string,
+  error: unknown,
+  context: Record<string, unknown>,
+) {
+  console.error("[HireWire] coach session error", {
+    action,
+    ...context,
+    error: error instanceof Error ? error.message : error,
+  })
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -24,8 +36,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data: ownedJob } = await supabase.from("jobs").select("id,role_title,company_name,evidence_map")
+    const { data: ownedJob, error: ownedJobError } = await supabase.from("jobs").select("id,role_title,company_name,evidence_map")
       .eq("id", jobId).eq("user_id", userId).is("deleted_at", null).maybeSingle()
+
+    if (ownedJobError) {
+      logCoachSessionError("fetch_owned_job", ownedJobError, { job_id: jobId, user_id: userId })
+      return NextResponse.json(
+        { success: false, error: "job_lookup_failed", user_message: "Could not load that job. Please try again." },
+        { status: 500 }
+      )
+    }
 
     if (!ownedJob) {
       return NextResponse.json(
@@ -34,7 +54,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("coach_sessions")
       .select("id")
       .eq("user_id", userId)
@@ -45,6 +65,18 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .maybeSingle()
 
+    if (existingError) {
+      logCoachSessionError("lookup_existing_session", existingError, {
+        job_id: jobId,
+        user_id: userId,
+        requirement_id: gapRequirementId,
+      })
+      return NextResponse.json(
+        { success: false, error: "session_lookup_failed", user_message: "Could not load the requirement session." },
+        { status: 500 }
+      )
+    }
+
     if (existing) {
       const [msgs, drafts] = await Promise.all([
         supabase.from("coach_messages").select("id,role,content,created_at")
@@ -52,6 +84,18 @@ export async function POST(request: NextRequest) {
         supabase.from("coach_evidence_drafts").select("id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status,created_at")
           .eq("session_id", existing.id).eq("status", "pending"),
       ])
+      if (msgs.error || drafts.error) {
+        logCoachSessionError("load_existing_session_payload", msgs.error ?? drafts.error, {
+          session_id: existing.id,
+          job_id: jobId,
+          user_id: userId,
+          requirement_id: gapRequirementId,
+        })
+        return NextResponse.json(
+          { success: false, error: "session_payload_failed", user_message: "Could not load the saved session." },
+          { status: 500 }
+        )
+      }
       return NextResponse.json({
         sessionId: existing.id, isNew: false,
         messages: Array.isArray(msgs.data) ? msgs.data : [],
@@ -66,6 +110,11 @@ export async function POST(request: NextRequest) {
       .select("id").single()
 
     if (sessionError || !newSession) {
+      logCoachSessionError("create_session", sessionError ?? "No session returned", {
+        job_id: jobId,
+        user_id: userId,
+        requirement_id: gapRequirementId,
+      })
       return NextResponse.json(
         { success: false, error: "session_create_failed", user_message: "Failed to create session." },
         { status: 500 }
@@ -86,9 +135,18 @@ export async function POST(request: NextRequest) {
       recoveryQuestion: typeof requirementMatch?.recovery_question === "string" ? requirementMatch.recovery_question : null,
     })
 
-    const { data: openingMsg } = await supabase.from("coach_messages")
+    const { data: openingMsg, error: openingMsgError } = await supabase.from("coach_messages")
       .insert({ session_id: newSession.id, role: "assistant", content: openingContent })
       .select("id,role,content,created_at").single()
+
+    if (openingMsgError) {
+      logCoachSessionError("create_opening_message", openingMsgError, {
+        session_id: newSession.id,
+        job_id: jobId,
+        user_id: userId,
+        requirement_id: gapRequirementId,
+      })
+    }
 
     void handleDomainEvent({
       supabase,

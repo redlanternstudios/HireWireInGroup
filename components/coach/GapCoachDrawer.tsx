@@ -110,6 +110,8 @@ export function RequirementCoachModal({
   const [canForceSave, setCanForceSave] = useState(false)
   const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(false)
+  const [sessionError, setSessionError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const [resumeHint, setResumeHint] = useState<string | null>(null)
   const [savedState, setSavedState] = useState<{ mode: "answer" | "skip"; allDone: boolean } | null>(null)
   const router = useRouter()
@@ -145,6 +147,7 @@ export function RequirementCoachModal({
 
     async function resumeOrCreateSession() {
       setSessionLoading(true)
+      setSessionError(false)
       try {
         const response = await fetch("/api/coach/sessions", {
           method: "POST",
@@ -156,7 +159,11 @@ export function RequirementCoachModal({
           }),
         })
         const data = await response.json().catch(() => ({}))
-        if (cancelled || !response.ok || !data?.sessionId) return
+        if (cancelled) return
+        if (!response.ok || !data?.sessionId) {
+          setSessionError(true)
+          return
+        }
 
         setCoachSessionId(data.sessionId)
 
@@ -169,6 +176,8 @@ export function RequirementCoachModal({
             setResumeHint(latestAssistant.content.slice(0, 220))
           }
         }
+      } catch {
+        if (!cancelled) setSessionError(true)
       } finally {
         if (!cancelled) setSessionLoading(false)
       }
@@ -187,6 +196,7 @@ export function RequirementCoachModal({
     jobId,
     activeGap,
     requirement?.requirement_id,
+    retryCount,
   ])
 
   if (!activeGap) return null
@@ -408,8 +418,23 @@ export function RequirementCoachModal({
             </div>
           </div>
           {requiresScopedSession && !coachSessionId ? (
-            <div className="flex min-h-[420px] items-center justify-center border-t border-border bg-background px-6 text-center text-sm text-muted-foreground lg:min-h-0 lg:border-t-0">
-              {sessionLoading ? "Loading your requirement session..." : "Preparing coach session..."}
+            <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 border-t border-border bg-background px-6 text-center lg:min-h-0 lg:border-t-0">
+              {sessionLoading ? (
+                <p className="text-sm text-muted-foreground">Loading your requirement session...</p>
+              ) : sessionError ? (
+                <>
+                  <p className="text-sm text-muted-foreground">Could not start the session. Check your connection and try again.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setSessionError(false); setRetryCount((c) => c + 1) }}
+                  >
+                    Retry
+                  </Button>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Preparing coach session...</p>
+              )}
             </div>
           ) : (
             <CoachChat

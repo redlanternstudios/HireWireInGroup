@@ -5,6 +5,18 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
+function logCoachSessionReadError(
+  action: string,
+  error: unknown,
+  context: Record<string, unknown>,
+) {
+  console.error("[HireWire] coach session read error", {
+    action,
+    ...context,
+    error: error instanceof Error ? error.message : error,
+  })
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
@@ -15,10 +27,21 @@ export async function GET(
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { sessionId } = await params
-    const { data: session } = await supabase
+    const { data: session, error: sessionError } = await supabase
       .from("coach_sessions")
       .select("id,job_id,gap_requirement,gap_requirement_id,status,created_at,updated_at")
       .eq("id", sessionId).eq("user_id", user.id).maybeSingle()
+
+    if (sessionError) {
+      logCoachSessionReadError("load_session", sessionError, {
+        session_id: sessionId,
+        user_id: user.id,
+      })
+      return NextResponse.json(
+        { success: false, error: "session_lookup_failed", user_message: "Could not load that session." },
+        { status: 500 }
+      )
+    }
 
     if (!session) {
       return NextResponse.json(
@@ -34,6 +57,17 @@ export async function GET(
         .select("id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status,created_at")
         .eq("session_id", sessionId).neq("status", "rejected"),
     ])
+
+    if (msgs.error || drafts.error) {
+      logCoachSessionReadError("load_session_payload", msgs.error ?? drafts.error, {
+        session_id: sessionId,
+        user_id: user.id,
+      })
+      return NextResponse.json(
+        { success: false, error: "session_payload_failed", user_message: "Could not load session messages." },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       session,

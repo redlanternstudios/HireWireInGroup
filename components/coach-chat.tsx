@@ -325,36 +325,38 @@ export function CoachChat({
                 )}
               </div>
 
-              {/* Grouped prompt clusters */}
-              <div className="space-y-4">
-                {promptClusters.map((cluster) => (
-                  <div key={cluster.group}>
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <cluster.icon className="h-3 w-3 text-muted-foreground" />
-                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                        {cluster.group}
-                      </p>
+              {/* Grouped prompt clusters — only in general (non-requirement-scoped) mode */}
+              {!initialMessage && (
+                <div className="space-y-4">
+                  {promptClusters.map((cluster) => (
+                    <div key={cluster.group}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <cluster.icon className="h-3 w-3 text-muted-foreground" />
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                          {cluster.group}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {cluster.prompts.map((p) => (
+                          <button
+                            key={p.label}
+                            onClick={() => handleQuickAction(p.prompt)}
+                            disabled={isLoading}
+                            className={cn(
+                              "px-3 py-2 rounded-xl text-left transition-all text-xs font-medium",
+                              "bg-background border border-border text-foreground shadow-sm",
+                              "hover:border-primary/50 hover:bg-primary/6 hover:text-primary hover:shadow-none",
+                              "disabled:opacity-40 disabled:cursor-not-allowed",
+                            )}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {cluster.prompts.map((p) => (
-                        <button
-                          key={p.label}
-                          onClick={() => handleQuickAction(p.prompt)}
-                          disabled={isLoading}
-                          className={cn(
-                            "px-3 py-2 rounded-xl text-left transition-all text-xs font-medium",
-                            "bg-background border border-border text-foreground shadow-sm",
-                            "hover:border-primary/50 hover:bg-primary/6 hover:text-primary hover:shadow-none",
-                            "disabled:opacity-40 disabled:cursor-not-allowed",
-                          )}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
