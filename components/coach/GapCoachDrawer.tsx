@@ -144,7 +144,9 @@ export function RequirementCoachModal({
 
     async function resumeOrCreateSession() {
       setSessionLoading(true)
+      setError(null)
       try {
+        console.log("[v0] Creating coach session:", { jobId, activeGap, requirementId: requirement?.requirement_id })
         const response = await fetch("/api/coach/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -155,7 +157,15 @@ export function RequirementCoachModal({
           }),
         })
         const data = await response.json().catch(() => ({}))
-        if (cancelled || !response.ok || !data?.sessionId) return
+        console.log("[v0] Coach session response:", { ok: response.ok, status: response.status, data })
+        
+        if (cancelled) return
+        
+        if (!response.ok || !data?.sessionId) {
+          console.error("[v0] Coach session creation failed:", data)
+          setError(data?.user_message ?? data?.error ?? "Failed to start coach session")
+          return
+        }
 
         setCoachSessionId(data.sessionId)
 
@@ -167,6 +177,11 @@ export function RequirementCoachModal({
           if (latestAssistant?.content) {
             setResumeHint(latestAssistant.content.slice(0, 220))
           }
+        }
+      } catch (err) {
+        console.error("[v0] Coach session error:", err)
+        if (!cancelled) {
+          setError("Network error starting coach session")
         }
       } finally {
         if (!cancelled) setSessionLoading(false)
@@ -397,8 +412,26 @@ export function RequirementCoachModal({
             </div>
           </div>
           {requiresScopedSession && !coachSessionId ? (
-            <div className="flex min-h-[420px] items-center justify-center border-t border-border bg-background px-6 text-center text-sm text-muted-foreground lg:min-h-0 lg:border-t-0">
-              {sessionLoading ? "Loading your requirement session..." : "Preparing coach session..."}
+            <div className="flex min-h-[420px] flex-col items-center justify-center border-t border-border bg-background px-6 text-center text-sm lg:min-h-0 lg:border-t-0">
+              {error ? (
+                <div className="space-y-3">
+                  <p className="text-destructive">{error}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setError(null)
+                      setSessionLoading(false)
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : sessionLoading ? (
+                <p className="text-muted-foreground">Loading your requirement session...</p>
+              ) : (
+                <p className="text-muted-foreground">Preparing coach session...</p>
+              )}
             </div>
           ) : (
             <CoachChat
