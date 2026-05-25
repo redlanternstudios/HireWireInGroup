@@ -146,7 +146,6 @@ export function RequirementCoachModal({
       setSessionLoading(true)
       setError(null)
       try {
-        console.log("[v0] Creating coach session:", { jobId, activeGap, requirementId: requirement?.requirement_id })
         const response = await fetch("/api/coach/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -157,12 +156,10 @@ export function RequirementCoachModal({
           }),
         })
         const data = await response.json().catch(() => ({}))
-        console.log("[v0] Coach session response:", { ok: response.ok, status: response.status, data })
         
         if (cancelled) return
         
         if (!response.ok || !data?.sessionId) {
-          console.error("[v0] Coach session creation failed:", data)
           setError(data?.user_message ?? data?.error ?? "Failed to start coach session")
           return
         }
@@ -179,7 +176,6 @@ export function RequirementCoachModal({
           }
         }
       } catch (err) {
-        console.error("[v0] Coach session error:", err)
         if (!cancelled) {
           setError("Network error starting coach session")
         }
