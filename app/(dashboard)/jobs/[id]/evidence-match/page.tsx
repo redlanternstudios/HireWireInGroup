@@ -3,7 +3,6 @@ import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
-import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
@@ -366,18 +365,9 @@ export default async function EvidenceMatchPage({
                   </li>
                 ))}
               </ul>
-              <div className="mt-4 pt-3 border-t border-border">
-                <RequirementCoachModal
-                  jobId={id}
-                  jobTitle={job.role_title ?? "this role"}
-                  company={job.company_name ?? "this company"}
-                  score={job.score}
-                  status={job.status}
-                  gaps={gaps}
-                  autoOpen={!!requestedRequirementId}
-                  showGenerationUnlock={!readiness.canGenerate}
-                />
-              </div>
+              <p className="mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
+                Use the Guided Coach Flow above to address these gaps one at a time.
+              </p>
             </div>
           )}
 
