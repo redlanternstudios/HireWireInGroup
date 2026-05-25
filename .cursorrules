@@ -66,6 +66,29 @@ Always use job.title / job.company in UI. Never job.role_title.
 
 ---
 
+## Known Alignment Issues (P0 — fix these when encountered)
+
+### Type Safety Issues
+- `as any` used 16 times in generate-documents/route.ts — needs proper typing
+- profile.email/phone access uses (profile as any) — add to Profile type
+- team_size, budget_scope, user_impact_scale need Evidence type extension
+
+### TODO Items in Code
+- lib/errors/logger.ts — Supabase/Sentry integration TODO
+- lib/jobs/display-stage.ts — follow_up_at column TODO
+- lib/jobs/staleness.ts — updated_at column TODO
+- lib/resume/snapshot.ts — implement snapshot call from apply.ts
+
+### Console Error Pattern
+- lib/actions/jobs.ts, lib/actions/profile-links.ts use console.error without [HireWire] prefix
+- Should follow pattern: console.error("[HireWire] context:", error)
+
+### Coach Step Status
+- coach_step uses "completed" | "skipped" | "required" — this is correct
+- Different from generation_status which uses "generating" | "ready" | "needs_review" | "failed"
+
+---
+
 ## Logo Rendering Rules
 - Logo asset: /brand/hirewire-logo.png — rendered via components/hirewire-logo.tsx
 - ALWAYS: style={{ width: Npx, height: "auto" }} — never set both dimensions as fixed px
