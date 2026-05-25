@@ -374,6 +374,7 @@ export default async function EvidenceMatchPage({
                   score={job.score}
                   status={job.status}
                   gaps={gaps}
+                  autoOpen={!!requestedRequirementId}
                   showGenerationUnlock={!readiness.canGenerate}
                 />
               </div>
