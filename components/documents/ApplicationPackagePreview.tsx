@@ -27,10 +27,26 @@ type BulletTrace = {
   }
 }
 
+type ConfirmedProofUsage = {
+  packet_id?: string
+  requirement?: string
+  evidence_ids?: string[]
+  user_claim?: string | null
+  used?: boolean
+  used_in?: string[]
+  generated_claims?: string[]
+}
+
 function getBulletTraces(job: any): BulletTrace[] {
   const map = job?.evidence_map
   if (!map || typeof map !== "object" || Array.isArray(map)) return []
   return Array.isArray(map.bullet_provenance) ? map.bullet_provenance : []
+}
+
+function getConfirmedProofUsage(job: any): ConfirmedProofUsage[] {
+  const trace = job?.evidence_map?.generation_trace
+  if (!trace || typeof trace !== "object" || Array.isArray(trace)) return []
+  return Array.isArray(trace.confirmed_proof_usage) ? trace.confirmed_proof_usage : []
 }
 
 export default function ApplicationPackagePreview({
@@ -90,6 +106,7 @@ export default function ApplicationPackagePreview({
   }
 
   const bulletTraces = getBulletTraces(job)
+  const confirmedProofUsage = getConfirmedProofUsage(job)
 
   return (
     <div className="space-y-6">
@@ -216,6 +233,43 @@ export default function ApplicationPackagePreview({
                 </details>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {confirmedProofUsage.length > 0 && (
+        <div className="hw-card p-4">
+          <h3 className="font-semibold mb-2 text-sm">Confirmed Proof Usage</h3>
+          <div className="space-y-2">
+            {confirmedProofUsage.map((proof, index) => (
+              <div key={`${proof.packet_id ?? index}-${index}`} className="rounded-md border border-border p-3 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-foreground">
+                      {proof.requirement ?? "Confirmed proof"}
+                    </div>
+                    {proof.user_claim && (
+                      <div className="mt-1 text-muted-foreground">{proof.user_claim}</div>
+                    )}
+                  </div>
+                  <span className={proof.used ? "text-emerald-600" : "text-rose-600"}>
+                    {proof.used ? "Used" : "Not used"}
+                  </span>
+                </div>
+                {proof.used_in && proof.used_in.length > 0 && (
+                  <div className="mt-2 text-muted-foreground">
+                    Appears in: {proof.used_in.join(", ").replace(/_/g, " ")}
+                  </div>
+                )}
+                {proof.generated_claims && proof.generated_claims.length > 0 && (
+                  <ul className="mt-2 list-disc pl-4 text-muted-foreground">
+                    {proof.generated_claims.slice(0, 2).map((claim) => (
+                      <li key={claim}>{claim}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}

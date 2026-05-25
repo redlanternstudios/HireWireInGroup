@@ -18,6 +18,8 @@ The second bundle is high risk but directionally aligned with the Application Re
 - `lib/domain-events/invalidation-map.ts` — new `prove_fit_decision_recorded` event invalidates readiness/package surfaces.
 - `lib/canonical-evidence.ts` — fit score now short-circuits to zero when no evidence exists and uses role-aware scoring weights.
 - `lib/coach/claim-validator.ts` — Match Interview answers are scored for concrete signals before being saved as user-input proof.
+- `lib/truthserum.ts` — confirmed proof usage is tracked so generated packages can flag confirmed proof that was dropped.
+- `lib/canonical-evidence.test.ts` / `lib/truthserum.test.ts` / `tests/coach-governance.test.ts` — focused regression tests for zero-evidence fit scoring, confirmed proof usage, and coach-answer signal detection.
 - `lib/evidence/**` — proof decision fields, skipped claims, and capability packet behavior.
 - `supabase/migrations/20260524090000_prove_fit_v0.sql` — Prove Fit decisions and generation trace persistence.
 

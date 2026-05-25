@@ -78,6 +78,7 @@
       "lib/analyze/analyze-job-core.ts",
       "lib/audit.ts",
       "lib/canonical-evidence.ts",
+      "lib/canonical-evidence.test.ts",
       "lib/coach/claim-validator.ts",
       "lib/domain-events/event-types.ts",
       "lib/domain-events/invalidation-map.ts",
@@ -88,11 +89,13 @@
       "lib/readiness.ts",
       "lib/readiness/evaluator.ts",
       "lib/truthserum.ts",
+      "lib/truthserum.test.ts",
       "lib/workflow/get-next-step.ts",
       "memory/",
       "package.json",
       "scripts/agent/",
-      "supabase/migrations/20260524090000_prove_fit_v0.sql"
+      "supabase/migrations/20260524090000_prove_fit_v0.sql",
+      "tests/coach-governance.test.ts"
     ],
     "knownRisks": [
       "Remote migration history has unrelated drift: local May 21 migrations are pending remotely and one remote 20260525015751 migration is not present locally.",

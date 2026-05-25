@@ -1,6 +1,9 @@
 name: Agent Gates
 
 on:
+  push:
+    branches:
+      - "codex/**"
   pull_request:
   workflow_dispatch:
 

@@ -44,11 +44,11 @@ const SCOPE_PATTERNS = /\b(\d+\s*(users?|customers?|clients?|engineers?|people|t
 const METRIC_PATTERNS = /\b\d[\d,]*\s*(%|x|k|m|b|ms|s\b|hours?|days?|weeks?|\$|dollars?|times?|points?|bps?)\b|\b(increased|decreased|reduced|improved|grew|cut|saved|generated)\s+\w+\s+by\s+\d/i
 
 // Tool/technology signals
-const TOOL_PATTERNS = /\b(react|next\.?js|typescript|python|sql|postgres|supabase|aws|gcp|azure|kubernetes|docker|graphql|rest api|stripe|salesforce|jira|figma|looker|dbt|spark|kafka|airflow|openai|langchain|claude|gpt|llm|ai|ml|machine learning)\b/i
+const TOOL_PATTERNS = /\b(react|next\.?js|typescript|python|sql|postgres|supabase|aws|gcp|azure|kubernetes|docker|graphql|rest api|stripe|salesforce|jira|figma|looker|dbt|spark|kafka|airflow|openai|langchain|claude|gpt|llm|ai|ml|machine learning|snowflake|confluence|asana|linear|amplitude|tableau|power bi|notion|miro|mixpanel|segment|hubspot|zendesk)\b/i
 
 // Employer/company signal — capitalized proper noun(s) that aren't the requirement itself
 // Simple heuristic: at least one sequence of Title Case words that looks like a company/org
-const EMPLOYER_PATTERNS = /\b(at|for|with|@)\s+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]+)?|\b[A-Z][a-zA-Z]+(\.com|Inc\b|LLC\b|Corp\b|Ltd\b)\b/
+const EMPLOYER_PATTERNS = /\b(at|for|with|@)\s+(?:[A-Z]{2,}|[A-Z][a-zA-Z]+)(?:\s+(?:[A-Z]{2,}|[A-Z][a-zA-Z]+)){0,3}|\b(?:[A-Z]{2,}|[A-Z][a-zA-Z]+)(?:\s+(?:[A-Z]{2,}|[A-Z][a-zA-Z]+)){0,3}\s+(?:team|org|group|division|unit)\b|\b[A-Z][a-zA-Z]+(\.com|Inc\b|LLC\b|Corp\b|Ltd\b)\b/
 
 function detectSignals(answer: string): ClaimSignals {
   return {

@@ -360,6 +360,41 @@ export function truthSerumAuditBullet(
   }
 }
 
+export function buildConfirmedProofUsageReport(
+  packets: EvidenceIntelligencePacket[],
+  bulletProvenance: BulletProvenance[],
+  paragraphProvenance: ParagraphProvenance[],
+): ConfirmedProofUsage[] {
+  const confirmedPackets = packets.filter((packet) => packet.proofDecision === "confirmed")
+
+  return confirmedPackets.map((packet) => {
+    const evidenceIds = new Set(packet.matchedEvidenceIds)
+    const resumeClaims = bulletProvenance.filter((bullet) => {
+      if (bullet.source_packet_id === packet.packet_id) return true
+      return evidenceIds.has(bullet.source_evidence_id)
+    })
+    const coverLetterClaims = paragraphProvenance.filter((paragraph) =>
+      paragraph.evidence_used.some((id) => evidenceIds.has(id)),
+    )
+    const usedIn: Array<"resume" | "cover_letter"> = []
+    if (resumeClaims.length > 0) usedIn.push("resume")
+    if (coverLetterClaims.length > 0) usedIn.push("cover_letter")
+
+    return {
+      packet_id: packet.packet_id,
+      requirement: packet.requirement,
+      evidence_ids: packet.matchedEvidenceIds,
+      user_claim: packet.userClaim ?? null,
+      used: usedIn.length > 0,
+      used_in: usedIn,
+      generated_claims: [
+        ...resumeClaims.map((claim) => claim.bullet_text),
+        ...coverLetterClaims.map((claim) => claim.paragraph_text),
+      ],
+    }
+  })
+}
+
 // ============================================================================
 // EVIDENCE VALIDATION AND BLOCKING
 // ============================================================================

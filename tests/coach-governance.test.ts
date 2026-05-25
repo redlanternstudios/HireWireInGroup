@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
 import test from "node:test"
-import { validateAllClaims } from "../lib/coach/claim-validator"
+import { validateAllClaims, validateCoachAnswer } from "../lib/coach/claim-validator"
 import { scoreDrift } from "../lib/coach/drift-scorer"
 import type { GovernanceEvidence } from "../lib/coach/types"
 
@@ -103,4 +103,27 @@ test("drift scorer does not treat common business nouns as unsupported tools", (
   assert.equal(drift.score, 0)
   assert.equal(drift.is_blocking, false)
   assert.deepEqual(drift.flags, [])
+})
+
+test("coach answer validator recognizes modern PM/data stack tools", () => {
+  const validation = validateCoachAnswer(
+    "In Q3 2024, I led launch reporting for the Google Cloud team using Snowflake, Confluence, Linear, Asana, Looker, and Amplitude across 12 stakeholders.",
+    "Product launch analytics",
+  )
+
+  assert.equal(validation.signals.hasEmployer, true)
+  assert.equal(validation.signals.hasTool, true)
+  assert.equal(validation.signals.hasTime, true)
+  assert.equal(validation.signals.hasScope, true)
+  assert.equal(validation.needsMoreDetail, false)
+})
+
+test("coach answer validator recognizes acronym employers", () => {
+  const validation = validateCoachAnswer(
+    "I worked for IBM in 2024 and used Snowflake to improve renewal reporting for 6 account teams.",
+    "Enterprise reporting",
+  )
+
+  assert.equal(validation.signals.hasEmployer, true)
+  assert.equal(validation.signals.hasTool, true)
 })

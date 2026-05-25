@@ -13,11 +13,13 @@ import {
   getEvidenceUsageRule,
   determineGenerationStrategy,
   analyzeBulletConcreteness,
+  buildConfirmedProofUsageReport,
   truthSerumAuditBullet,
   hasMetrics,
   type GenerationStrategy,
   type BulletProvenance,
   type ParagraphProvenance,
+  type ConfirmedProofUsage,
 } from "@/lib/truthserum";
 import type { EvidenceIntelligencePacket } from "@/lib/evidence/types";
 import {
@@ -1046,6 +1048,20 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
     claim_confidence: paragraph.cited_evidence_id ? "medium" : "low",
     unsupported_language: detectBannedPhrases(paragraph.text),
   }));
+  const fallbackConfirmedProofUsage: ConfirmedProofUsage[] =
+    buildConfirmedProofUsageReport(
+      getCapabilityPackets(jobData.evidence_map),
+      fallbackBulletProvenance,
+      fallbackParagraphProvenance,
+    );
+  const fallbackUnusedConfirmedProof = fallbackConfirmedProofUsage.filter(
+    (proof) => !proof.used,
+  );
+  fallbackQualityIssues.push(
+    ...fallbackUnusedConfirmedProof.map(
+      (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
+    ),
+  );
 
   const { error: updateError } = await supabase
     .from("jobs")
@@ -1071,6 +1087,10 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
         ...evidenceMap,
         bullet_provenance: fallbackBulletProvenance,
         paragraph_provenance: fallbackParagraphProvenance,
+        generation_trace: {
+          generated_at: new Date().toISOString(),
+          confirmed_proof_usage: fallbackConfirmedProofUsage,
+        },
       },
       generation_status: "needs_review",
       generation_error: null,
@@ -2649,13 +2669,21 @@ If no issues found, return empty arrays and overall_passed: true.`,
           unsupported_language: detectBannedPhrases(p.paragraph_text),
         }),
       );
+    const confirmedProofUsage: ConfirmedProofUsage[] =
+      buildConfirmedProofUsageReport(
+        capabilityPackets,
+        bulletProvenance,
+        paragraphProvenance,
+      );
+    const unusedConfirmedProof = confirmedProofUsage.filter((proof) => !proof.used);
 
     // Calculate quality score - now includes quantification safety
     const qualityPassed =
       qualityCheck.overall_passed &&
       allBannedPhrases.length === 0 &&
       weakBullets.length <= 1 &&
-      unsafeMetricsFound.length === 0; // Block if we detected invented metrics
+      unsafeMetricsFound.length === 0 &&
+      unusedConfirmedProof.length === 0; // Block if confirmed proof was dropped
 
     const qualityScore = qualityPassed
       ? 100
@@ -2744,7 +2772,9 @@ If no issues found, return empty arrays and overall_passed: true.`,
               ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
               ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
               ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
+              ...unusedConfirmedProof.map((proof) => ({ type: "unused_confirmed_proof", value: proof.requirement })),
             ],
+            confirmed_proof_usage: confirmedProofUsage,
           },
           selected_evidence_ids: resumeEvidence.map(
             (e: { id: string }) => e.id,
@@ -2775,6 +2805,9 @@ If no issues found, return empty arrays and overall_passed: true.`,
           ...unsafeMetricsFound.map(
             (m) =>
               `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || "qualitative language"}"`,
+          ),
+          ...unusedConfirmedProof.map(
+            (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
           ),
           ...qualityCheck.invented_claims,
           ...qualityCheck.vague_bullets,
