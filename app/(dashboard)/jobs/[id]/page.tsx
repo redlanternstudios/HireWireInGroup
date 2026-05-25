@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
 import ReadinessChecklist from "@/components/ReadinessChecklist"
-import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
 import {
   ChevronLeft,
   ExternalLink,
@@ -280,12 +279,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      <ReadinessContextBanner
-        stage={readiness.stage}
-        blockedReasons={readiness.blockedReasons}
-        nextAction={readiness.nextAction}
-      />
-
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
@@ -471,10 +464,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <div className="hw-panel p-4">
             <p className="hw-section-label mb-2">Job Snapshot</p>
             <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Status</span>
-                <span className="font-semibold text-foreground">{readiness.displayLabel}</span>
-              </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Readiness</span>
                 <span className="font-semibold text-foreground">{readiness.displayLabel}</span>

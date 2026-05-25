@@ -99,6 +99,11 @@ function mergeEvidence(
         ? flag !== "missing_evidence" && flag !== "no_packet_evidence" && flag !== "partial_match"
         : flag !== "missing_evidence" && flag !== "no_packet_evidence"
     ),
+    proof_decision: "confirmed",
+    user_claim: typeof evidence?.proof_snippet === "string" ? evidence.proof_snippet : match.user_claim ?? null,
+    skip_reason: null,
+    confirmed_at: new Date().toISOString(),
+    skipped_at: null,
     mapped_by_session_ids,
     updated_at: new Date().toISOString(),
   }

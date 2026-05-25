@@ -113,7 +113,7 @@ export function GuidedRequirementCoachFlow({
 
   if (!active) return null
 
-  const stepLabel = `Gap ${safeActiveIndex + 1} of ${unresolvedMatches.length}`
+  const stepLabel = `${safeActiveIndex + 1} of ${unresolvedMatches.length}`
 
   const setResolveParam = (requirementId: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -138,14 +138,14 @@ export function GuidedRequirementCoachFlow({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4 text-primary" />
-            <p className="hw-section-label">Guided Coach Flow</p>
+            <p className="hw-section-label">Prove Fit</p>
             <span className="rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
-              {stepLabel}
+              Match Interview
             </span>
           </div>
           <p className="mt-2 text-sm font-semibold text-foreground">{active.requirement_text}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Coach asks one targeted question, you answer, then the flow moves to the next unresolved requirement.
+            Let&apos;s prove this job fit. I&apos;ll only ask about what I can&apos;t verify from your background.
           </p>
         </div>
 
@@ -155,7 +155,7 @@ export function GuidedRequirementCoachFlow({
           onClick={() => setFlowOpen(true)}
         >
           <MessageSquareText className="h-3.5 w-3.5" />
-          {flowOpen ? "Continue coach" : "Start coach"}
+          {flowOpen ? "Continue interview" : "Start interview"}
         </Button>
       </div>
 

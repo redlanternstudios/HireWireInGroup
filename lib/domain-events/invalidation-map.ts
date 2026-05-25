@@ -278,6 +278,13 @@ export const INVALIDATION_MAP: PropagationMap = {
     severity: "info",
   },
 
+  prove_fit_decision_recorded: {
+    invalidates: ["readiness", "coach_state", "quality", "package_review", "logs"],
+    recomputes: ["readiness"],
+    routeTemplates: ["/jobs/[id]", "/jobs/[id]/evidence-match", "/jobs/[id]/documents", "/ready-to-apply", "/dashboard", "/logs"],
+    severity: "info",
+  },
+
   job_archived: {
     invalidates: ["dashboard", "analytics_cache", "coach_state"],
     recomputes: [],

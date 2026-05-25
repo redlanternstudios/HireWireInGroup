@@ -44,6 +44,10 @@ export type AuditEventType =
   | "quality_failed"
   | "job_marked_applied"
   | "gap_clarification_saved"
+  | "prove_fit_confirmed"
+  | "prove_fit_skipped"
+  | "prove_fit_edited"
+  | "prove_fit_auto_mapped"
   // Errors and blocks
   | "orchestrator_blocked"
   | "gate_bypassed_retry"

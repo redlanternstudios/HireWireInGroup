@@ -194,7 +194,7 @@ export async function evaluateJobReadiness(
     reasons_not_ready.push("Cover letter not generated")
   }
   if (!canonicalReadiness.checklist.evidence) {
-    reasons_not_ready.push("Insufficient evidence match")
+    reasons_not_ready.push("Fit not proved yet")
   }
   if (!canonicalReadiness.checklist.coach) {
     reasons_not_ready.push("Coach step required")
@@ -217,15 +217,15 @@ export async function evaluateJobReadiness(
     }
   } else if (!matching_complete && requirementCount > 0) {
     next_action = {
-      label: "Match Evidence",
+      label: "Prove Fit",
       href: `/jobs/${jobId}/evidence-match`,
-      description: "Map your experience to job requirements",
+      description: "Answer only what HireWire cannot verify yet",
     }
   } else if (coachStep.required && !coachStep.complete) {
     next_action = {
-      label: "Start Coach",
+      label: "Start Match Interview",
       href: `/jobs/${jobId}/evidence-match`,
-      description: "Answer or skip fit-gap prompts before generation",
+      description: "Confirm or skip unclear claims before generation",
     }
   } else if (!has_resume || !has_cover_letter) {
     next_action = {

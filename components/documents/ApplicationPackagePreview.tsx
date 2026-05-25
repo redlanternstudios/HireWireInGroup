@@ -1,8 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { acceptApplicationPackage, markPackageNeedsReview } from "@/lib/actions/package-review"
-import { approveQualityManually } from "@/lib/actions/documents"
+import { acceptApplicationPackage, markPackageNeedsReview, overridePackageQuality } from "@/lib/actions/package-review"
 import { useRouter } from "next/navigation"
 
 type BulletTrace = {
@@ -14,6 +13,8 @@ type BulletTrace = {
   match_strength?: string
   match_reason?: string
   evidence_strength?: string
+  proof_decision?: string
+  user_claim?: string | null
   proof_snippets?: string[]
   why_included?: string
   risk_flags?: string[]
@@ -45,28 +46,12 @@ export default function ApplicationPackagePreview({
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<string | null>(null)
   const [accepting, setAccepting] = useState(false)
-  const [approvingQuality, setApprovingQuality] = useState(false)
-
-  const handleApproveQuality = () => {
-    if (!confirm("Manually approve quality? This overrides the AI quality check and will be logged.")) return
-    setApprovingQuality(true)
-    startTransition(async () => {
-      const result = await approveQualityManually(job.id)
-      setApprovingQuality(false)
-      if (result.error) {
-        setStatus(`Error: ${result.error}`)
-      } else {
-        router.refresh()
-      }
-    })
-  }
+  // Override state — shown when quality has failed
+  const [showOverrideForm, setShowOverrideForm] = useState(false)
+  const [overrideReason, setOverrideReason] = useState("")
+  const [overriding, setOverriding] = useState(false)
 
   const handleAccept = () => {
-    if (job.quality_passed === false) {
-      setStatus("Use the quality override path to accept a failed package.")
-      return
-    }
-
     setAccepting(true)
     startTransition(async () => {
       const result = await acceptApplicationPackage(
@@ -85,8 +70,25 @@ export default function ApplicationPackagePreview({
     })
   }
 
-  // If job is edited after acceptance, mark as needs_review
-  // (This should be triggered by parent/editor on edit)
+  const handleOverride = () => {
+    const trimmed = overrideReason.trim()
+    if (!trimmed) {
+      setStatus("A reason is required to override quality.")
+      return
+    }
+    setOverriding(true)
+    startTransition(async () => {
+      const result = await overridePackageQuality(job.id, trimmed, userId)
+      setOverriding(false)
+      if (result.error) {
+        setStatus(`Override error: ${result.error}`)
+      } else {
+        setStatus("Override logged. Redirecting...")
+        router.push(`/ready-to-apply?jobId=${job.id}`)
+      }
+    })
+  }
+
   const bulletTraces = getBulletTraces(job)
 
   return (
@@ -115,20 +117,10 @@ export default function ApplicationPackagePreview({
               {readiness.checklist.coach ? "✔" : "✗"} Coach step
             </span>
           </li>
-          <li className="flex items-center gap-2 flex-wrap">
+          <li>
             <span className={readiness.checklist.quality ? "text-emerald-600" : "text-rose-600"}>
               {readiness.checklist.quality ? "✔" : "✗"} Quality check
             </span>
-            {job.quality_passed === false && (
-              <button
-                className="text-[10px] text-muted-foreground underline hover:text-foreground transition-colors disabled:opacity-50"
-                onClick={handleApproveQuality}
-                disabled={approvingQuality || isPending}
-                type="button"
-              >
-                {approvingQuality ? "Approving…" : "Approve manually"}
-              </button>
-            )}
           </li>
           {readiness.checklist.voiceIntegrity !== undefined && (
             <li>
@@ -147,7 +139,10 @@ export default function ApplicationPackagePreview({
 
       {bulletTraces.length > 0 && (
         <div className="hw-card p-4">
-          <h3 className="font-semibold mb-2 text-sm">Bullet Trace</h3>
+        <h3 className="font-semibold mb-2 text-sm">Bullet Trace</h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            TruthSerum trace: every visible claim links back to confirmed, auto-mapped, or intentionally skipped proof.
+          </p>
           <div className="space-y-3">
             {bulletTraces.map((trace, index) => {
               const flags = trace.truth_serum?.flags ?? trace.risk_flags ?? []
@@ -167,9 +162,19 @@ export default function ApplicationPackagePreview({
                       {trace.matched_requirement_text ?? "Not linked"}
                     </div>
                     <div>
+                      <span className="font-medium text-foreground">Provenance:</span>{" "}
+                      {trace.proof_decision ? trace.proof_decision.replace(/_/g, " ") : "Unknown"}
+                    </div>
+                    <div>
                       <span className="font-medium text-foreground">Evidence:</span>{" "}
                       {trace.source_evidence_title ?? trace.source_evidence_id ?? "Missing"}
                     </div>
+                    {trace.user_claim && (
+                      <div>
+                        <span className="font-medium text-foreground">Confirmed claim:</span>{" "}
+                        {trace.user_claim}
+                      </div>
+                    )}
                     <div>
                       <span className="font-medium text-foreground">Match:</span>{" "}
                       {trace.match_strength ?? "Unknown"}
@@ -260,26 +265,75 @@ export default function ApplicationPackagePreview({
         )}
       </div>
 
-      {/* Accept/Continue CTA */}
-      <div className="mt-6">
+      {/* Accept / Override / Return CTA */}
+      <div className="mt-6 space-y-2">
         {job.quality_passed !== false ? (
+          /* Quality passed — primary accept CTA */
           <button
             className="hw-btn-primary w-full"
-            disabled={accepting || job.package_review_status === "accepted"}
+            disabled={accepting || isPending || job.package_review_status === "accepted"}
             onClick={handleAccept}
           >
-            Accept & Continue to Apply
+            {accepting ? "Accepting…" : "Accept & Continue to Apply"}
           </button>
         ) : (
-          <button
-            className="w-full rounded border border-border bg-background px-4 py-2 text-sm font-medium text-foreground"
-            onClick={() => router.push(`/jobs/${job.id}`)}
-          >
-            Return to job
-          </button>
+          /* Quality failed — return is primary; override is secondary/subdued */
+          <>
+            <button
+              className="w-full rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              onClick={() => router.push(`/jobs/${job.id}`)}
+            >
+              Return to job
+            </button>
+
+            {!showOverrideForm ? (
+              <button
+                className="w-full rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                onClick={() => setShowOverrideForm(true)}
+                type="button"
+              >
+                Override and accept
+              </button>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <p className="text-xs font-semibold text-amber-800">
+                  Override quality check
+                </p>
+                <p className="text-xs text-amber-700">
+                  Explain why this package should be accepted despite the quality failure. This will be logged.
+                </p>
+                <textarea
+                  className="w-full rounded border border-amber-300 bg-white px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  rows={3}
+                  placeholder="e.g. Reviewed manually — drift is minor and within acceptable range."
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    className="flex-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                    disabled={!overrideReason.trim() || overriding || isPending}
+                    onClick={handleOverride}
+                    type="button"
+                  >
+                    {overriding ? "Logging override…" : "Confirm override"}
+                  </button>
+                  <button
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => { setShowOverrideForm(false); setOverrideReason("") }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
-        {status && <div className="mt-2 text-xs text-muted-foreground">{status}</div>}
+
+        {status && <div className="mt-1 text-xs text-muted-foreground">{status}</div>}
       </div>
+
       <div className="mt-2">
         <button
           className="hw-btn-primary w-full bg-muted text-foreground border"

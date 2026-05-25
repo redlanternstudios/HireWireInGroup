@@ -58,6 +58,7 @@ export type DomainEventType =
   | "coach_gap_session_started"
   | "coach_gap_message_added"
   | "evidence_draft_created"
+  | "prove_fit_decision_recorded"
   // Export
   | "export_generated"
   | "resume_preview_opened"

@@ -65,13 +65,21 @@ export function GenerateButton({
         } else if (data.error === "matching_incomplete") {
           setError(
             data.user_message ??
-              "Complete evidence matching before generating documents."
+              "Run Prove Fit before generating documents."
           )
         } else if (data.error === "coach_step_required") {
           setError(
             data.user_message ??
-              "Answer or skip the coach prompts before generating documents."
+              "Answer or skip the Match Interview prompts before generating documents."
           )
+        } else if (data.error === "prove_fit_required") {
+          setError(
+            data.user_message ??
+              "Run Prove Fit before generating documents."
+          )
+          if (data.next_action?.href && typeof data.next_action.href === "string") {
+            setNextActionHref(data.next_action.href)
+          }
         } else if (data.error === "capability_packets_required") {
           setError(
             data.user_message ??
@@ -136,7 +144,7 @@ export function GenerateButton({
       )}
       {blockedRequirements.length > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-left">
-          <p className="text-xs font-semibold text-amber-800">Requirements needing proof</p>
+          <p className="text-xs font-semibold text-amber-800">Claims needing judgment</p>
           <ul className="mt-1 space-y-1">
             {blockedRequirements.slice(0, 5).map((item) => (
               <li key={item.requirement_id}>
@@ -154,7 +162,7 @@ export function GenerateButton({
               href={nextActionHref}
               className="mt-2 inline-block text-xs font-medium text-amber-900 underline"
             >
-              Resolve proof gaps
+              Prove Fit
             </a>
           ) : null}
         </div>

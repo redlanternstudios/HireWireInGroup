@@ -41,8 +41,8 @@ export default function ReadinessChecklist({
 
       <Item label="Resume" value={checklist.resume} />
       <Item label="Cover Letter" value={checklist.coverLetter} />
-      <Item label="Evidence Match" value={checklist.evidence} />
-      <Item label="Coach Step" value={checklist.coach} />
+      <Item label="Prove Fit" value={checklist.evidence} />
+      <Item label="Match Interview" value={checklist.coach} />
       <Item label="Quality Check" value={checklist.quality} />
       {shouldShowRepairAction && (
         <div className="mt-3 border-t border-border pt-3">

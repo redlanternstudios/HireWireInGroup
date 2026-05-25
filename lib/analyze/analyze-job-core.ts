@@ -29,7 +29,6 @@ import {
 import {
   inferRoleFromJobTitle,
   getWeightsForRole,
-  calculateWeightedScore,
 } from "@/lib/scoring-weights";
 import {
   normalizeEvidenceRecord,
@@ -649,20 +648,13 @@ Extract the job details following the schema.`,
 
   const inferredRole = inferRoleFromJobTitle(validatedAnalysis.title);
   const weights = getWeightsForRole(inferredRole);
-  const mappedDimensionScores = {
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    skills_match: dimensionScores.skills,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats,
-  };
-  calculateWeightedScore(mappedDimensionScores, weights);
 
   const explainableFit: ExplainableFitScore = calculateExplainableFit(
     canonicalEvidence,
     validatedAnalysis.qualifications_required,
     validatedAnalysis.qualifications_preferred,
     dimensionScores,
+    weights,
   );
 
   const fitBandToLegacy: Record<FitBand, "HIGH" | "MEDIUM" | "LOW"> = {

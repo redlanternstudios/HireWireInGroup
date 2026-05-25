@@ -11,6 +11,7 @@
  */
 
 import type { EvidenceRecord, Job } from "./types"
+import type { EvidenceIntelligencePacket } from "./evidence/types"
 
 // ============================================================================
 // TYPES FOR TRUTH-LOCKED GENERATION
@@ -48,6 +49,8 @@ export interface BulletProvenance {
   match_strength?: "strong" | "partial" | "weak"
   match_reason?: string
   evidence_strength?: "high" | "medium" | "low"
+  proof_decision?: "auto_mapped" | "confirmed" | "skipped" | "needs_judgment"
+  user_claim?: string | null
   proof_snippets?: string[]
   why_included?: string
   claim_confidence: "high" | "medium" | "low"
@@ -66,23 +69,16 @@ export interface ParagraphProvenance {
   unsupported_language: string[]
 }
 
-export interface ScoreBreakdown {
-  ats_score: number
-  ats_reasoning: string
-  truth_score: number
-  truth_reasoning: string
-  role_alignment_score: number
-  role_alignment_reasoning: string
-  recruiter_clarity_score: number
-  recruiter_clarity_reasoning: string
-  tool_match_score: number
-  tool_match_reasoning: string
-  metric_density_score: number
-  metric_density_reasoning: string
-  genericity_penalty: number
-  genericity_reasoning: string
-  overall_score: number
+export interface ConfirmedProofUsage {
+  packet_id: string
+  requirement: string
+  evidence_ids: string[]
+  user_claim: string | null
+  used: boolean
+  used_in: Array<"resume" | "cover_letter">
+  generated_claims: string[]
 }
+
 
 export interface RedTeamIssue {
   id: string
@@ -123,7 +119,6 @@ export interface TruthSerumBulletAudit {
   missing_system: boolean
   missing_scope: boolean
   missing_outcome: boolean
-  any_pm_applicability: boolean
   flags: string[]
   score: number
 }
@@ -132,34 +127,41 @@ export interface TruthSerumBulletAudit {
 // BANNED PHRASES AND GENERIC LANGUAGE DETECTION
 // ============================================================================
 
-export const BANNED_PHRASES = [
-  // Results/driven
+// Tier 1: Phrases that indicate passive, ungrounded, or vague language.
+// Score deduction applied — these replace specific accomplishments with weak claims.
+export const GROUNDING_WEAK_PHRASES = [
+  // Results/driven clichés
   "results driven",
   "results-driven",
   "outcome driven",
   "data driven professional",
-  // Team/collaboration fluff
+  // Vague collaboration
   "collaborated with cross functional teams",
-  "cross-functional collaboration",
   "worked closely with",
   "partnered with stakeholders",
+  // Meaningless traits
   "team player",
   "fast learner",
-  // Value/growth fluff
+  // Vague impact
   "delivered value",
   "drive growth",
   "drove results",
   "moved the needle",
   "high quality products",
   "deliver impact",
-  // Responsibility hedging
+  // Passive ownership hedging
   "responsible for",
   "helped with",
   "assisted in",
   "supported various",
   "worked on various",
   "participated in",
-  // AI/corporate filler
+]
+
+// Tier 2: Style suggestions — no score deduction.
+// These are coaching hints shown in review but never flagged as penalties.
+// Includes professional vocabulary common in PM, strategy, and leadership roles.
+export const STYLE_SUGGESTION_PHRASES = [
   "I am excited to apply",
   "I would be thrilled",
   "passionate about",
@@ -185,10 +187,15 @@ export const BANNED_PHRASES = [
   "paradigm shift",
   "robust solution",
   "scalable solutions",
+  // PM/strategy vocabulary — legitimate in PM roles, not a deficit
   "stakeholder alignment",
+  "cross-functional collaboration",
   "strategic thinking",
   "thought leader",
 ]
+
+// Backwards-compatible alias: returns only Tier 1 phrases (deduction-worthy).
+export const BANNED_PHRASES = GROUNDING_WEAK_PHRASES
 
 export const VAGUE_PATTERNS = [
   /improved\s+\w+\s+significantly/i,
@@ -209,14 +216,22 @@ export const VAGUE_PATTERNS = [
 export function detectBannedPhrases(text: string): string[] {
   const lowerText = text.toLowerCase()
   const found: string[] = []
-  
-  for (const phrase of BANNED_PHRASES) {
+
+  for (const phrase of GROUNDING_WEAK_PHRASES) {
     if (lowerText.includes(phrase.toLowerCase())) {
       found.push(phrase)
     }
   }
-  
+
   return found
+}
+
+/**
+ * Detect Tier 2 style suggestion phrases (no score deduction — coaching hints only)
+ */
+export function detectStylePhrases(text: string): string[] {
+  const lowerText = text.toLowerCase()
+  return STYLE_SUGGESTION_PHRASES.filter(p => lowerText.includes(p.toLowerCase()))
 }
 
 /**
@@ -315,12 +330,6 @@ export function truthSerumAuditBullet(
   const missing_system = !concreteness.has_system && !hasPacketSystems
   const missing_outcome = !concreteness.has_result && !hasPacketOutcomes
   const missing_scope = !hasScope
-  const any_pm_applicability =
-    generic ||
-    /roadmap|stakeholder|cross-functional|strategy|prioriti[sz]e/i.test(bullet) &&
-      missing_system &&
-      missing_scope &&
-      missing_outcome
   const flags = Array.from(new Set([
     ...banned.map(phrase => `banned_phrase:${phrase}`),
     ...vague.map(pattern => `vague_pattern:${pattern}`),
@@ -329,7 +338,6 @@ export function truthSerumAuditBullet(
     ...(missing_system ? ["missing_system"] : []),
     ...(missing_scope ? ["missing_scope"] : []),
     ...(missing_outcome ? ["missing_outcome"] : []),
-    ...(any_pm_applicability ? ["any_pm_applicability"] : []),
     ...(context.riskFlags ?? []),
   ]))
   const score = Math.max(
@@ -339,8 +347,7 @@ export function truthSerumAuditBullet(
       (generic ? 20 : 0) -
       (missing_system ? 10 : 0) -
       (missing_scope ? 10 : 0) -
-      (missing_outcome ? 10 : 0) -
-      (any_pm_applicability ? 20 : 0)
+      (missing_outcome ? 10 : 0)
   )
   return {
     generic,
@@ -348,7 +355,6 @@ export function truthSerumAuditBullet(
     missing_system,
     missing_scope,
     missing_outcome,
-    any_pm_applicability,
     flags,
     score,
   }
@@ -427,169 +433,38 @@ export function determineGenerationStrategy(
   requiredCoverage: number,
   evidenceQuality: number
 ): { strategy: GenerationStrategy; reasoning: string } {
-  const fitScore = job.score || 0
-  
+  const fitScore = job.score ?? null
+
   // Direct match: High fit + good coverage + quality evidence
-  if (fitScore >= 80 && requiredCoverage >= 70 && evidenceQuality >= 70) {
+  if (fitScore !== null && fitScore >= 80 && requiredCoverage >= 70 && evidenceQuality >= 70) {
     return {
       strategy: "direct_match",
       reasoning: `Strong fit (${fitScore}/100) with ${requiredCoverage}% requirement coverage. Can be assertive in claims.`
     }
   }
-  
+
   // Adjacent transition: Medium fit or some coverage gaps
-  if (fitScore >= 60 && requiredCoverage >= 50) {
+  if (fitScore !== null && fitScore >= 60 && requiredCoverage >= 50) {
     return {
       strategy: "adjacent_transition",
       reasoning: `Good fit (${fitScore}/100) but ${100 - requiredCoverage}% requirements need adjacent framing. Lean on transferable skills without claiming direct ownership.`
     }
   }
-  
+
   // Stretch honest: Lower fit but still possible
-  if (fitScore >= 40 || requiredCoverage >= 30) {
+  if ((fitScore !== null && fitScore >= 40) || requiredCoverage >= 30) {
     return {
       strategy: "stretch_honest",
-      reasoning: `Stretch fit (${fitScore}/100) with significant gaps. Surface gaps honestly, avoid overclaiming. Consider if worth pursuing.`
+      reasoning: `Stretch fit (${fitScore !== null ? `${fitScore}/100` : "unscored"}) with significant gaps. Surface gaps honestly, avoid overclaiming. Consider if worth pursuing.`
     }
   }
-  
+
   // Do not generate: Too risky
   return {
     strategy: "do_not_generate",
-    reasoning: `Poor fit (${fitScore}/100) with only ${requiredCoverage}% coverage. Generating materials would require invention. Not recommended.`
-  }
-}
-
-// ============================================================================
-// SCORE CALCULATION WITH GROUNDED METRICS
-// ============================================================================
-
-/**
- * Calculate comprehensive score breakdown based on actual data
- */
-export function calculateScoreBreakdown(
-  job: Job,
-  evidence: EvidenceRecord[],
-  selectedEvidenceIds: string[],
-  generatedResume?: string,
-  generatedCoverLetter?: string
-): ScoreBreakdown {
-  const selectedEvidence = evidence.filter(e => selectedEvidenceIds.includes(e.id))
-  
-  // ATS Score: Based on keyword coverage
-  const jobKeywords = [
-    ...(job.ats_keywords || []),
-    ...(job.keywords_extracted || [])
-  ].map(k => k.toLowerCase())
-  
-  const evidenceKeywords = selectedEvidence.flatMap(e => 
-    [...(e.approved_keywords || []), ...(e.tools_used || [])]
-  ).map(k => k.toLowerCase())
-  
-  const resumeText = (generatedResume || "").toLowerCase()
-  const keywordsInResume = jobKeywords.filter(k => resumeText.includes(k))
-  const atsScore = jobKeywords.length > 0 
-    ? Math.round((keywordsInResume.length / jobKeywords.length) * 100)
-    : 50
-  
-  // Truth Score: Based on evidence confidence and usage
-  const highConfidenceCount = selectedEvidence.filter(e => e.confidence_level === "high").length
-  const totalSelected = selectedEvidence.length || 1
-  const truthScore = Math.round((highConfidenceCount / totalSelected) * 100)
-  
-  // Role Alignment: Based on must-haves covered
-  const requiredQuals = job.qualifications_required || []
-  const evidenceText = selectedEvidence.map(e => 
-    [...(e.responsibilities || []), ...(e.outcomes || [])].join(" ")
-  ).join(" ").toLowerCase()
-  
-  const requiredCovered = requiredQuals.filter(req => {
-    const reqWords = req.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-    return reqWords.some(w => evidenceText.includes(w))
-  }).length
-  
-  const roleAlignmentScore = requiredQuals.length > 0
-    ? Math.round((requiredCovered / requiredQuals.length) * 100)
-    : 50
-  
-  // Recruiter Clarity: Based on bullet concreteness
-  const resumeBullets = (generatedResume || "")
-    .split("\n")
-    .filter(line => line.trim().startsWith("-") || line.trim().startsWith("•"))
-  
-  const concreteBullets = resumeBullets.filter(b => 
-    analyzeBulletConcreteness(b).is_concrete_enough
-  ).length
-  
-  const recruiterClarityScore = resumeBullets.length > 0
-    ? Math.round((concreteBullets / resumeBullets.length) * 100)
-    : 50
-  
-  // Tool Match: Explicit tool overlap
-  const jobTools = (job.ats_keywords || [])
-    .filter(k => /^[A-Z]/.test(k) || /js|sql|api/i.test(k))
-    .map(k => k.toLowerCase())
-  
-  const evidenceTools = selectedEvidence.flatMap(e => e.tools_used || []).map(t => t.toLowerCase())
-  const matchedTools = jobTools.filter(t => evidenceTools.some(et => et.includes(t) || t.includes(et)))
-  
-  const toolMatchScore = jobTools.length > 0
-    ? Math.round((matchedTools.length / jobTools.length) * 100)
-    : 70
-  
-  // Metric Density: Actual metrics in evidence and output
-  const bulletsWithMetrics = resumeBullets.filter(b => hasMetrics(b)).length
-  const metricDensityScore = resumeBullets.length > 0
-    ? Math.round((bulletsWithMetrics / resumeBullets.length) * 100)
-    : 30
-  
-  // Genericity Penalty: Based on banned phrases and vague bullets
-  const bannedInResume = detectBannedPhrases(generatedResume || "")
-  const vagueInResume = detectVaguePatterns(generatedResume || "")
-  const weakBullets = resumeBullets.filter(b => !analyzeBulletConcreteness(b).is_concrete_enough)
-  
-  const genericityPenalty = Math.min(30, 
-    bannedInResume.length * 5 + 
-    vagueInResume.length * 3 + 
-    weakBullets.length * 2
-  )
-  
-  // Overall Score
-  const weights = {
-    ats: 0.15,
-    truth: 0.20,
-    roleAlignment: 0.25,
-    recruiterClarity: 0.15,
-    toolMatch: 0.10,
-    metricDensity: 0.15
-  }
-  
-  const weightedScore = 
-    atsScore * weights.ats +
-    truthScore * weights.truth +
-    roleAlignmentScore * weights.roleAlignment +
-    recruiterClarityScore * weights.recruiterClarity +
-    toolMatchScore * weights.toolMatch +
-    metricDensityScore * weights.metricDensity
-  
-  const overallScore = Math.max(0, Math.round(weightedScore - genericityPenalty))
-  
-  return {
-    ats_score: atsScore,
-    ats_reasoning: `${keywordsInResume.length}/${jobKeywords.length} job keywords found in resume`,
-    truth_score: truthScore,
-    truth_reasoning: `${highConfidenceCount}/${totalSelected} evidence items have high confidence`,
-    role_alignment_score: roleAlignmentScore,
-    role_alignment_reasoning: `${requiredCovered}/${requiredQuals.length} required qualifications covered by evidence`,
-    recruiter_clarity_score: recruiterClarityScore,
-    recruiter_clarity_reasoning: `${concreteBullets}/${resumeBullets.length} bullets have concrete signal`,
-    tool_match_score: toolMatchScore,
-    tool_match_reasoning: `${matchedTools.length}/${jobTools.length} required tools matched`,
-    metric_density_score: metricDensityScore,
-    metric_density_reasoning: `${bulletsWithMetrics}/${resumeBullets.length} bullets contain metrics`,
-    genericity_penalty: genericityPenalty,
-    genericity_reasoning: `${bannedInResume.length} banned phrases, ${vagueInResume.length} vague patterns, ${weakBullets.length} weak bullets`,
-    overall_score: overallScore
+    reasoning: fitScore === null
+      ? `Score not available with only ${requiredCoverage}% coverage. Generating materials would require invention. Not recommended.`
+      : `Poor fit (${fitScore}/100) with only ${requiredCoverage}% coverage. Generating materials would require invention. Not recommended.`
   }
 }
 
@@ -710,36 +585,68 @@ export function performRedTeamAnalysis(
   const issues: RedTeamIssue[] = []
   let issueId = 0
   
-  // Check resume for banned phrases
+  // Check resume for Tier 1 grounding-weak phrases (score impact)
   const resumeBannedPhrases = detectBannedPhrases(resume)
   for (const phrase of resumeBannedPhrases) {
     issues.push({
       id: `rt-${++issueId}`,
       type: "banned_phrase",
-      severity: "critical",
+      severity: "warning",
       location: "resume",
       original_text: phrase,
-      issue_description: `Banned phrase "${phrase}" detected. This language is generic and damages credibility.`,
+      issue_description: `Passive phrase "${phrase}" weakens credibility — replace with a specific action and outcome.`,
       suggested_fixes: [
         { action: "remove_phrase", label: "Remove Phrase", description: "Delete this phrase entirely" },
         { action: "rewrite_bullet", label: "Rewrite", description: "Replace with specific, concrete language" }
       ]
     })
   }
-  
-  // Check cover letter for banned phrases
+
+  // Check resume for Tier 2 style phrases (coaching suggestions, no score impact)
+  const resumeStylePhrases = detectStylePhrases(resume)
+  for (const phrase of resumeStylePhrases) {
+    issues.push({
+      id: `rt-${++issueId}`,
+      type: "banned_phrase",
+      severity: "info",
+      location: "resume",
+      original_text: phrase,
+      issue_description: `"${phrase}" is common professional language — consider grounding it with a specific example or outcome.`,
+      suggested_fixes: [
+        { action: "rewrite_bullet", label: "Add Context", description: "Pair with a concrete example from your evidence" }
+      ]
+    })
+  }
+
+  // Check cover letter for Tier 1 grounding-weak phrases
   const coverLetterBannedPhrases = detectBannedPhrases(coverLetter)
   for (const phrase of coverLetterBannedPhrases) {
     issues.push({
       id: `rt-${++issueId}`,
       type: "banned_phrase",
-      severity: "critical",
+      severity: "warning",
       location: "cover_letter",
       original_text: phrase,
-      issue_description: `Banned phrase "${phrase}" detected. This sounds like AI-generated filler.`,
+      issue_description: `Passive phrase "${phrase}" weakens your narrative — use direct, evidence-backed language.`,
       suggested_fixes: [
         { action: "remove_phrase", label: "Remove", description: "Delete and rephrase" },
         { action: "rewrite_bullet", label: "Rewrite", description: "Use direct, specific language" }
+      ]
+    })
+  }
+
+  // Check cover letter for Tier 2 style phrases
+  const coverLetterStylePhrases = detectStylePhrases(coverLetter)
+  for (const phrase of coverLetterStylePhrases) {
+    issues.push({
+      id: `rt-${++issueId}`,
+      type: "banned_phrase",
+      severity: "info",
+      location: "cover_letter",
+      original_text: phrase,
+      issue_description: `"${phrase}" is standard professional language — strengthen it by grounding it in a specific story or result.`,
+      suggested_fixes: [
+        { action: "rewrite_bullet", label: "Ground It", description: "Tie to a specific project or outcome from your evidence" }
       ]
     })
   }

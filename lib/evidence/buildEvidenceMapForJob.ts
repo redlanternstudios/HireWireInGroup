@@ -41,7 +41,7 @@ function buildCoverageSummary(matches: RequirementEvidenceMatch[]): EvidenceCove
     required_total: matches.filter(m => m.priority === "required").length,
     required_met: matches.filter(m => m.priority === "required" && m.status === "met").length,
     required_partial: matches.filter(m => m.priority === "required" && m.status === "partial").length,
-    required_gaps: matches.filter(m => m.priority === "required" && (m.status === "gap" || m.status === "unknown")).length,
+    required_gaps: matches.filter(m => m.priority === "required" && m.proof_decision !== "skipped" && (m.status === "gap" || m.status === "unknown")).length,
     preferred_total: matches.filter(m => m.priority === "preferred").length,
     preferred_met: matches.filter(m => m.priority === "preferred" && m.status === "met").length,
     keyword_total: matches.filter(m => m.priority === "keyword").length,
@@ -143,6 +143,7 @@ function allowedUsageFromEvidence(evidence: Record<string, unknown>[]): Evidence
 
 function buildRiskFlags(match: RequirementEvidenceMatch, evidence: Record<string, unknown>[]): string[] {
   const flags = new Set<string>()
+  if (match.proof_decision === "skipped") flags.add("user_skipped")
   if (match.status === "gap") flags.add("missing_evidence")
   if (match.status === "partial") flags.add("partial_match")
   if (match.confidence === "low") flags.add("low_confidence")
@@ -177,6 +178,7 @@ function mergeExistingMatch(
   const hasConfirmedEvidence = matched_evidence_ids.length > nextMatch.matched_evidence_ids.length
   const status =
     nextMatch.status === "met" ? "met" :
+    existingMatch.proof_decision === "skipped" ? existingMatch.status :
     hasConfirmedEvidence && nextMatch.status === "gap" ? "partial" :
     existingMatch.status === "met" ? "met" :
     existingMatch.status === "partial" ? "partial" :
@@ -194,6 +196,13 @@ function mergeExistingMatch(
       ? existingMatch.reasoning || "Includes user-confirmed evidence mapped through the coach."
       : nextMatch.reasoning,
     riskFlags: existingMatch.riskFlags,
+    proof_decision: existingMatch.proof_decision ?? (
+      status === "met" && matched_evidence_ids.length > 0 ? "auto_mapped" : nextMatch.proof_decision
+    ),
+    user_claim: existingMatch.user_claim,
+    skip_reason: existingMatch.skip_reason,
+    confirmed_at: existingMatch.confirmed_at,
+    skipped_at: existingMatch.skipped_at,
     mapped_by_session_ids: existingMatch.mapped_by_session_ids,
     updated_at: existingMatch.updated_at ?? nextMatch.updated_at,
   }
@@ -207,6 +216,7 @@ export function buildCapabilityPacket(
     match.matched_evidence_ids.includes(String(item.id))
   )
   const matchScore =
+    match.proof_decision === "skipped" ? 0 :
     match.status === "met" ? match.confidence === "high" ? 90 : 75 :
     match.status === "partial" ? 50 :
     10
@@ -237,8 +247,13 @@ export function buildCapabilityPacket(
     matchReason: match.reasoning,
     evidenceStrength: match.confidence,
     riskFlags,
-    allowedUsage: allowedUsageFromEvidence(matchedEvidence),
+    allowedUsage: match.proof_decision === "skipped" ? "blocked" : allowedUsageFromEvidence(matchedEvidence),
+    proofDecision: match.proof_decision,
+    userClaim: match.user_claim,
     whyIncluded:
+      match.proof_decision === "skipped"
+        ? "User explicitly skipped this requirement; generation must not claim it."
+        :
       match.status === "gap"
         ? "No approved evidence currently supports this requirement."
         : `${match.priority} requirement matched to ${matchedEvidence.length} evidence item(s) with ${match.confidence} confidence.`,
@@ -295,6 +310,7 @@ export async function initializeEvidenceMapForJob({
         match_method: "fuzzy",
         reasoning: "Initial analysis placeholder. No evidence has been confirmed for this requirement yet.",
         riskFlags: ["missing_evidence", "no_packet_evidence"],
+        proof_decision: "needs_judgment",
         updated_at: new Date().toISOString(),
       }
     })
@@ -377,19 +393,27 @@ export async function buildEvidenceMapForJob({
       evidenceCandidates: evidenceCandidates ?? [],
     }), existingById.get(requirement.id ?? ""))
   )
-  const coverage_summary = buildCoverageSummary(requirement_matches)
-  const capability_packets = requirement_matches.map(match =>
+  const requirementMatchesWithDecisions = requirement_matches.map((match) => ({
+    ...match,
+    proof_decision: match.proof_decision ?? (
+      match.status === "met" && match.matched_evidence_ids.length > 0
+        ? "auto_mapped"
+        : "needs_judgment"
+    ),
+  }))
+  const coverage_summary = buildCoverageSummary(requirementMatchesWithDecisions)
+  const capability_packets = requirementMatchesWithDecisions.map(match =>
     buildCapabilityPacket(match, (evidenceCandidates ?? []) as Record<string, unknown>[])
   )
-  const gap_summary = requirement_matches
-    .filter(match => match.status === "gap" || match.status === "unknown")
+  const gap_summary = requirementMatchesWithDecisions
+    .filter(match => match.proof_decision !== "skipped" && (match.status === "gap" || match.status === "unknown"))
     .map(match => match.requirement_text)
   const evidenceMap = {
     ...existingMap,
     matching_complete: true,
     completed_at: new Date().toISOString(),
     version: crypto.randomUUID(),
-    requirement_matches,
+    requirement_matches: requirementMatchesWithDecisions,
     capability_packets,
     coverage_summary,
     gap_summary,

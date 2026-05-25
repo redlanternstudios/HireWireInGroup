@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb, Target } from "lucide-react"
+import { ChevronLeft, ArrowRight, AlertCircle, Lightbulb, Target } from "lucide-react"
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
@@ -176,7 +176,6 @@ export default async function EvidenceMatchPage({
       : null
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
-  const evidenceCount = evidenceItems?.length ?? 0
   const readiness = evaluateReadiness(job)
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
@@ -206,10 +205,10 @@ export default async function EvidenceMatchPage({
 
       {/* Header */}
       <div className="hw-card px-6 py-5">
-        <p className="hw-section-label mb-1">Evidence Match</p>
-        <h1 className="hw-page-title">Match Builder</h1>
+        <p className="hw-section-label mb-1">Prove Fit</p>
+        <h1 className="hw-page-title">Prove Fit</h1>
         <p className="hw-page-subtitle">
-          Resolving requirement gaps for {job.role_title ?? "this role"} at {job.company_name ?? "this company"}.
+          HireWire matched what it could. The Match Interview asks only about what still needs your judgment.
         </p>
       </div>
 
@@ -217,19 +216,19 @@ export default async function EvidenceMatchPage({
       <div className="hw-metrics">
         <div className="hw-stat">
           <span className="hw-stat-value text-primary">{requiredTotal}</span>
-          <span className="hw-stat-label">Things This Job Wants</span>
+          <span className="hw-stat-label">Role Signals</span>
         </div>
         <div className="hw-stat">
           <span className="hw-stat-value text-emerald-600">{requiredCovered}</span>
-          <span className="hw-stat-label">Already Covered</span>
+          <span className="hw-stat-label">Auto-Matched</span>
         </div>
         <div className="hw-stat">
           <span className="hw-stat-value text-amber-600">{proofGaps.length || gaps.length}</span>
-          <span className="hw-stat-label">Need Your Help</span>
+          <span className="hw-stat-label">Need Judgment</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value">{evidenceCount}</span>
-          <span className="hw-stat-label">Proof Points</span>
+          <span className="hw-stat-value">{Math.max(requiredTotal - requiredCovered - (proofGaps.length || gaps.length), 0)}</span>
+          <span className="hw-stat-label">Clear</span>
         </div>
       </div>
 
@@ -273,9 +272,9 @@ export default async function EvidenceMatchPage({
                 <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="hw-section-label mb-1">All requirement gaps addressed.</p>
+                      <p className="hw-section-label mb-1">Fit is proved enough to continue.</p>
                       <p className="text-sm text-muted-foreground">
-                        Return to the job to continue from the readiness engine.
+                        HireWire will generate from confirmed, auto-matched, or intentionally skipped claims.
                       </p>
                     </div>
                     <Link href={`/jobs/${id}`} className="shrink-0">
@@ -289,10 +288,10 @@ export default async function EvidenceMatchPage({
 
               <details className="hw-card px-5 py-4" open={!!requestedRequirementId}>
                 <summary className="cursor-pointer text-sm font-semibold text-foreground">
-                  View all requirements ({requirementMatches.length})
+                  Show what HireWire checked ({requirementMatches.length})
                 </summary>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Use this expanded list for full context. Guided Coach Flow above handles one gap at a time.
+                  This is context only. The Match Interview handles anything that needs your judgment.
                 </p>
 
                 <div className="mt-3 space-y-3">
@@ -332,13 +331,13 @@ export default async function EvidenceMatchPage({
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="hw-panel p-3">
-                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">Examples we found</p>
+                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">Already Verified</p>
                         <p className="mt-1 text-xs text-foreground">
                           {match.matched_evidence_titles.length > 0 ? match.matched_evidence_titles.join(", ") : "Nothing strong enough yet."}
                         </p>
                       </div>
                       <div className="hw-panel p-3">
-                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">What to add</p>
+                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">What Needs Judgment</p>
                         <p className="mt-1 text-xs text-foreground">
                           {(match.proof_needed ?? [])[0] ?? "Share a real project, responsibility, or result that shows this."}
                         </p>
@@ -354,9 +353,9 @@ export default async function EvidenceMatchPage({
 
           {requirementMatches.length === 0 && gaps.length > 0 && (
             <div className="hw-card px-5 py-4">
-              <h2 className="hw-section-label mb-3">Coachable Gaps</h2>
+              <h2 className="hw-section-label mb-3">Match Interview</h2>
               <p className="text-xs text-muted-foreground mb-3">
-                These requirements have no strong evidence match yet. Answer the coach prompt with direct or adjacent experience, then HireWire can use that context safely.
+                These points need your judgment before HireWire can make a truthful claim.
               </p>
               <ul className="space-y-2">
                 {gaps.map((gap, i) => (
@@ -389,7 +388,7 @@ export default async function EvidenceMatchPage({
               <div>
                 <p className="text-sm font-semibold">Analysis required first</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  Run job analysis before matching evidence. Return to the job detail page and trigger analysis.
+                  Run job analysis before proving fit. Return to the job detail page and trigger analysis.
                 </p>
               </div>
               <Link href={`/jobs/${id}`}>
@@ -403,42 +402,13 @@ export default async function EvidenceMatchPage({
 
         {/* Right rail */}
         <div className="hw-workspace-rail">
-          <h2 className="hw-section-label mb-3">Your Proof Points</h2>
-          <div className="hw-panel p-4 space-y-2">
-            {evidenceCount === 0 ? (
-              <div className="text-center py-4">
-                <p className="text-xs text-muted-foreground">No evidence yet.</p>
-                <Link href="/evidence" className="text-xs text-primary hover:underline mt-1 block">
-                  Add career context
-                </Link>
-              </div>
-            ) : (
-              (evidenceItems ?? []).slice(0, 8).map((item) => (
-                <div key={item.id} className="flex items-start gap-2 py-1.5 border-b border-border/50 last:border-0">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{item.source_title}</p>
-                    <p className="text-[10px] text-muted-foreground capitalize">{item.source_type?.replace(/_/g, " ")}</p>
-                  </div>
-                </div>
-              ))
-            )}
-            {evidenceCount > 8 && (
-              <p className="text-[10px] text-muted-foreground text-center pt-1">
-                +{evidenceCount - 8} more in your library
+          <h2 className="hw-section-label mb-3">How HireWire Decides</h2>
+          <div className="hw-panel p-4">
+            <div className="flex items-start gap-2">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Strong matches move silently. Unclear, risky, or missing claims come here for one focused question. Skipping keeps the materials honest.
               </p>
-            )}
-          </div>
-
-          <div className="mt-4">
-            <h2 className="hw-section-label mb-2">Why This Helps</h2>
-            <div className="hw-panel p-4">
-              <div className="flex items-start gap-2">
-                <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  HireWire only uses examples you have confirmed. More clear examples means less guessing and better tailored documents.
-                </p>
-              </div>
             </div>
           </div>
 

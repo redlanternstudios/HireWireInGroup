@@ -9,6 +9,11 @@ export type RequirementMatchMethod =
   | "manual"
 
 export type RequirementConfidence = "high" | "medium" | "low"
+export type RequirementProofDecision =
+  | "auto_mapped"
+  | "confirmed"
+  | "skipped"
+  | "needs_judgment"
 
 export type EvidenceMatchStrength = "strong" | "partial" | "weak"
 export type EvidenceAllowedUsage =
@@ -38,6 +43,11 @@ export type RequirementEvidenceMatch = {
   match_method: RequirementMatchMethod
   reasoning: string
   riskFlags?: string[]
+  proof_decision?: RequirementProofDecision
+  user_claim?: string | null
+  skip_reason?: string | null
+  confirmed_at?: string | null
+  skipped_at?: string | null
   updated_at?: string
   mapped_by_session_ids?: string[]
 }
@@ -62,6 +72,8 @@ export type EvidenceIntelligencePacket = {
   evidenceStrength: RequirementConfidence
   riskFlags: string[]
   allowedUsage: EvidenceAllowedUsage
+  proofDecision?: RequirementProofDecision
+  userClaim?: string | null
   whyIncluded: string
 }
 

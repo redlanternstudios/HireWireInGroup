@@ -13,6 +13,7 @@
  */
 
 import type { EvidenceRecord, UserProfile, ProfileExperience } from "./types"
+import { DEFAULT_WEIGHTS, type ScoringWeights } from "./scoring-weights"
 
 // ============================================================================
 // CANONICAL EVIDENCE TYPES
@@ -515,7 +516,8 @@ export function calculateExplainableFit(
   canonicalEvidence: CanonicalEvidence[],
   requirements: string[],
   preferredQualifications: string[] = [],
-  dimensionScores: DimensionScores
+  dimensionScores: DimensionScores,
+  weights: ScoringWeights = DEFAULT_WEIGHTS
 ): ExplainableFitScore {
   const strengths: FitStrength[] = []
   const gaps: FitGap[] = []
@@ -587,21 +589,49 @@ export function calculateExplainableFit(
     }
   }
   
-  // Calculate weighted score
+  // Calculate coverage score
   const totalRequired = requirements.length || 1
   const coverageScore = (directMatches + partialMatches * 0.6) / totalRequired
-  
-  // Weight dimension scores
-  const weightedScore = (
-    dimensionScores.experience * 0.30 +
-    dimensionScores.evidence * 0.25 +
-    dimensionScores.skills * 0.20 +
-    dimensionScores.seniority * 0.15 +
-    dimensionScores.ats * 0.10
-  )
-  
-  // Combine coverage and dimension scores
-  const finalScore = Math.round((coverageScore * 50) + (weightedScore * 0.5))
+
+  // Zero-evidence short-circuit: return 0 rather than a misleading non-zero score
+  if (canonicalEvidence.length === 0) {
+    return {
+      band: "low_match",
+      score: 0,
+      confidence: "low",
+      matched_requirements_count: 0,
+      partial_matches_count: 0,
+      missing_requirements_count: requirements.length,
+      total_requirements_count: totalRequired,
+      strengths: [],
+      gaps: requirements.map(req => ({
+        requirement: req,
+        gap_category: "missing_evidence" as GapCategory,
+        severity: "critical" as const,
+        suggestion: "Add evidence for this requirement to your profile",
+      })),
+      score_explanation: "No evidence available — add work history and skills to your Career Context.",
+      dimension_scores: dimensionScores,
+      warnings: ["No evidence found in profile — add work history and skills to get a real score"],
+    }
+  }
+
+  // Apply role-aware weights from scoring-weights.ts (normalized to fractions)
+  const totalWeight =
+    weights.experience_relevance +
+    weights.evidence_quality +
+    weights.skills_match +
+    weights.seniority_alignment +
+    weights.ats_keywords
+  const weightedDimensionScore =
+    dimensionScores.experience * (weights.experience_relevance / totalWeight) +
+    dimensionScores.evidence * (weights.evidence_quality / totalWeight) +
+    dimensionScores.skills * (weights.skills_match / totalWeight) +
+    dimensionScores.seniority * (weights.seniority_alignment / totalWeight) +
+    dimensionScores.ats * (weights.ats_keywords / totalWeight)
+
+  // 60% coverage-driven, 40% dimension-driven — avoids the structural 32 floor
+  const finalScore = Math.round((coverageScore * 60) + (weightedDimensionScore * 0.4))
   
   // Determine band
   let band: FitBand
