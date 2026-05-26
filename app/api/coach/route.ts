@@ -245,6 +245,16 @@ export async function POST(request: Request) {
         })
       : COACH_SYSTEM_PROMPT
 
+    // Add risk flags and match quality context if available
+    if (hasRequirementScopedPrompt && targetedRequirement && typeof targetedRequirement === "object") {
+      const riskFlags = Array.isArray((targetedRequirement as Record<string, unknown>).riskFlags)
+        ? (targetedRequirement as Record<string, unknown>).riskFlags as string[]
+        : []
+      if (riskFlags.includes("seniority_mismatch")) {
+        systemPrompt += `\n\n## ⚠️ Match Quality Alert\nThis requirement was flagged during matching:\n- RISK: The requirement appears to call for a different seniority/authority level than the user's documented experience.\n- ACTION: On first message, validate the seniority level difference explicitly before asking for details.\n- EXAMPLE: "The requirement is 'Lead PM' (director-level authority). Your background shows Technical PM (individual contributor). Tell me about situations where you led or directed product strategy."`
+      }
+    }
+
     // Profile
     if (profile) {
       const experienceLines = formatProfileJsonList(profile.experience, ["role", "title", "company"], 5)
