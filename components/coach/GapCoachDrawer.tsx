@@ -1,11 +1,9 @@
 "use client"
 
-import { useEffect, useId, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
-import { MessageSquareText, Sparkles } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Sparkles, MessageSquareText } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -15,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { CoachChat } from "@/components/coach-chat"
+import { type RequirementType, inferRequirementType } from "@/lib/coach/requirement-type"
 
 export type RequirementCoachModalProps = {
   jobId: string
@@ -46,42 +45,6 @@ export type RequirementCoachModalProps = {
   showGenerationUnlock?: boolean
 }
 
-type RequirementType =
-  | "years_experience"
-  | "credential"
-  | "tool"
-  | "domain"
-  | "outcome"
-  | "responsibility"
-  | "skill"
-  | "other"
-
-function inferRequirementType(text: string): RequirementType {
-  const value = text.toLowerCase()
-  if (/(\d+\+?\s*years?|years?\s+of\s+experience|experience\s+in)/.test(value)) {
-    return "years_experience"
-  }
-  if (/(bachelor|master|mba|phd|degree|certified|certification|license|pmp|cka)/.test(value)) {
-    return "credential"
-  }
-  if (/(salesforce|sap|jira|figma|supabase|openai|api|tableau|excel|python|sql)/.test(value)) {
-    return "tool"
-  }
-  if (/(healthcare|finance|enterprise\s+saas|construction|education|government|retail)/.test(value)) {
-    return "domain"
-  }
-  if (/(increase|improve|reduce|delivered|impact|outcome|kpi|adoption|revenue|efficiency)/.test(value)) {
-    return "outcome"
-  }
-  if (/(own|lead|manage|partner|coordinate|launch|roadmap|stakeholder|cross-functional)/.test(value)) {
-    return "responsibility"
-  }
-  if (/(analytical|problem solving|communication|strategy|leadership|skill|ability)/.test(value)) {
-    return "skill"
-  }
-  return "other"
-}
-
 function cleanGap(gap: string) {
   return gap.replace(/^Gap:\s*/i, "").trim()
 }
@@ -107,19 +70,11 @@ export function RequirementCoachModal({
   showGenerationUnlock = false,
 }: RequirementCoachModalProps) {
   const [internalOpen, setInternalOpen] = useState(autoOpen && gaps.length > 0)
-  const [answer, setAnswer] = useState("")
-  const [saving, setSaving] = useState<"answer" | "skip" | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [coachingNudge, setCoachingNudge] = useState<string | null>(null)
-  const [canForceSave, setCanForceSave] = useState(false)
   const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [sessionError, setSessionError] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [resumeHint, setResumeHint] = useState<string | null>(null)
-  const [savedState, setSavedState] = useState<{ mode: "answer" | "skip"; allDone: boolean } | null>(null)
-  const answerTextareaId = useId()
-  const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
   const isControlled = controlledOpen !== undefined
   const open = controlledOpen ?? internalOpen
@@ -178,7 +133,7 @@ export function RequirementCoachModal({
             .reverse()
             .find((message) => message?.role === "assistant" && typeof message?.content === "string")
 
-          if (latestAssistant?.content) {
+          if (latestAssistant?.content && latestAssistant.content.trim().length > 0) {
             setResumeHint(latestAssistant.content.slice(0, 220))
           }
         }
@@ -206,49 +161,6 @@ export function RequirementCoachModal({
   ])
 
   if (!activeGap) return null
-
-  async function postCoachStep(body: Record<string, unknown>, mode: "answer" | "skip") {
-    setSaving(mode)
-    setError(null)
-    setCoachingNudge(null)
-    try {
-      const response = await fetch(`/api/jobs/${jobId}/coach-step`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      const data = await response.json()
-      if (!response.ok || !data.success) {
-        if (response.status === 422 && data.error === "answer_needs_detail") {
-          setCoachingNudge(data.user_message ?? "Add more detail before saving.")
-          setCanForceSave(!!data.can_force_save)
-          return
-        }
-        if (response.status === 409 || data.error === "evidence_map_conflict") {
-          setError(
-            data.user_message ??
-              "This requirement was updated in another tab. The page has been refreshed with the latest state. Try again.",
-          )
-          router.refresh()
-          return
-        }
-        setError(data.user_message ?? "Could not save the coach step. Please try again.")
-        return
-      }
-      setAnswer("")
-      setCoachingNudge(null)
-      setCanForceSave(false)
-      const allDone = data?.allGapsResolved === true || showGenerationUnlock
-      setSavedState({ mode, allDone })
-      onStepSaved?.(mode)
-      // Refresh server data but stay open to show progression
-      router.refresh()
-    } catch {
-      setError("Network error. Please try again.")
-    } finally {
-      setSaving(null)
-    }
-  }
 
   const loadingRequirement = activeGap ? truncateText(activeGap, 60) : "this claim"
 
@@ -295,7 +207,6 @@ export function RequirementCoachModal({
         className="flex max-h-[92vh] w-[min(980px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
-          window.setTimeout(() => document.getElementById(answerTextareaId)?.focus(), 0)
         }}
       >
         <DialogHeader className="border-b border-border px-5 py-4 pr-10">
@@ -317,135 +228,11 @@ export function RequirementCoachModal({
             ) : null}
           </DialogDescription>
         </DialogHeader>
-        {/* Post-save progression state */}
-        {savedState && (
-          <div className="flex flex-col items-center justify-center gap-5 px-8 py-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-foreground">
-                {savedState.mode === "skip"
-                  ? "Skipped. HireWire will stay conservative here."
-                  : "Confirmed."}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {savedState.allDone
-                  ? "You can now generate materials from confirmed proof."
-                  : "Moving to the next unclear point."}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {savedState.allDone ? (
-                <>
-                  <Button
-                    size="sm"
-                    className="hw-btn-primary gap-1.5"
-                    onClick={() => { setOpen(false); router.push(`/jobs/${jobId}/documents`) }}
-                  >
-                    Generate materials
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-                    Back to job
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button size="sm" className="hw-btn-primary gap-1.5" onClick={() => { setSavedState(null) }}>
-                    Next question
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-                    Return to job
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* Main content — hidden while showing post-save state */}
-        <div className={`grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] ${savedState ? "hidden" : ""}`}>
-          <div className="min-h-0 overflow-y-auto border-b border-border bg-muted/25 px-5 py-4 lg:border-b-0 lg:border-r">
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-[11px] font-semibold uppercase text-muted-foreground">
-                Requirement
-              </p>
-              <p className="mt-1 text-[10px] font-semibold uppercase text-primary">
-                {requirementType.replace(/_/g, " ")}
-              </p>
-              <p className="mt-2 text-sm font-semibold text-foreground">{activeGap}</p>
-              {requirement?.proof_needed?.length ? (
-                <p className="mt-2 text-xs text-muted-foreground">{requirement.proof_needed[0]}</p>
-              ) : null}
-              {requirement?.current_proof?.length ? (
-                <div className="mt-3 rounded-md bg-muted/60 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase text-muted-foreground">Already found</p>
-                  <p className="mt-1 text-xs text-foreground">{requirement.current_proof.join(", ")}</p>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-4 rounded-md border border-border bg-background p-4">
-              <p className="text-xs font-semibold text-foreground">
-                {requirement?.coach_question ?? "What should HireWire know?"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Have you done anything related to {activeGap}? A project, responsibility, tool, result, or adjacent experience all count.
-              </p>
-              <div className="mt-3 space-y-2">
-                <Textarea
-                  id={answerTextareaId}
-                  value={answer}
-                  onChange={(event) => { setAnswer(event.target.value); setCoachingNudge(null) }}
-                  placeholder="Example: I have not owned this exact tool, but I led..."
-                  className="min-h-24 text-sm"
-                />
-                {coachingNudge && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    {coachingNudge}
-                  </p>
-                )}
-                {error && <p className="text-xs text-rose-600">{error}</p>}
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    size="sm"
-                    className="hw-btn-primary gap-1.5 text-xs"
-                    disabled={saving !== null || answer.trim().length < 8}
-                    onClick={() => postCoachStep({ action: "answer", gap: activeGap, requirementId: requirement?.requirement_id, answer }, "answer")}
-                  >
-                    {saving === "answer" ? "Saving..." : "Confirm claim"}
-                  </Button>
-                  {coachingNudge && canForceSave && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                      disabled={saving !== null}
-                      onClick={() => postCoachStep({ action: "answer", gap: activeGap, requirementId: requirement?.requirement_id, answer, force_save: true }, "answer")}
-                    >
-                      {saving === "answer" ? "Saving..." : "Save anyway"}
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-xs"
-                    disabled={saving !== null}
-                    onClick={() => postCoachStep({
-                      action: "skip",
-                      gap: activeGap,
-                      requirementId: requirement?.requirement_id,
-                    }, "skip")}
-                  >
-                    {saving === "skip" ? "Skipping..." : "Skip this claim"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
           {requiresScopedSession && !coachSessionId ? (
             <div
-              className="flex min-h-[420px] flex-col items-center justify-center gap-3 border-t border-border bg-background px-6 text-center lg:min-h-0 lg:border-t-0"
+              className="flex min-h-[420px] flex-col items-center justify-center gap-3 px-6 text-center"
               aria-live="polite"
             >
               {sessionLoading ? (
@@ -471,7 +258,7 @@ export function RequirementCoachModal({
             <CoachChat
               key={`coach-${coachSessionId ?? "adhoc"}`}
               compact
-              className="min-h-[420px] lg:min-h-0"
+              className="min-h-[420px] h-full"
               sessionId={coachSessionId ?? undefined}
               jobContext={{
                 jobId,
@@ -491,7 +278,7 @@ export function RequirementCoachModal({
                 },
               }}
               initialMessage={
-                resumeHint
+                resumeHint && resumeHint.trim().length > 0
                   ? `${initialMessage ?? ""} Resume the prior session. Last coach summary: ${resumeHint}`
                   : initialMessage
               }

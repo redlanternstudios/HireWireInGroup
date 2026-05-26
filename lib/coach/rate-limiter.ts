@@ -37,6 +37,8 @@ export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
     recordOutcome: { per_day: 20 },
     archiveJob: { per_day: 10 },
     markSessionComplete: { per_day: 50 },
+    confirmProof: { per_day: 50 },
+    skipRequirement: { per_day: 50 },
   },
 }
 

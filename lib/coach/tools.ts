@@ -221,6 +221,29 @@ export const markSessionCompleteTool = {
   }),
 }
 
+// ─── Prove Fit Tools ──────────────────────────────────────────────────────
+
+export const confirmProofTool = {
+  description:
+    "Save a user-confirmed claim as approved evidence and mark the requirement as addressed. Use only after the user has shared a real example and explicitly agreed the claim is accurate. Always show a draft of the claim first and ask the user to confirm before calling this tool.",
+  parameters: z.object({
+    job_id: z.string().uuid().describe("ID of the job"),
+    requirement_id: z.string().describe("ID of the requirement being confirmed"),
+    claim_text: z.string().min(10).max(1000).describe("The user's confirmed claim, in their words"),
+  }),
+  requiresConfirmation: true,
+}
+
+export const skipRequirementTool = {
+  description:
+    "Mark a job requirement as skipped when the user confirms they cannot or will not prove it. Generated materials will not make this claim.",
+  parameters: z.object({
+    job_id: z.string().uuid().describe("ID of the job"),
+    requirement_id: z.string().describe("ID of the requirement to skip"),
+    skip_reason: z.string().max(300).optional().describe("Why is this requirement being skipped?"),
+  }),
+}
+
 // ─── Tool Registry ────────────────────────────────────────────────────────
 
 export const COACH_TOOLS = {
@@ -234,6 +257,8 @@ export const COACH_TOOLS = {
   recordOutcome: recordOutcomeTool,
   archiveJob: archiveJobTool,
   markSessionComplete: markSessionCompleteTool,
+  confirmProof: confirmProofTool,
+  skipRequirement: skipRequirementTool,
 }
 
 export type CoachToolName = keyof typeof COACH_TOOLS

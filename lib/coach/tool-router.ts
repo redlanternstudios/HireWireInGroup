@@ -221,6 +221,20 @@ export async function routeToolCall(
         )
         break
 
+      case "confirmProof":
+        result = await toolExecution.executeConfirmProof(
+          input.args as unknown as Parameters<typeof toolExecution.executeConfirmProof>[0],
+          context
+        )
+        break
+
+      case "skipRequirement":
+        result = await toolExecution.executeSkipRequirement(
+          input.args as unknown as Parameters<typeof toolExecution.executeSkipRequirement>[0],
+          context
+        )
+        break
+
       default:
         result = {
           success: false,
@@ -311,6 +325,12 @@ export function formatToolResultForStream(
 
       case "markSessionComplete":
         return `Marked this coach session complete.`
+
+      case "confirmProof":
+        return `Confirmed claim for this requirement. Evidence saved — it's mapped and ready for document generation.`
+
+      case "skipRequirement":
+        return `Skipped this requirement. HireWire will stay honest and not make this claim.`
 
       default:
         return `Completed ${toolName}.`

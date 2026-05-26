@@ -19,6 +19,14 @@ import { handleDomainEvent } from "@/lib/domain-events/handle-event"
 import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
 import type { ToolCallResult, ToolExecutionContext } from "./tools"
 import { revalidatePath } from "next/cache"
+import {
+  asCanonicalEvidenceMap,
+  emitCoachEvent,
+  guardedCoachStepUpdate,
+  loadEvidenceRows,
+  upsertProveFitDecision,
+  withUpdatedRequirementMatches,
+} from "./coach-step-helpers"
 
 // ─── Evidence CRUD ──────────────────────────────────────────────────────────
 
@@ -994,5 +1002,222 @@ export async function executeMarkSessionComplete(
       success: false,
       error: err instanceof Error ? err.message : "Failed to complete session",
     }
+  }
+}
+
+// ─── Prove Fit Tools ──────────────────────────────────────────────────────────
+
+export async function executeConfirmProof(
+  params: { job_id: string; requirement_id: string; claim_text: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  if (!context.confirmed) {
+    return {
+      success: false,
+      needsConfirmation: true,
+      confirmationPrompt: `Save this confirmed claim? "${params.claim_text.slice(0, 120)}"`,
+    }
+  }
+
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const { userId, supabase } = auth
+
+    const { data: job } = await supabase
+      .from("jobs")
+      .select("id, evidence_map, evidence_map_version")
+      .eq("id", params.job_id)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle()
+
+    if (!job) return { success: false, error: "Job not found" }
+
+    const canonicalMap = asCanonicalEvidenceMap(job.evidence_map)
+    if (!canonicalMap) return { success: false, error: "Evidence map not ready" }
+
+    const requirement = canonicalMap.requirement_matches.find(
+      (m) => m.requirement_id === params.requirement_id,
+    )
+    if (!requirement) return { success: false, error: "Requirement not found" }
+
+    const evidenceTitle = `Confirmed fit: ${requirement.normalized_requirement || requirement.requirement_text}`.slice(0, 180)
+
+    const { data: evidenceRow, error: evidenceError } = await supabase
+      .from("evidence_library")
+      .insert({
+        user_id: userId,
+        source_type: "user_input",
+        source_title: evidenceTitle,
+        proof_snippet: params.claim_text,
+        confidence_level: "medium",
+        is_active: true,
+        is_user_approved: true,
+        raw_resume_section: "match_interview",
+        responsibilities: [requirement.requirement_text],
+        approved_keywords: requirement.related_skills ?? [],
+        normalized_label: requirement.normalized_requirement,
+      })
+      .select("id")
+      .single()
+
+    if (evidenceError || !evidenceRow) {
+      return { success: false, error: "Could not save evidence" }
+    }
+
+    const insertedEvidenceId = evidenceRow.id
+    const evidenceRows = await loadEvidenceRows(supabase, userId)
+
+    const nextEvidenceMap = withUpdatedRequirementMatches(
+      job.evidence_map,
+      canonicalMap.requirement_matches.map((match) =>
+        match.requirement_id === params.requirement_id
+          ? {
+              ...match,
+              status: match.status === "met" ? "met" : "partial",
+              matched_evidence_ids: Array.from(new Set([...match.matched_evidence_ids, insertedEvidenceId])),
+              matched_evidence_titles: Array.from(new Set([...match.matched_evidence_titles, evidenceTitle])),
+              evidence_types: Array.from(new Set([...match.evidence_types, "user_input"])),
+              confidence: match.confidence === "high" ? "high" : "medium",
+              match_method: "manual",
+              reasoning: "User confirmed this claim in the Match Interview. Use exactly what was confirmed; do not overstate it.",
+              riskFlags: (match.riskFlags ?? []).filter((f) => !["missing_evidence", "no_packet_evidence"].includes(f)),
+              proof_decision: "confirmed",
+              user_claim: params.claim_text,
+              skip_reason: null,
+              confirmed_at: new Date().toISOString(),
+              skipped_at: null,
+              updated_at: new Date().toISOString(),
+            }
+          : match,
+      ),
+      evidenceRows,
+    )
+
+    const update = await guardedCoachStepUpdate({
+      supabase,
+      userId,
+      jobId: params.job_id,
+      currentVersion: job.evidence_map_version ?? null,
+      values: { evidence_map: nextEvidenceMap },
+    })
+
+    if (!update.ok) {
+      await supabase.from("evidence_library").delete().eq("id", insertedEvidenceId).eq("user_id", userId)
+      return { success: false, error: update.conflict ? "Conflict — reload and retry" : "Update failed" }
+    }
+
+    await upsertProveFitDecision(supabase, {
+      userId,
+      jobId: params.job_id,
+      requirementId: params.requirement_id,
+      requirementText: requirement.requirement_text,
+      decision: "confirmed",
+      evidenceId: insertedEvidenceId,
+      claimText: params.claim_text,
+    })
+
+    await emitCoachEvent(supabase, userId, params.job_id, "confirm_proof", {
+      requirement_id: params.requirement_id,
+      evidence_id: insertedEvidenceId,
+    })
+
+    revalidatePath(`/jobs/${params.job_id}/evidence-match`)
+    revalidatePath(`/jobs/${params.job_id}`)
+
+    return {
+      success: true,
+      data: { evidence_id: insertedEvidenceId, requirement_id: params.requirement_id },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to confirm proof" }
+  }
+}
+
+export async function executeSkipRequirement(
+  params: { job_id: string; requirement_id: string; skip_reason?: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const { userId, supabase } = auth
+
+    const { data: job } = await supabase
+      .from("jobs")
+      .select("id, evidence_map, evidence_map_version")
+      .eq("id", params.job_id)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle()
+
+    if (!job) return { success: false, error: "Job not found" }
+
+    const canonicalMap = asCanonicalEvidenceMap(job.evidence_map)
+    if (!canonicalMap) return { success: false, error: "Evidence map not ready" }
+
+    const requirement = canonicalMap.requirement_matches.find(
+      (m) => m.requirement_id === params.requirement_id,
+    )
+    if (!requirement) return { success: false, error: "Requirement not found" }
+
+    const skipReason = params.skip_reason ?? "User chose to skip this claim."
+    const evidenceRows = await loadEvidenceRows(supabase, userId)
+
+    const nextEvidenceMap = withUpdatedRequirementMatches(
+      job.evidence_map,
+      canonicalMap.requirement_matches.map((match) =>
+        match.requirement_id === params.requirement_id
+          ? {
+              ...match,
+              proof_decision: "skipped",
+              skip_reason: skipReason,
+              skipped_at: new Date().toISOString(),
+              reasoning: "User explicitly skipped this requirement; generated materials must not claim it.",
+              riskFlags: Array.from(new Set([...(match.riskFlags ?? []), "user_skipped"])),
+              updated_at: new Date().toISOString(),
+            }
+          : match,
+      ),
+      evidenceRows,
+    )
+
+    const update = await guardedCoachStepUpdate({
+      supabase,
+      userId,
+      jobId: params.job_id,
+      currentVersion: job.evidence_map_version ?? null,
+      values: { evidence_map: nextEvidenceMap },
+    })
+
+    if (!update.ok) {
+      return { success: false, error: update.conflict ? "Conflict — reload and retry" : "Update failed" }
+    }
+
+    await upsertProveFitDecision(supabase, {
+      userId,
+      jobId: params.job_id,
+      requirementId: params.requirement_id,
+      requirementText: requirement.requirement_text,
+      decision: "skipped",
+      skipReason,
+    })
+
+    await emitCoachEvent(supabase, userId, params.job_id, "skip_requirement", {
+      requirement_id: params.requirement_id,
+    })
+
+    revalidatePath(`/jobs/${params.job_id}/evidence-match`)
+    revalidatePath(`/jobs/${params.job_id}`)
+
+    return {
+      success: true,
+      data: { requirement_id: params.requirement_id, skipped: true },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to skip requirement" }
   }
 }
