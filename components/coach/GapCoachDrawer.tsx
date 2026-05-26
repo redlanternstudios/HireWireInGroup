@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { MessageSquareText, Sparkles } from "lucide-react"
 
@@ -86,6 +86,10 @@ function cleanGap(gap: string) {
   return gap.replace(/^Gap:\s*/i, "").trim()
 }
 
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1).trimEnd()}...` : value
+}
+
 export function RequirementCoachModal({
   jobId,
   jobTitle,
@@ -114,11 +118,13 @@ export function RequirementCoachModal({
   const [retryCount, setRetryCount] = useState(0)
   const [resumeHint, setResumeHint] = useState<string | null>(null)
   const [savedState, setSavedState] = useState<{ mode: "answer" | "skip"; allDone: boolean } | null>(null)
+  const answerTextareaId = useId()
   const router = useRouter()
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
+  const isControlled = controlledOpen !== undefined
   const open = controlledOpen ?? internalOpen
   const setOpen = (nextOpen: boolean) => {
-    if (controlledOpen === undefined) {
+    if (!isControlled) {
       setInternalOpen(nextOpen)
     }
     onOpenChange?.(nextOpen)
@@ -244,16 +250,22 @@ export function RequirementCoachModal({
     }
   }
 
+  const loadingRequirement = activeGap ? truncateText(activeGap, 60) : "this claim"
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {requirement ? (
+      {!isControlled && requirement ? (
         <DialogTrigger asChild>
-          <Button size="sm" className="hw-btn-primary gap-1.5 text-xs shrink-0">
+          <Button
+            size="sm"
+            className="hw-btn-primary gap-1.5 text-xs shrink-0"
+            aria-label={`Start Match Interview for ${activeGap}`}
+          >
             <MessageSquareText className="h-3.5 w-3.5" />
-            Open interview
+            Start Match Interview
           </Button>
         </DialogTrigger>
-      ) : (
+      ) : !isControlled ? (
         <div className="hw-card px-5 py-4 border-l-4 border-l-primary">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -266,27 +278,40 @@ export function RequirementCoachModal({
               </p>
             </div>
             <DialogTrigger asChild>
-              <Button size="sm" className="hw-btn-primary gap-1.5 text-xs shrink-0">
+              <Button
+                size="sm"
+                className="hw-btn-primary gap-1.5 text-xs shrink-0"
+                aria-label="Start Match Interview"
+              >
                 <MessageSquareText className="h-3.5 w-3.5" />
-                Start interview
+                Start Match Interview
               </Button>
             </DialogTrigger>
           </div>
         </div>
-      )}
+      ) : null}
 
-      <DialogContent className="flex max-h-[92vh] w-[min(980px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0">
+      <DialogContent
+        className="flex max-h-[92vh] w-[min(980px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          window.setTimeout(() => document.getElementById(answerTextareaId)?.focus(), 0)
+        }}
+      >
         <DialogHeader className="border-b border-border px-5 py-4 pr-10">
           <DialogTitle className="text-base">
             Match Interview
             {progressLabel ? (
-              <span className="ml-2 rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+              <span
+                className="ml-2 rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary"
+                aria-label={`Requirement ${progressLabel}`}
+              >
                 {progressLabel}
               </span>
             ) : null}
           </DialogTitle>
           <DialogDescription>
-            Answer one focused question. Review the claim before HireWire uses it.
+            Confirm proof or skip claims you won&apos;t make. Your answers unlock document generation.
             {showGenerationUnlock ? (
               <span className="mt-1 block">Skipping is okay; HireWire will stay honest about weaker areas.</span>
             ) : null}
@@ -369,6 +394,7 @@ export function RequirementCoachModal({
               </p>
               <div className="mt-3 space-y-2">
                 <Textarea
+                  id={answerTextareaId}
                   value={answer}
                   onChange={(event) => { setAnswer(event.target.value); setCoachingNudge(null) }}
                   placeholder="Example: I have not owned this exact tool, but I led..."
@@ -411,16 +437,21 @@ export function RequirementCoachModal({
                       requirementId: requirement?.requirement_id,
                     }, "skip")}
                   >
-                    {saving === "skip" ? "Skipping..." : "Skip"}
+                    {saving === "skip" ? "Skipping..." : "Skip this claim"}
                   </Button>
                 </div>
               </div>
             </div>
           </div>
           {requiresScopedSession && !coachSessionId ? (
-            <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 border-t border-border bg-background px-6 text-center lg:min-h-0 lg:border-t-0">
+            <div
+              className="flex min-h-[420px] flex-col items-center justify-center gap-3 border-t border-border bg-background px-6 text-center lg:min-h-0 lg:border-t-0"
+              aria-live="polite"
+            >
               {sessionLoading ? (
-                <p className="text-sm text-muted-foreground">Loading your requirement session...</p>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  Preparing your session for: {loadingRequirement}
+                </p>
               ) : sessionError ? (
                 <>
                   <p className="text-sm text-muted-foreground">Could not start the session. Check your connection and try again.</p>
@@ -433,7 +464,7 @@ export function RequirementCoachModal({
                   </Button>
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">Preparing coach session...</p>
+                <p className="text-sm text-muted-foreground">Starting session...</p>
               )}
             </div>
           ) : (

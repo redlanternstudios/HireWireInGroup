@@ -149,14 +149,17 @@ export function GuidedRequirementCoachFlow({
           </p>
         </div>
 
-        <Button
-          size="sm"
-          className="hw-btn-primary gap-1.5 text-xs shrink-0"
-          onClick={() => setFlowOpen(true)}
-        >
-          <MessageSquareText className="h-3.5 w-3.5" />
-          {flowOpen ? "Continue interview" : "Start interview"}
-        </Button>
+        {!flowOpen && (
+          <Button
+            size="sm"
+            className="hw-btn-primary gap-1.5 text-xs shrink-0"
+            onClick={() => setFlowOpen(true)}
+            aria-label={`Start Match Interview for ${active.requirement_text}`}
+          >
+            <MessageSquareText className="h-3.5 w-3.5" />
+            Start Match Interview
+          </Button>
+        )}
       </div>
 
       <RequirementCoachModal

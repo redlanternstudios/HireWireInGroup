@@ -208,7 +208,7 @@ export default async function EvidenceMatchPage({
         <p className="hw-section-label mb-1">Prove Fit</p>
         <h1 className="hw-page-title">Prove Fit</h1>
         <p className="hw-page-subtitle">
-          HireWire matched what it could. The Match Interview asks only about what still needs your judgment.
+          HireWire matched what it could. The Match Interview covers only what still needs your judgment.
         </p>
       </div>
 
