@@ -7,6 +7,7 @@ import type {
 } from "./types"
 import { hasSynonymOverlap } from "./evidenceSynonyms"
 import { normalizeRequirement, tokenize } from "./normalizeRequirement"
+import { compareSeniorityLevels } from "@/lib/seniority-levels"
 
 type EvidenceCandidate = {
   id: string
@@ -113,15 +114,26 @@ export function matchRequirementToEvidence(params: {
         evidenceTokens
       )
       const status = statusFromMethodAndOverlap(method, overlap)
+
+      // Check for seniority mismatch
+      const seniorityComparison = compareSeniorityLevels(
+        params.requirement,
+        evidence.source_title ?? ""
+      )
+      const hasSeniorityGap = seniorityComparison.gap_type === "seniority_gap_up"
+
       return {
         evidence,
         overlap,
         method,
         status,
+        hasSeniorityGap,
+        seniorityComparison,
       }
     })
     .filter(item => item.status === "met" || item.status === "partial")
     .sort((a, b) => b.overlap - a.overlap)
+
   const bestStatus: RequirementMatchStatus =
     scored.some(item => item.status === "met")
       ? "met"
@@ -134,6 +146,13 @@ export function matchRequirementToEvidence(params: {
     scored[0]?.method ??
     "fuzzy"
   const confidence = confidenceFromStatus(bestStatus, matchedEvidence)
+
+  // Detect risk flags
+  const riskFlags: string[] = []
+  if (scored.length > 0 && scored[0]?.hasSeniorityGap) {
+    riskFlags.push("seniority_mismatch")
+  }
+
   return {
     requirement_id: params.requirementId ?? normalizedRequirement.slice(0, 80).replace(/\s+/g, "_"),
     requirement_text: params.requirement,
@@ -156,6 +175,7 @@ export function matchRequirementToEvidence(params: {
       bestStatus === "gap"
         ? "No evidence met the normalized requirement with enough confidence."
         : `Matched through ${bestMethod} logic using ${matchedEvidence.length} evidence item(s).`,
+    riskFlags: riskFlags.length > 0 ? riskFlags : undefined,
     updated_at: new Date().toISOString(),
   }
 }
