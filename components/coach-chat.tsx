@@ -195,12 +195,42 @@ export function CoachChat({
 
   const isLoading = status === "streaming" || status === "submitted";
 
+  const [priorMessages, setPriorMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+
+  // Load prior messages from resumed session
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const loadSessionMessages = async () => {
+      try {
+        const response = await fetch(`/api/coach/sessions?sessionId=${sessionId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+
+        if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+          setPriorMessages(
+            data.messages.map((msg: any) => ({
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+            })),
+          );
+        }
+      } catch (err) {
+        console.error("[coach] Failed to load session messages:", err);
+      }
+    };
+
+    loadSessionMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   // Fire initial message once on mount
   useEffect(() => {
     if (
       initialMessage &&
       !initialMessageSent.current &&
-      messages.length === 0
+      messages.length === 0 &&
+      priorMessages.length === 0
     ) {
       initialMessageSent.current = true;
       sendMessage({
@@ -209,7 +239,7 @@ export function CoachChat({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [priorMessages]);
 
   // Auto-scroll to bottom on new messages / streaming updates
   useEffect(() => {
@@ -362,6 +392,80 @@ export function CoachChat({
 
           {/* Conversation messages */}
           <div className="space-y-4 pt-2">
+            {priorMessages.map((msg, idx) => {
+              const isUser = msg.role === "user";
+              return (
+                <div
+                  key={`prior-${idx}`}
+                  className={cn(
+                    "flex items-end gap-2.5",
+                    isUser ? "flex-row-reverse" : "flex-row",
+                  )}
+                >
+                  {!isUser && (
+                    <div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center shrink-0 mb-0.5 shadow-sm">
+                      <Sparkles className="h-3.5 w-3.5 text-white" />
+                    </div>
+                  )}
+                  {isUser && (
+                    <div className="h-7 w-7 rounded-full bg-foreground/10 border border-border flex items-center justify-center shrink-0 mb-0.5">
+                      <User className="h-3.5 w-3.5 text-foreground/60" />
+                    </div>
+                  )}
+                  <div
+                    className={cn(
+                      "max-w-[78%]",
+                      isUser ? "items-end" : "items-start",
+                      "flex flex-col gap-1",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "px-4 py-2.5 text-sm leading-relaxed",
+                        isUser
+                          ? "bg-foreground text-background rounded-2xl rounded-br-sm shadow-sm"
+                          : "bg-card border border-border text-foreground rounded-2xl rounded-bl-sm shadow-sm",
+                      )}
+                    >
+                      {isUser ? (
+                        <p>{msg.content}</p>
+                      ) : (
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => (
+                              <p className="mb-2 last:mb-0">{children}</p>
+                            ),
+                            ul: ({ children }) => (
+                              <ul className="list-disc pl-4 mb-2 space-y-0.5">
+                                {children}
+                              </ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol className="list-decimal pl-4 mb-2 space-y-0.5">
+                                {children}
+                              </ol>
+                            ),
+                            li: ({ children }) => <li>{children}</li>,
+                            strong: ({ children }) => (
+                              <strong className="font-semibold">
+                                {children}
+                              </strong>
+                            ),
+                            code: ({ children }) => (
+                              <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">
+                                {children}
+                              </code>
+                            ),
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
             {messages.map((message) => {
               const isUser = message.role === "user";
               const text = (message.parts ?? [])
