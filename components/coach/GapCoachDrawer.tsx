@@ -2,19 +2,23 @@
 
 import { useEffect, useId, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { MessageSquareText, Sparkles } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  MessageSquareText,
+  SkipForward,
+  Sparkles,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { CoachChat } from "@/components/coach-chat"
+import { cn } from "@/lib/utils"
 
 export type RequirementCoachModalProps = {
   jobId: string
@@ -44,6 +48,12 @@ export type RequirementCoachModalProps = {
   onStepSaved?: (mode: "answer" | "skip") => void
   progressLabel?: string
   showGenerationUnlock?: boolean
+  /** Total number of requirements in the flow — used for prev/next */
+  totalCount?: number
+  /** 0-based index of the current requirement */
+  currentIndex?: number
+  onPrev?: () => void
+  onNext?: () => void
 }
 
 type RequirementType =
@@ -58,27 +68,13 @@ type RequirementType =
 
 function inferRequirementType(text: string): RequirementType {
   const value = text.toLowerCase()
-  if (/(\d+\+?\s*years?|years?\s+of\s+experience|experience\s+in)/.test(value)) {
-    return "years_experience"
-  }
-  if (/(bachelor|master|mba|phd|degree|certified|certification|license|pmp|cka)/.test(value)) {
-    return "credential"
-  }
-  if (/(salesforce|sap|jira|figma|supabase|openai|api|tableau|excel|python|sql)/.test(value)) {
-    return "tool"
-  }
-  if (/(healthcare|finance|enterprise\s+saas|construction|education|government|retail)/.test(value)) {
-    return "domain"
-  }
-  if (/(increase|improve|reduce|delivered|impact|outcome|kpi|adoption|revenue|efficiency)/.test(value)) {
-    return "outcome"
-  }
-  if (/(own|lead|manage|partner|coordinate|launch|roadmap|stakeholder|cross-functional)/.test(value)) {
-    return "responsibility"
-  }
-  if (/(analytical|problem solving|communication|strategy|leadership|skill|ability)/.test(value)) {
-    return "skill"
-  }
+  if (/(\d+\+?\s*years?|years?\s+of\s+experience|experience\s+in)/.test(value)) return "years_experience"
+  if (/(bachelor|master|mba|phd|degree|certified|certification|license|pmp|cka)/.test(value)) return "credential"
+  if (/(salesforce|sap|jira|figma|supabase|openai|api|tableau|excel|python|sql)/.test(value)) return "tool"
+  if (/(healthcare|finance|enterprise\s+saas|construction|education|government|retail)/.test(value)) return "domain"
+  if (/(increase|improve|reduce|delivered|impact|outcome|kpi|adoption|revenue|efficiency)/.test(value)) return "outcome"
+  if (/(own|lead|manage|partner|coordinate|launch|roadmap|stakeholder|cross-functional)/.test(value)) return "responsibility"
+  if (/(analytical|problem solving|communication|strategy|leadership|skill|ability)/.test(value)) return "skill"
   return "other"
 }
 
@@ -87,7 +83,7 @@ function cleanGap(gap: string) {
 }
 
 function truncateText(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 1).trimEnd()}...` : value
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1).trimEnd()}…` : value
 }
 
 export function RequirementCoachModal({
@@ -105,30 +101,29 @@ export function RequirementCoachModal({
   onStepSaved,
   progressLabel,
   showGenerationUnlock = false,
+  totalCount,
+  currentIndex,
+  onPrev,
+  onNext,
 }: RequirementCoachModalProps) {
   const [internalOpen, setInternalOpen] = useState(autoOpen && gaps.length > 0)
-  const [answer, setAnswer] = useState("")
-  const [saving, setSaving] = useState<"answer" | "skip" | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [coachingNudge, setCoachingNudge] = useState<string | null>(null)
-  const [canForceSave, setCanForceSave] = useState(false)
   const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [sessionError, setSessionError] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [resumeHint, setResumeHint] = useState<string | null>(null)
-  const [savedState, setSavedState] = useState<{ mode: "answer" | "skip"; allDone: boolean } | null>(null)
-  const answerTextareaId = useId()
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const router = useRouter()
+
   const activeGap = requirement?.requirement_text ?? (gaps[0] ? cleanGap(gaps[0]) : null)
   const isControlled = controlledOpen !== undefined
   const open = controlledOpen ?? internalOpen
+
   const setOpen = (nextOpen: boolean) => {
-    if (!isControlled) {
-      setInternalOpen(nextOpen)
-    }
+    if (!isControlled) setInternalOpen(nextOpen)
     onOpenChange?.(nextOpen)
   }
+
   const requirementType = useMemo<RequirementType>(() => {
     if (!activeGap) return "other"
     return requirement?.requirement_type ?? inferRequirementType(activeGap)
@@ -138,13 +133,28 @@ export function RequirementCoachModal({
     if (!activeGap) return undefined
     return [
       `Help me find a real example for ${jobTitle} at ${company}: "${activeGap}".`,
-      requirement?.current_proof?.length ? `Possible examples already found: ${requirement.current_proof.join("; ")}.` : "No strong example has been found yet.",
-      evidenceItems.length ? `Background proof HireWire has already indexed: ${evidenceItems.map((item) => item.source_title ?? "Untitled evidence").slice(0, 8).join("; ")}.` : "",
-      `Requirement type: ${requirementType.replace(/_/g, " ")}. Start with one simple question. Draft a truthful claim from my answer and save it only after I confirm.`,
-    ].join(" ")
+      requirement?.current_proof?.length
+        ? `Possible examples already found: ${requirement.current_proof.join("; ")}.`
+        : "No strong example has been found yet.",
+      evidenceItems.length
+        ? `Background proof HireWire has already indexed: ${evidenceItems.map((item) => item.source_title ?? "Untitled evidence").slice(0, 8).join("; ")}.`
+        : "",
+      `Requirement type: ${requirementType.replace(/_/g, " ")}. Start with one simple, direct question. Draft a truthful claim from my answer and save it only after I confirm.`,
+    ]
+      .filter(Boolean)
+      .join(" ")
   }, [activeGap, company, evidenceItems, jobTitle, requirement?.current_proof, requirementType])
 
   const requiresScopedSession = !!(requirement?.requirement_id && activeGap)
+
+  // Reset session when requirement changes
+  useEffect(() => {
+    setCoachSessionId(null)
+    setSessionError(false)
+    setSessionLoading(false)
+    setResumeHint(null)
+    setDetailsOpen(false)
+  }, [requirement?.requirement_id])
 
   useEffect(() => {
     if (!open || !requiresScopedSession || coachSessionId || sessionLoading) return
@@ -170,14 +180,11 @@ export function RequirementCoachModal({
           setSessionError(true)
           return
         }
-
         setCoachSessionId(data.sessionId)
-
         if (data?.isNew === false && Array.isArray(data.messages)) {
           const latestAssistant = [...data.messages]
             .reverse()
-            .find((message) => message?.role === "assistant" && typeof message?.content === "string")
-
+            .find((m) => m?.role === "assistant" && typeof m?.content === "string")
           if (latestAssistant?.content) {
             setResumeHint(latestAssistant.content.slice(0, 220))
           }
@@ -190,271 +197,173 @@ export function RequirementCoachModal({
     }
 
     void resumeOrCreateSession()
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    open,
-    requiresScopedSession,
-    coachSessionId,
-    sessionLoading,
-    jobId,
-    activeGap,
-    requirement?.requirement_id,
-    retryCount,
-  ])
+    return () => { cancelled = true }
+  }, [open, requiresScopedSession, coachSessionId, sessionLoading, jobId, activeGap, requirement?.requirement_id, retryCount])
 
   if (!activeGap) return null
 
-  async function postCoachStep(body: Record<string, unknown>, mode: "answer" | "skip") {
-    setSaving(mode)
-    setError(null)
-    setCoachingNudge(null)
-    try {
-      const response = await fetch(`/api/jobs/${jobId}/coach-step`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      const data = await response.json()
-      if (!response.ok || !data.success) {
-        if (response.status === 422 && data.error === "answer_needs_detail") {
-          setCoachingNudge(data.user_message ?? "Add more detail before saving.")
-          setCanForceSave(!!data.can_force_save)
-          return
-        }
-        if (response.status === 409 || data.error === "evidence_map_conflict") {
-          setError(
-            data.user_message ??
-              "This requirement was updated in another tab. The page has been refreshed with the latest state. Try again.",
-          )
-          router.refresh()
-          return
-        }
-        setError(data.user_message ?? "Could not save the coach step. Please try again.")
-        return
-      }
-      setAnswer("")
-      setCoachingNudge(null)
-      setCanForceSave(false)
-      const allDone = data?.allGapsResolved === true || showGenerationUnlock
-      setSavedState({ mode, allDone })
-      onStepSaved?.(mode)
-      // Refresh server data but stay open to show progression
-      router.refresh()
-    } catch {
-      setError("Network error. Please try again.")
-    } finally {
-      setSaving(null)
-    }
-  }
-
-  const loadingRequirement = activeGap ? truncateText(activeGap, 60) : "this claim"
+  const shortTitle = truncateText(activeGap, 72)
+  const hasPrev = onPrev && typeof currentIndex === "number" && currentIndex > 0
+  const hasNext = onNext && typeof currentIndex === "number" && typeof totalCount === "number" && currentIndex < totalCount - 1
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {!isControlled && requirement ? (
-        <DialogTrigger asChild>
-          <Button
-            size="sm"
-            className="hw-btn-primary gap-1.5 text-xs shrink-0"
-            aria-label={`Start Match Interview for ${activeGap}`}
-          >
-            <MessageSquareText className="h-3.5 w-3.5" />
-            Start Match Interview
-          </Button>
-        </DialogTrigger>
-      ) : !isControlled ? (
-        <div className="hw-card px-5 py-4 border-l-4 border-l-primary">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary shrink-0" />
-                <h2 className="text-sm font-semibold text-foreground">Match Interview</h2>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                I&apos;ll ask only about what HireWire can&apos;t verify yet.
-              </p>
-            </div>
-            <DialogTrigger asChild>
-              <Button
-                size="sm"
-                className="hw-btn-primary gap-1.5 text-xs shrink-0"
-                aria-label="Start Match Interview"
-              >
-                <MessageSquareText className="h-3.5 w-3.5" />
-                Start Match Interview
-              </Button>
-            </DialogTrigger>
-          </div>
-        </div>
-      ) : null}
+      {!isControlled && requirement && (
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 transition-colors"
+          aria-label={`Start Match Interview for ${activeGap}`}
+        >
+          <MessageSquareText className="h-3.5 w-3.5" />
+          Start Match Interview
+        </button>
+      )}
 
       <DialogContent
-        className="flex max-h-[92vh] w-[min(980px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault()
-          window.setTimeout(() => document.getElementById(answerTextareaId)?.focus(), 0)
+        className="flex flex-col gap-0 overflow-hidden p-0 border-border/60 shadow-2xl"
+        style={{
+          width: "min(1160px, 92vw)",
+          maxWidth: "none",
+          height: "88vh",
+          maxHeight: "88vh",
+          borderRadius: "16px",
         }}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <DialogHeader className="border-b border-border px-5 py-4 pr-10">
-          <DialogTitle className="text-base">
-            Match Interview
-            {progressLabel ? (
-              <span
-                className="ml-2 rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary"
-                aria-label={`Requirement ${progressLabel}`}
-              >
-                {progressLabel}
+        {/* ── Header ── */}
+        <div className="shrink-0 border-b border-border/60 bg-background">
+          {/* Top row: title + progress + nav + close */}
+          <div className="flex items-center gap-3 px-5 py-3.5 pr-4">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                <Sparkles className="h-3.5 w-3.5 text-white" />
+              </div>
+              <span className="text-sm font-semibold text-foreground tracking-tight">
+                Match Interview
               </span>
-            ) : null}
-          </DialogTitle>
-          <DialogDescription>
-            Confirm proof or skip claims you won&apos;t make. Your answers unlock document generation.
-            {showGenerationUnlock ? (
-              <span className="mt-1 block">Skipping is okay; HireWire will stay honest about weaker areas.</span>
-            ) : null}
-          </DialogDescription>
-        </DialogHeader>
-        {/* Post-save progression state */}
-        {savedState && (
-          <div className="flex flex-col items-center justify-center gap-5 px-8 py-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-foreground">
-                {savedState.mode === "skip"
-                  ? "Skipped. HireWire will stay conservative here."
-                  : "Confirmed."}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {savedState.allDone
-                  ? "You can now generate materials from confirmed proof."
-                  : "Moving to the next unclear point."}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {savedState.allDone ? (
-                <>
-                  <Button
-                    size="sm"
-                    className="hw-btn-primary gap-1.5"
-                    onClick={() => { setOpen(false); router.push(`/jobs/${jobId}/documents`) }}
-                  >
-                    Generate materials
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-                    Back to job
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button size="sm" className="hw-btn-primary gap-1.5" onClick={() => { setSavedState(null) }}>
-                    Next question
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-                    Return to job
-                  </Button>
-                </>
+              {progressLabel && (
+                <span className="rounded-md border border-primary/20 bg-primary/6 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                  {progressLabel}
+                </span>
               )}
             </div>
-          </div>
-        )}
 
-        {/* Main content — hidden while showing post-save state */}
-        <div className={`grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] ${savedState ? "hidden" : ""}`}>
-          <div className="min-h-0 overflow-y-auto border-b border-border bg-muted/25 px-5 py-4 lg:border-b-0 lg:border-r">
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-[11px] font-semibold uppercase text-muted-foreground">
-                Requirement
-              </p>
-              <p className="mt-1 text-[10px] font-semibold uppercase text-primary">
-                {requirementType.replace(/_/g, " ")}
-              </p>
-              <p className="mt-2 text-sm font-semibold text-foreground">{activeGap}</p>
+            {/* Prev / Next */}
+            <div className="ml-auto flex items-center gap-1">
+              {(hasPrev || hasNext) && (
+                <>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    disabled={!hasPrev}
+                    onClick={onPrev}
+                    aria-label="Previous requirement"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    disabled={!hasNext}
+                    onClick={onNext}
+                    aria-label="Next requirement"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <div className="w-px h-4 bg-border mx-1" />
+                </>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Second row: requirement short title + helper */}
+          <div className="px-5 pb-3">
+            <p className="text-[13px] font-medium text-foreground leading-snug">
+              {shortTitle}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Answer only what you can prove. HireWire will help shape it honestly.
+            </p>
+          </div>
+
+          {/* Collapsible requirement details */}
+          <button
+            className="flex w-full items-center gap-1.5 border-t border-border/50 px-5 py-2 text-left hover:bg-muted/40 transition-colors"
+            onClick={() => setDetailsOpen((v) => !v)}
+            aria-expanded={detailsOpen}
+          >
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 text-muted-foreground transition-transform duration-150",
+                detailsOpen && "rotate-180",
+              )}
+            />
+            <span className="text-[11px] font-medium text-muted-foreground">
+              View requirement details
+            </span>
+          </button>
+
+          {detailsOpen && (
+            <div className="border-t border-border/40 bg-muted/30 px-5 py-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                  {requirementType.replace(/_/g, " ")}
+                </span>
+                {requirement?.priority && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    · {requirement.priority}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-foreground leading-relaxed">{activeGap}</p>
               {requirement?.proof_needed?.length ? (
-                <p className="mt-2 text-xs text-muted-foreground">{requirement.proof_needed[0]}</p>
+                <p className="text-xs text-muted-foreground">{requirement.proof_needed[0]}</p>
               ) : null}
               {requirement?.current_proof?.length ? (
-                <div className="mt-3 rounded-md bg-muted/60 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase text-muted-foreground">Already found</p>
-                  <p className="mt-1 text-xs text-foreground">{requirement.current_proof.join(", ")}</p>
+                <div className="rounded-lg bg-background border border-border px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                    Already found
+                  </p>
+                  <p className="text-xs text-foreground">{requirement.current_proof.join(", ")}</p>
                 </div>
               ) : null}
             </div>
+          )}
+        </div>
 
-            <div className="mt-4 rounded-md border border-border bg-background p-4">
-              <p className="text-xs font-semibold text-foreground">
-                {requirement?.coach_question ?? "What should HireWire know?"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Have you done anything related to {activeGap}? A project, responsibility, tool, result, or adjacent experience all count.
-              </p>
-              <div className="mt-3 space-y-2">
-                <Textarea
-                  id={answerTextareaId}
-                  value={answer}
-                  onChange={(event) => { setAnswer(event.target.value); setCoachingNudge(null) }}
-                  placeholder="Example: I have not owned this exact tool, but I led..."
-                  className="min-h-24 text-sm"
-                />
-                {coachingNudge && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    {coachingNudge}
-                  </p>
-                )}
-                {error && <p className="text-xs text-rose-600">{error}</p>}
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    size="sm"
-                    className="hw-btn-primary gap-1.5 text-xs"
-                    disabled={saving !== null || answer.trim().length < 8}
-                    onClick={() => postCoachStep({ action: "answer", gap: activeGap, requirementId: requirement?.requirement_id, answer }, "answer")}
-                  >
-                    {saving === "answer" ? "Saving..." : "Confirm claim"}
-                  </Button>
-                  {coachingNudge && canForceSave && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                      disabled={saving !== null}
-                      onClick={() => postCoachStep({ action: "answer", gap: activeGap, requirementId: requirement?.requirement_id, answer, force_save: true }, "answer")}
-                    >
-                      {saving === "answer" ? "Saving..." : "Save anyway"}
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-xs"
-                    disabled={saving !== null}
-                    onClick={() => postCoachStep({
-                      action: "skip",
-                      gap: activeGap,
-                      requirementId: requirement?.requirement_id,
-                    }, "skip")}
-                  >
-                    {saving === "skip" ? "Skipping..." : "Skip this claim"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* ── Chat area ── */}
+        <div className="flex-1 min-h-0 relative">
           {requiresScopedSession && !coachSessionId ? (
-            <div
-              className="flex min-h-[420px] flex-col items-center justify-center gap-3 border-t border-border bg-background px-6 text-center lg:min-h-0 lg:border-t-0"
-              aria-live="polite"
-            >
+            /* Loading / error state — full area */
+            <div className="flex h-full flex-col items-center justify-center gap-4 text-center px-6">
               {sessionLoading ? (
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  Preparing your session for: {loadingRequirement}
-                </p>
+                <>
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Preparing your match interview…</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Loading context for this requirement
+                    </p>
+                  </div>
+                </>
               ) : sessionError ? (
                 <>
-                  <p className="text-sm text-muted-foreground">Could not start the session. Check your connection and try again.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Could not start the session. Check your connection and try again.
+                  </p>
                   <Button
                     size="sm"
                     variant="outline"
@@ -464,14 +373,13 @@ export function RequirementCoachModal({
                   </Button>
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">Starting session...</p>
+                <p className="text-sm text-muted-foreground">Starting session…</p>
               )}
             </div>
           ) : (
             <CoachChat
-              key={`coach-${coachSessionId ?? "adhoc"}`}
-              compact
-              className="min-h-[420px] lg:min-h-0"
+              key={`coach-${coachSessionId ?? "adhoc"}-${requirement?.requirement_id ?? "general"}`}
+              className="h-full"
               sessionId={coachSessionId ?? undefined}
               jobContext={{
                 jobId,
@@ -487,7 +395,9 @@ export function RequirementCoachModal({
                   requirement_id: requirement?.requirement_id,
                   requirement: activeGap,
                   category: requirementType,
-                  coach_question: requirement?.coach_question ?? `Have you done anything related to ${activeGap}?`,
+                  coach_question:
+                    requirement?.coach_question ??
+                    `Have you done anything related to ${activeGap}?`,
                 },
               }}
               initialMessage={
@@ -498,6 +408,34 @@ export function RequirementCoachModal({
             />
           )}
         </div>
+
+        {/* ── Footer nav strip (Skip + Next) ── */}
+        {(hasNext || onNext) && (
+          <div className="shrink-0 border-t border-border/50 bg-background/80 backdrop-blur-sm px-5 py-2.5 flex items-center justify-between">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs text-muted-foreground hover:text-foreground gap-1.5"
+              onClick={() => {
+                onStepSaved?.("skip")
+                onNext?.()
+              }}
+            >
+              <SkipForward className="h-3.5 w-3.5" />
+              Skip this requirement
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs gap-1.5"
+              disabled={!hasNext}
+              onClick={onNext}
+            >
+              Next requirement
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
