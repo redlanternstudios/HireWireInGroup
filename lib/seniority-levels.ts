@@ -69,7 +69,6 @@ const SENIOR_IC_KEYWORDS = new Set([
 
 const LEAD_KEYWORDS = new Set([
   "lead",
-  "manager",
   "lead product manager",
   "lead pm",
   "product lead",
@@ -117,10 +116,10 @@ function tokenizeTitle(title: string): string[] {
  */
 function hasLeadershipImplication(text: string): boolean {
   const normalized = normalizeTitle(text)
+  // More specific leadership indicators (not just "manager" which could be "project manager" or "product manager")
   return (
-    LEAD_KEYWORDS.has(normalized) ||
-    Array.from(MANAGEMENT_KEYWORDS).some((keyword) => normalized.includes(keyword)) ||
-    /lead|manage|direct|oversee|supervise|head of/.test(normalized)
+    /^lead\b|^team lead|^manager.*people|^director|^vp\b|^chief|manager.*team|leader|supervise/.test(normalized) ||
+    Array.from(DIRECTOR_KEYWORDS).some((keyword) => normalized.includes(keyword))
   )
 }
 
