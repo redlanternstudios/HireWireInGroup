@@ -119,6 +119,10 @@ function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntell
   );
 }
 
+function isSkippedRequirement(match: RequirementEvidenceMatch): boolean {
+  return match.proof_decision === "skipped";
+}
+
 function hasRequiredEvidenceCoverage(job: ReadinessJob): boolean {
   const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
   if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) return false;
@@ -132,16 +136,18 @@ function hasRequiredEvidenceCoverage(job: ReadinessJob): boolean {
   if (requiredMatches.length === 0) {
     return evidenceMap.requirement_matches.some(
       (m: RequirementEvidenceMatch) =>
-        (m.status === "met" || m.status === "partial") &&
-        m.matched_evidence_ids.length > 0 &&
-        usablePacketRequirementIds.has(m.requirement_id)
+        isSkippedRequirement(m) ||
+        ((m.status === "met" || m.status === "partial") &&
+          m.matched_evidence_ids.length > 0 &&
+          usablePacketRequirementIds.has(m.requirement_id))
     );
   }
   return requiredMatches.every(
     (m: RequirementEvidenceMatch) =>
-      (m.status === "met" || m.status === "partial") &&
-      m.matched_evidence_ids.length > 0 &&
-      usablePacketRequirementIds.has(m.requirement_id)
+      isSkippedRequirement(m) ||
+      ((m.status === "met" || m.status === "partial") &&
+        m.matched_evidence_ids.length > 0 &&
+        usablePacketRequirementIds.has(m.requirement_id))
   );
 }
 
@@ -154,6 +160,7 @@ function getEvidenceBlockedReasons(job: ReadinessJob): string[] {
     .filter(
       (m: RequirementEvidenceMatch) =>
         m.priority === "required" &&
+        !isSkippedRequirement(m) &&
         ((m.status === "gap" || m.status === "unknown") ||
           !packetsForResume(Array.isArray(evidenceMap.capability_packets) ? evidenceMap.capability_packets : [])
             .some(packet => String(packet.packet_id).replace(/^pkt_/, "") === m.requirement_id))
@@ -188,6 +195,7 @@ function getFirstUnresolvedRequirementId(job: ReadinessJob): string | null {
   );
 
   const isBlocking = (match: RequirementEvidenceMatch) =>
+    !isSkippedRequirement(match) &&
     (match.status === "gap" ||
       match.status === "unknown" ||
       match.status === "partial" ||
@@ -342,17 +350,17 @@ function getNextAction(
 
   if (!checklist.evidence) {
     return {
-      label: "Fix evidence",
+      label: "Prove Fit",
       href: evidenceFixHref(job),
-      description: "Add or map proof points before this job can move forward.",
+      description: "Confirm or skip the claims HireWire cannot verify yet.",
     };
   }
 
   if (!checklist.coach) {
     return {
-      label: "Start coach",
+      label: "Start Match Interview",
       href: job.id ? `/jobs/${job.id}/evidence-match` : "/coach",
-      description: "Answer or skip the coach prompts before generating materials.",
+      description: "Answer or skip the remaining fit questions before generating materials.",
     };
   }
 

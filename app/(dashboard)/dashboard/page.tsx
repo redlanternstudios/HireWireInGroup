@@ -190,10 +190,10 @@ export default async function DashboardPage() {
             <div className="min-w-0">
               <p className="hw-section-label mb-1">Resume where you left off</p>
               <h2 className="text-sm font-semibold text-foreground">
-                {reentryJob.role_title ?? "Untitled role"}
+                {reentryJob.role_title ?? "Untitled job."}
               </h2>
               <p className="text-xs text-muted-foreground">
-                {reentryJob.company_name ?? "—"}
+                {reentryJob.company_name ?? "Unknown company."}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {reentryReadiness.nextAction.description}
@@ -396,7 +396,7 @@ export default async function DashboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-foreground truncate">
-                            {job.role_title ?? "Untitled Role"}
+                            {job.role_title ?? "Untitled job."}
                           </p>
                           <Badge
                             variant="outline"
@@ -410,7 +410,7 @@ export default async function DashboardPage() {
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <p className="text-xs text-muted-foreground">
-                            {job.company_name ?? "—"}
+                            {job.company_name ?? "Unknown company."}
                           </p>
                           {gaps.length > 0 && (
                             <>

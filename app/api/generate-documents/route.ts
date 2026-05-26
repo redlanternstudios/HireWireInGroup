@@ -13,11 +13,13 @@ import {
   getEvidenceUsageRule,
   determineGenerationStrategy,
   analyzeBulletConcreteness,
+  buildConfirmedProofUsageReport,
   truthSerumAuditBullet,
   hasMetrics,
   type GenerationStrategy,
   type BulletProvenance,
   type ParagraphProvenance,
+  type ConfirmedProofUsage,
 } from "@/lib/truthserum";
 import type { EvidenceIntelligencePacket } from "@/lib/evidence/types";
 import {
@@ -304,6 +306,7 @@ function getBlockedRequiredRequirements(evidenceMap: unknown) {
   return requirementMatches
     .filter((match) => String(match.priority ?? "") === "required")
     .filter((match) => {
+      if (String(match.proof_decision ?? "") === "skipped") return false;
       const status = String(match.status ?? "unknown");
       const ids = Array.isArray(match.matched_evidence_ids)
         ? (match.matched_evidence_ids as string[])
@@ -1045,6 +1048,20 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
     claim_confidence: paragraph.cited_evidence_id ? "medium" : "low",
     unsupported_language: detectBannedPhrases(paragraph.text),
   }));
+  const fallbackConfirmedProofUsage: ConfirmedProofUsage[] =
+    buildConfirmedProofUsageReport(
+      getCapabilityPackets(jobData.evidence_map),
+      fallbackBulletProvenance,
+      fallbackParagraphProvenance,
+    );
+  const fallbackUnusedConfirmedProof = fallbackConfirmedProofUsage.filter(
+    (proof) => !proof.used,
+  );
+  fallbackQualityIssues.push(
+    ...fallbackUnusedConfirmedProof.map(
+      (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
+    ),
+  );
 
   const { error: updateError } = await supabase
     .from("jobs")
@@ -1070,6 +1087,10 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
         ...evidenceMap,
         bullet_provenance: fallbackBulletProvenance,
         paragraph_provenance: fallbackParagraphProvenance,
+        generation_trace: {
+          generated_at: new Date().toISOString(),
+          confirmed_proof_usage: fallbackConfirmedProofUsage,
+        },
       },
       generation_status: "needs_review",
       generation_error: null,
@@ -1374,6 +1395,7 @@ export async function POST(request: NextRequest) {
 
     const { job_id } = parseResult.data;
     parsedJobId = job_id;
+    const generationId = crypto.randomUUID();
     const isRetry = _retry_count > 0;
     const MAX_RETRIES = 1; // Auto-retry once if quality check fails
     const aiConfigured = isAnthropicConfigured();
@@ -1556,11 +1578,11 @@ export async function POST(request: NextRequest) {
           success: false,
           error: "capability_packets_required",
           user_message:
-            "HireWire needs structured evidence intelligence packets before generating. Update evidence or rerun analysis so requirements are matched to approved evidence.",
+            "HireWire needs confirmed proof before generating. Use Prove Fit to answer or skip the claims it cannot verify yet.",
           blocked_requirements: blockedRequirements,
           map_build_error: mapBuildError,
           next_action: {
-            label: "Resolve proof gaps",
+            label: "Prove Fit",
             href: blockedRequirements[0]?.requirement_id
               ? `/jobs/${job_id}/evidence-match?req=${encodeURIComponent(blockedRequirements[0].requirement_id)}#${requirementAnchorId(blockedRequirements[0].requirement_id)}`
               : `/jobs/${job_id}/evidence-match`,
@@ -1641,7 +1663,21 @@ export async function POST(request: NextRequest) {
         }
       : storedJobAnalysis;
 
-    // Evidence matching gate removed — generation is allowed regardless of matching_complete
+    if (canonicalRequirements.some((match) => match.proof_decision !== "skipped") && canonicalMap?.matching_complete !== true) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "prove_fit_required",
+          user_message:
+            "Run Prove Fit before generating so HireWire only uses confirmed, auto-matched, or intentionally skipped claims.",
+          next_action: {
+            label: "Prove Fit",
+            href: `/jobs/${job_id}/evidence-match`,
+          },
+        },
+        { status: 409 },
+      );
+    }
 
     // Load gap clarifications for this job (job-specific context)
     const rawGapClarifications = jobData.gap_clarifications;
@@ -2608,6 +2644,8 @@ If no issues found, return empty arrays and overall_passed: true.`,
             match_strength: packet?.matchStrength,
             match_reason: packet?.matchReason,
             evidence_strength: packet?.evidenceStrength,
+            proof_decision: packet?.proofDecision,
+            user_claim: packet?.userClaim,
             proof_snippets: packet?.proofSnippets,
             why_included: packet?.whyIncluded,
             claim_confidence: audit.score >= 80 ? "high" as const : audit.score >= 55 ? "medium" as const : "low" as const,
@@ -2631,13 +2669,21 @@ If no issues found, return empty arrays and overall_passed: true.`,
           unsupported_language: detectBannedPhrases(p.paragraph_text),
         }),
       );
+    const confirmedProofUsage: ConfirmedProofUsage[] =
+      buildConfirmedProofUsageReport(
+        capabilityPackets,
+        bulletProvenance,
+        paragraphProvenance,
+      );
+    const unusedConfirmedProof = confirmedProofUsage.filter((proof) => !proof.used);
 
     // Calculate quality score - now includes quantification safety
     const qualityPassed =
       qualityCheck.overall_passed &&
       allBannedPhrases.length === 0 &&
       weakBullets.length <= 1 &&
-      unsafeMetricsFound.length === 0; // Block if we detected invented metrics
+      unsafeMetricsFound.length === 0 &&
+      unusedConfirmedProof.length === 0; // Block if confirmed proof was dropped
 
     const qualityScore = qualityPassed
       ? 100
@@ -2649,6 +2695,14 @@ If no issues found, return empty arrays and overall_passed: true.`,
             qualityCheck.invented_claims.length * 15 -
             qualityCheck.vague_bullets.length * 5,
         );
+
+    const skippedRequirements = canonicalRequirements
+      .filter((match) => match.proof_decision === "skipped")
+      .map((match) => ({
+        requirement_id: String(match.requirement_id ?? ""),
+        requirement_text: String(match.requirement_text ?? ""),
+        skip_reason: String(match.skip_reason ?? "User skipped this claim."),
+      }));
 
     // AUTO-RETRY: If quality check fails and we haven't retried yet, regenerate
     const hasSignificantIssues =
@@ -2708,7 +2762,20 @@ If no issues found, return empty arrays and overall_passed: true.`,
           ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
             ? jobData.evidence_map as Record<string, unknown>
             : {}),
-          matching_complete: true, // Set by generate-documents so stage derivation advances past evidence_mapped
+          matching_complete: true,
+          generation_trace: {
+            generation_id: generationId,
+            created_at: new Date().toISOString(),
+            evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
+            skipped_requirements: skippedRequirements,
+            quality_flags: [
+              ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
+              ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
+              ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
+              ...unusedConfirmedProof.map((proof) => ({ type: "unused_confirmed_proof", value: proof.requirement })),
+            ],
+            confirmed_proof_usage: confirmedProofUsage,
+          },
           selected_evidence_ids: resumeEvidence.map(
             (e: { id: string }) => e.id,
           ),
@@ -2738,6 +2805,9 @@ If no issues found, return empty arrays and overall_passed: true.`,
           ...unsafeMetricsFound.map(
             (m) =>
               `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || "qualitative language"}"`,
+          ),
+          ...unusedConfirmedProof.map(
+            (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
           ),
           ...qualityCheck.invented_claims,
           ...qualityCheck.vague_bullets,
@@ -2796,6 +2866,26 @@ If no issues found, return empty arrays and overall_passed: true.`,
       generatedEvidenceMap.fit_score,
     );
 
+    void (supabase as any)
+      .from("document_generation_traces")
+      .insert({
+        generation_id: generationId,
+        user_id: userId,
+        job_id,
+        evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
+        provenance_map: {
+          bullet_provenance: bulletProvenance,
+          paragraph_provenance: paragraphProvenance,
+        },
+        quality_flags: [
+          ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
+          ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
+          ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
+        ],
+        skipped_requirements: skippedRequirements,
+      })
+      .then(() => {}, () => {});
+
     // Snapshot this generation as a new version — non-blocking
     void (async () => {
       try {
@@ -2839,6 +2929,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
         quality_score: qualityScore,
         fit_score: generatedEvidenceMap.fit_score,
         correlation_id: correlationId,
+        generation_id: generationId,
       },
     });
 

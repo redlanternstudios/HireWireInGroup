@@ -65,7 +65,7 @@ export function getNextStep(job: GuidedFlowJob): NextStep {
     return {
       type: "refresh_analysis",
       title: "Refresh this job",
-      description: "This job was analyzed before Match Builder existed. Refresh it once so HireWire can show a simple next step.",
+      description: "This job was analyzed before Prove Fit existed. Refresh it once so HireWire can show a simple next step.",
       primaryLabel: "Refresh analysis",
       secondaryLabel: "View job",
       href: base,
@@ -128,7 +128,7 @@ export function getNextStep(job: GuidedFlowJob): NextStep {
     type: "add_example",
     title: "Keep building the match",
     description: readiness.blockedReasons[0] ?? "Add one clear example so HireWire can keep moving.",
-    primaryLabel: "Open Match Builder",
+    primaryLabel: "Prove Fit",
     href: `${base}/evidence-match`,
     readiness,
     workflowStage,

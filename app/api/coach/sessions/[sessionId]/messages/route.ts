@@ -18,6 +18,18 @@ import {
 
 const MAX_PRIOR = 20
 
+function logCoachMessageError(
+  action: string,
+  error: unknown,
+  context: Record<string, unknown>,
+) {
+  console.error("[HireWire] coach message error", {
+    action,
+    ...context,
+    error: error instanceof Error ? error.message : error,
+  })
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
@@ -38,9 +50,17 @@ export async function POST(
       )
     }
 
-    const { data: session } = await supabase.from("coach_sessions")
+    const { data: session, error: sessionError } = await supabase.from("coach_sessions")
       .select("id,job_id,gap_requirement,gap_requirement_id,status")
       .eq("id", sessionId).eq("user_id", userId).maybeSingle()
+
+    if (sessionError) {
+      logCoachMessageError("load_session", sessionError, { session_id: sessionId, user_id: userId })
+      return NextResponse.json(
+        { success: false, error: "session_lookup_failed", user_message: "Could not load this session." },
+        { status: 500 }
+      )
+    }
 
     if (!session) return NextResponse.json({ success: false, error: "not_found" }, { status: 404 })
     if (session.status !== "active") {
@@ -50,8 +70,20 @@ export async function POST(
       )
     }
 
-    await supabase.from("coach_messages")
+    const { error: userMessageError } = await supabase.from("coach_messages")
       .insert({ session_id: sessionId, role: "user", content: userContent })
+
+    if (userMessageError) {
+      logCoachMessageError("insert_user_message", userMessageError, {
+        session_id: sessionId,
+        job_id: session.job_id,
+        user_id: userId,
+      })
+      return NextResponse.json(
+        { success: false, error: "message_save_failed", user_message: "Could not save your message. Please try again." },
+        { status: 500 }
+      )
+    }
 
     void handleDomainEvent({
       supabase,
@@ -74,6 +106,18 @@ export async function POST(
       supabase.from("coach_messages").select("role,content")
         .eq("session_id", sessionId).order("created_at", { ascending: true }),
     ])
+
+    if (jobResult.error || evidenceResult.error || messagesResult.error) {
+      logCoachMessageError("load_context", jobResult.error ?? evidenceResult.error ?? messagesResult.error, {
+        session_id: sessionId,
+        job_id: session.job_id,
+        user_id: userId,
+      })
+      return NextResponse.json(
+        { success: false, error: "context_load_failed", user_message: "Could not load the context for this response." },
+        { status: 500 }
+      )
+    }
 
     const job = jobResult.data
     const evidenceMap =
@@ -113,13 +157,25 @@ export async function POST(
     const draftPayload = parseEvidenceDraft(rawText)
     const cleanText = stripEvidenceDraftTag(rawText)
 
-    const { data: assistantMsg } = await supabase.from("coach_messages")
+    const { data: assistantMsg, error: assistantMessageError } = await supabase.from("coach_messages")
       .insert({ session_id: sessionId, role: "assistant", content: cleanText })
       .select("id,role,content,created_at").single()
 
+    if (assistantMessageError) {
+      logCoachMessageError("insert_assistant_message", assistantMessageError, {
+        session_id: sessionId,
+        job_id: session.job_id,
+        user_id: userId,
+      })
+      return NextResponse.json(
+        { success: false, error: "assistant_message_save_failed", user_message: "Could not save the coach response." },
+        { status: 500 }
+      )
+    }
+
     let savedDraft = null
     if (draftPayload) {
-      const { data: draft } = await supabase.from("coach_evidence_drafts")
+      const { data: draft, error: draftError } = await supabase.from("coach_evidence_drafts")
         .insert({
           session_id: sessionId,
           user_id: userId,
@@ -134,6 +190,18 @@ export async function POST(
         })
         .select("id,job_id,requirement_id,source_title,source_type,proof_snippet,confidence_level,skills,status")
         .single()
+      if (draftError) {
+        logCoachMessageError("insert_evidence_draft", draftError, {
+          session_id: sessionId,
+          job_id: session.job_id,
+          user_id: userId,
+          requirement_id: session.gap_requirement_id,
+        })
+        return NextResponse.json(
+          { success: false, error: "draft_save_failed", user_message: "The coach found proof, but could not save the draft." },
+          { status: 500 }
+        )
+      }
       savedDraft = draft ?? null
       if (savedDraft) {
         void handleDomainEvent({
@@ -151,8 +219,16 @@ export async function POST(
       }
     }
 
-    await supabase.from("coach_sessions")
+    const { error: sessionUpdateError } = await supabase.from("coach_sessions")
       .update({ updated_at: new Date().toISOString() }).eq("id", sessionId)
+
+    if (sessionUpdateError) {
+      logCoachMessageError("touch_session", sessionUpdateError, {
+        session_id: sessionId,
+        job_id: session.job_id,
+        user_id: userId,
+      })
+    }
 
     return NextResponse.json({
       message: assistantMsg ?? { role: "assistant", content: cleanText },

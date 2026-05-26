@@ -15,7 +15,13 @@
     "test:e2e:updownstream": "tsx tests/updownstream-e2e.ts",
     "test:context": "tsx tests/context-engine.test.ts",
     "test:ai": "tsx tests/ai-workflows-smoke.ts",
-    "test:e2e:apply": "playwright test tests/e2e/apply-flow.spec.ts"
+    "test:e2e:apply": "playwright test tests/e2e/apply-flow.spec.ts",
+    "agent:protected": "node scripts/agent/protected-file-check.mjs",
+    "agent:preflight": "node scripts/agent/preflight.mjs",
+    "agent:dead-ui": "node scripts/agent/dead-ui-check.mjs",
+    "agent:handoff": "node scripts/agent/handoff.mjs",
+    "agent:new-task": "node scripts/agent/new-task.mjs",
+    "agent:verify": "npm run typecheck && npm run lint && npm run build"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.0",

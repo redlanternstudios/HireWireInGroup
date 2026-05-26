@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "currentRun": {
+    "id": "prove-fit-autonomous-builder-convergence-2026-05-25",
+    "startedAt": "2026-05-25T00:00:00Z",
+    "taskId": "prove-fit-autonomous-builder-convergence",
+    "status": "verified",
+    "commands": [
+      {
+        "command": "npm run agent:protected",
+        "status": "pass"
+      },
+      {
+        "command": "npm run agent:preflight",
+        "status": "pass"
+      },
+      {
+        "command": "npm run agent:dead-ui",
+        "status": "pass"
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "pass"
+      },
+      {
+        "command": "npm run lint",
+        "status": "pass"
+      },
+      {
+        "command": "npm run build",
+        "status": "pass"
+      },
+      {
+        "command": "migration/package override hardening review",
+        "status": "pass",
+        "notes": "Added migration backfill columns/unique index for existing partial tables, moved quality override event before accept update, and logged Prove Fit decision upsert failures."
+      },
+      {
+        "command": "supabase db query --linked --file supabase/migrations/20260524090000_prove_fit_v0.sql",
+        "status": "pass",
+        "notes": "Applied Prove Fit migration to linked RedLantern Studios project endovljmaudnxdzdapmf."
+      },
+      {
+        "command": "supabase migration repair 20260524090000 --status applied --linked",
+        "status": "pass",
+        "notes": "Marked the directly applied migration version as applied in remote migration history."
+      },
+      {
+        "command": "Playwright staging smoke: Prove Fit answer, skip, quality override",
+        "status": "pass",
+        "notes": "Confirmed answer and skip decisions in prove_fit_decisions; confirmed prove_fit_decision_recorded, package_quality_override, and package_reviewed rows in domain_events."
+      }
+    ],
+    "changedFiles": [
+      ".agent/START_HERE.md",
+      ".agent/WORKSPACE_TRIAGE.md",
+      ".agent/dead-ui-allowlist.json",
+      ".agent/policy.json",
+      ".agent/run.json",
+      ".agent/task.json",
+      ".claude/",
+      ".github/workflows/agent-gates.yml",
+      "CLAUDE.md",
+      "KEYMON_CLAUDE_VSCODE_SETUP_PROMPT.md",
+      "MEMORY.md",
+      "app/(dashboard)/dashboard/page.tsx",
+      "app/(dashboard)/jobs/[id]/GenerateButton.tsx",
+      "app/(dashboard)/jobs/[id]/evidence-match/page.tsx",
+      "app/(dashboard)/jobs/[id]/page.tsx",
+      "app/api/generate-documents/route.ts",
+      "app/api/jobs/[id]/coach-step/route.ts",
+      "components/ReadinessChecklist.tsx",
+      "components/coach/GapCoachDrawer.tsx",
+      "components/coach/GuidedRequirementCoachFlow.tsx",
+      "components/documents/ApplicationPackagePreview.tsx",
+      "docs/CORE_JOURNEY_MAP.md",
+      "lib/actions/package-review.ts",
+      "lib/analyze/analyze-job-core.ts",
+      "lib/audit.ts",
+      "lib/canonical-evidence.ts",
+      "lib/canonical-evidence.test.ts",
+      "lib/coach/claim-validator.ts",
+      "lib/domain-events/event-types.ts",
+      "lib/domain-events/invalidation-map.ts",
+      "lib/evidence/buildEvidenceMapForJob.ts",
+      "lib/evidence/mapConfirmedEvidenceToRequirement.ts",
+      "lib/evidence/types.ts",
+      "lib/job-workflow.ts",
+      "lib/readiness.ts",
+      "lib/readiness/evaluator.ts",
+      "lib/truthserum.ts",
+      "lib/truthserum.test.ts",
+      "lib/workflow/get-next-step.ts",
+      "memory/",
+      "package.json",
+      "scripts/agent/",
+      "supabase/migrations/20260524090000_prove_fit_v0.sql",
+      "tests/coach-governance.test.ts"
+    ],
+    "knownRisks": [
+      "Remote migration history has unrelated drift: local May 21 migrations are pending remotely and one remote 20260525015751 migration is not present locally.",
+      "CI workflow has been added and still needs to run on the opened GitHub PR.",
+      "Domain event handling intentionally swallows persistence errors, so override event writes should be confirmed in Supabase during staging validation."
+    ]
+  }
+}
