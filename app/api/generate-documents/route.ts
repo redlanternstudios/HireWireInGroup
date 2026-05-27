@@ -59,6 +59,7 @@ import {
   mirrorClaimVerdicts,
   validateGeneratedClaims,
 } from "@/lib/context-engine";
+import { recordUsage } from "@/lib/paywall/usage";
 
 // Helper for retry with exponential backoff (handles 429 rate limits)
 async function withRetry<T>(
@@ -2087,6 +2088,12 @@ KEEP IT SPECIFIC:
 - Preserve industry: "B2B fintech" not "software"
 
 Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to a packet.`,
+      }, {
+        route: "app/api/generate-documents",
+        operation: "resume_generation",
+        userId,
+        jobId: job_id,
+        metadata: { generation_id: generationId, correlation_id: correlationId },
       }),
     );
     // Step 2.5: PRE-GENERATION ENHANCEMENT PASS
@@ -2185,6 +2192,12 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
 - Never say "I am excited to apply" or "I would be thrilled"
 - Do not mention facts, credentials, metrics, systems, or scope absent from packets
 - 3-4 paragraphs total`,
+      }, {
+        route: "app/api/generate-documents",
+        operation: "cover_letter_generation",
+        userId,
+        jobId: job_id,
+        metadata: { generation_id: generationId, correlation_id: correlationId },
       }),
     );
     // Build final formatted documents - Premium Clean Minimalist format
@@ -2599,6 +2612,12 @@ Return a JSON object with these exact fields:
 - improvement_suggestions: array of strings (suggestions to improve)
 
 If no issues found, return empty arrays and overall_passed: true.`,
+        }, {
+          route: "app/api/generate-documents",
+          operation: "quality_check_generation",
+          userId,
+          jobId: job_id,
+          metadata: { generation_id: generationId, correlation_id: correlationId },
         }),
       );
     } catch (qualityCheckError) {
@@ -2735,95 +2754,117 @@ If no issues found, return empty arrays and overall_passed: true.`,
     }
 
     // Update the job with generated materials
-    const { error: updateError } = await supabase
+    console.error("[HireWire] Document persistence diagnostic:", {
+      job_id,
+      user_id: userId,
+      formattedResume_length: formattedResume?.length ?? null,
+      formattedResume_preview: formattedResume?.substring(0, 100) ?? null,
+      formattedCoverLetter_length: formattedCoverLetter?.length ?? null,
+      formattedCoverLetter_preview: formattedCoverLetter?.substring(0, 100) ?? null,
+    });
+
+    const updatePayload = {
+      status: qualityPassed ? "ready" : "needs_review",
+      generated_resume: formattedResume,
+      generated_cover_letter: formattedCoverLetter,
+      fit:
+        generatedEvidenceMap.fit_score >= 70
+          ? "HIGH"
+          : generatedEvidenceMap.fit_score >= 40
+            ? "MEDIUM"
+            : "LOW",
+      score: generatedEvidenceMap.fit_score,
+      score_reasoning: {
+        rationale: generatedEvidenceMap.fit_rationale,
+        gaps: generatedEvidenceMap.gaps,
+        strategy,
+        strategy_reasoning: strategyReasoning,
+        requirement_coverage: generatedEvidenceMap.requirement_coverage,
+      },
+      score_strengths: generatedEvidenceMap.matched_skills,
+      score_gaps: generatedEvidenceMap.gaps,
+      resume_strategy: strategy,
+      evidence_map: {
+        ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
+          ? jobData.evidence_map as Record<string, unknown>
+          : {}),
+        matching_complete: true,
+        generation_trace: {
+          generation_id: generationId,
+          created_at: new Date().toISOString(),
+          evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
+          skipped_requirements: skippedRequirements,
+          quality_flags: [
+            ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
+            ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
+            ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
+            ...unusedConfirmedProof.map((proof) => ({ type: "unused_confirmed_proof", value: proof.requirement })),
+          ],
+          confirmed_proof_usage: confirmedProofUsage,
+        },
+        selected_evidence_ids: resumeEvidence.map(
+          (e: { id: string }) => e.id,
+        ),
+        bullet_provenance: bulletProvenance,
+        paragraph_provenance: paragraphProvenance,
+        blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({
+          id: e.id,
+          title: e.source_title,
+          reason: getEvidenceUsageRule(e),
+        })),
+      },
+      generation_status: qualityPassed ? "ready" : "needs_review",
+      generation_error: null,
+      scored_at: new Date().toISOString(),
+      generation_timestamp: new Date().toISOString(),
+      generation_quality_score: qualityScore,
+      resume_format: resumeFormatRecommendation.format,
+      resume_font: resumeFormatRecommendation.font,
+      format_recommendation_reason: resumeFormatRecommendation.reason,
+      generation_quality_issues: [
+        ...allBannedPhrases.map((p) => `Banned phrase: "${p}"`),
+        ...vaguePatterns.map((p) => `Vague pattern: "${p}"`),
+        ...weakBullets.map(
+          (b: ConcreteBulletAnalysis) =>
+            `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`,
+        ),
+        ...unsafeMetricsFound.map(
+          (m) =>
+            `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || "qualitative language"}"`,
+        ),
+        ...unusedConfirmedProof.map(
+          (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
+        ),
+        ...qualityCheck.invented_claims,
+        ...qualityCheck.vague_bullets,
+        ...qualityCheck.ai_filler,
+      ],
+      quality_passed: qualityPassed,
+      // Voice integrity (columns confirmed in schema)
+      voice_mode: voiceMode,
+      voice_profile_snapshot: originalVoiceProfile ?? undefined,
+      voice_drift_result: voiceDriftResult ?? undefined,
+      governance_version: "1.0.0",
+      governance_passed: true,
+      governance_drift_score: driftResult.score,
+    };
+
+    const updateResult = await supabase
       .from("jobs")
-      .update({
-        status: qualityPassed ? "ready" : "needs_review",
-        generated_resume: formattedResume,
-        generated_cover_letter: formattedCoverLetter,
-        fit:
-          generatedEvidenceMap.fit_score >= 70
-            ? "HIGH"
-            : generatedEvidenceMap.fit_score >= 40
-              ? "MEDIUM"
-              : "LOW",
-        score: generatedEvidenceMap.fit_score,
-        score_reasoning: {
-          rationale: generatedEvidenceMap.fit_rationale,
-          gaps: generatedEvidenceMap.gaps,
-          strategy,
-          strategy_reasoning: strategyReasoning,
-          requirement_coverage: generatedEvidenceMap.requirement_coverage,
-        },
-        score_strengths: generatedEvidenceMap.matched_skills,
-        score_gaps: generatedEvidenceMap.gaps,
-        resume_strategy: strategy,
-        evidence_map: {
-          ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
-            ? jobData.evidence_map as Record<string, unknown>
-            : {}),
-          matching_complete: true,
-          generation_trace: {
-            generation_id: generationId,
-            created_at: new Date().toISOString(),
-            evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
-            skipped_requirements: skippedRequirements,
-            quality_flags: [
-              ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
-              ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
-              ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
-              ...unusedConfirmedProof.map((proof) => ({ type: "unused_confirmed_proof", value: proof.requirement })),
-            ],
-            confirmed_proof_usage: confirmedProofUsage,
-          },
-          selected_evidence_ids: resumeEvidence.map(
-            (e: { id: string }) => e.id,
-          ),
-          bullet_provenance: bulletProvenance,
-          paragraph_provenance: paragraphProvenance,
-          blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({
-            id: e.id,
-            title: e.source_title,
-            reason: getEvidenceUsageRule(e),
-          })),
-        },
-        generation_status: qualityPassed ? "ready" : "needs_review",
-        generation_error: null,
-        scored_at: new Date().toISOString(),
-        generation_timestamp: new Date().toISOString(),
-        generation_quality_score: qualityScore,
-        resume_format: resumeFormatRecommendation.format,
-        resume_font: resumeFormatRecommendation.font,
-        format_recommendation_reason: resumeFormatRecommendation.reason,
-        generation_quality_issues: [
-          ...allBannedPhrases.map((p) => `Banned phrase: "${p}"`),
-          ...vaguePatterns.map((p) => `Vague pattern: "${p}"`),
-          ...weakBullets.map(
-            (b: ConcreteBulletAnalysis) =>
-              `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`,
-          ),
-          ...unsafeMetricsFound.map(
-            (m) =>
-              `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || "qualitative language"}"`,
-          ),
-          ...unusedConfirmedProof.map(
-            (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
-          ),
-          ...qualityCheck.invented_claims,
-          ...qualityCheck.vague_bullets,
-          ...qualityCheck.ai_filler,
-        ],
-        quality_passed: qualityPassed,
-        // Voice integrity (columns confirmed in schema)
-        voice_mode: voiceMode,
-        voice_profile_snapshot: originalVoiceProfile ?? undefined,
-        voice_drift_result: voiceDriftResult ?? undefined,
-        governance_version: "1.0.0",
-        governance_passed: true,
-        governance_drift_score: driftResult.score,
-      })
+      .update(updatePayload)
       .eq("id", job_id)
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .select("id, generated_resume, generated_cover_letter");
+
+    const { error: updateError, data: updateData } = updateResult;
+
+    console.error("[HireWire] Document update result:", {
+      updateError: updateError ? { message: updateError.message, code: updateError.code, status: (updateError as any).status } : null,
+      updateData_isArray: Array.isArray(updateData),
+      updateData_length: Array.isArray(updateData) ? updateData.length : null,
+      firstRecord: Array.isArray(updateData) ? (updateData[0] as any) : (updateData as any),
+      firstRecord_resumeLength: Array.isArray(updateData) ? (updateData[0] as any)?.generated_resume?.length : (updateData as any)?.generated_resume?.length,
+    });
 
     // Optional provenance/voice columns — swallow errors in envs where they aren't yet migrated
     void supabase
@@ -3025,6 +3066,18 @@ If no issues found, return empty arrays and overall_passed: true.`,
           usage_reset_at: needsReset ? firstOfMonth : userData?.usage_reset_at,
         })
         .eq("id", userId);
+
+      void recordUsage(supabase, {
+        userId,
+        resourceType: "document_generation",
+        metadata: {
+          job_id,
+          generation_id: generationId,
+          correlation_id: correlationId,
+          quality_passed: qualityPassed,
+          strategy,
+        },
+      });
     }
 
     // Update job analysis with matched evidence
