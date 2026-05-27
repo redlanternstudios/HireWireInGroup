@@ -40,6 +40,24 @@ function buildEvidenceText(evidence: EvidenceCandidate): string {
     .join(" ")
 }
 
+function buildSeniorityRequirementText(requirement: string, seniorityLevel?: string | null): string {
+  const seniority = typeof seniorityLevel === "string" ? seniorityLevel.trim() : ""
+  if (!seniority) return requirement
+  const normalizedRequirement = requirement.toLowerCase()
+  const normalizedSeniority = seniority.toLowerCase()
+  if (normalizedRequirement.includes(normalizedSeniority)) return requirement
+  return `${seniority} ${requirement}`
+}
+
+function buildEvidenceSeniorityText(evidence: EvidenceCandidate): string {
+  return [
+    evidence.role_name,
+    evidence.source_title,
+  ]
+    .filter(Boolean)
+    .join(" ")
+}
+
 function calculateTokenOverlap(requirementTokens: string[], evidenceTokens: string[]): number {
   if (requirementTokens.length === 0) return 0
   const evidenceSet = new Set(evidenceTokens)
@@ -101,6 +119,10 @@ export function matchRequirementToEvidence(params: {
 }): RequirementEvidenceMatch {
   const normalizedRequirement = normalizeRequirement(params.requirement)
   const requirementTokens = tokenize(params.requirement)
+  const seniorityRequirementText = buildSeniorityRequirementText(
+    params.requirement,
+    params.seniorityLevel
+  )
   const scored = params.evidenceCandidates
     .map(evidence => {
       const evidenceText = buildEvidenceText(evidence)
@@ -117,8 +139,8 @@ export function matchRequirementToEvidence(params: {
 
       // Check for seniority mismatch
       const seniorityComparison = compareSeniorityLevels(
-        params.requirement,
-        evidence.source_title ?? ""
+        seniorityRequirementText,
+        buildEvidenceSeniorityText(evidence)
       )
       const hasSeniorityGap = seniorityComparison.gap_type === "seniority_gap_up"
 
@@ -149,7 +171,7 @@ export function matchRequirementToEvidence(params: {
 
   // Detect risk flags
   const riskFlags: string[] = []
-  if (scored.length > 0 && scored[0]?.hasSeniorityGap) {
+  if (scored.some(item => item.hasSeniorityGap)) {
     riskFlags.push("seniority_mismatch")
   }
 

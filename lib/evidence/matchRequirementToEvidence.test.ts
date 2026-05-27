@@ -48,6 +48,24 @@ describe("matchRequirementToEvidence", () => {
       confidence_level: "medium",
       is_user_approved: true,
     },
+    {
+      id: "7",
+      source_title: "Technical Product Manager",
+      source_type: "work_experience",
+      role_name: "Technical Product Manager",
+      responsibilities: ["Owned product roadmap and collaborated with engineering"],
+      confidence_level: "high",
+      is_user_approved: true,
+    },
+    {
+      id: "8",
+      source_title: "Lead Product Manager",
+      source_type: "work_experience",
+      role_name: "Lead Product Manager",
+      responsibilities: ["Led product strategy across a cross-functional team"],
+      confidence_level: "high",
+      is_user_approved: true,
+    },
   ]
 
   it("matches B.S. Computer Science to Bachelor’s degree in Computer Science", () => {
@@ -108,5 +126,29 @@ describe("matchRequirementToEvidence", () => {
     })
     assert.equal(result.status, "gap")
     assert.equal(result.matched_evidence_ids.length, 0)
+  })
+
+  it("flags seniority mismatch when job seniority exceeds matching evidence role level", () => {
+    const result = matchRequirementToEvidence({
+      requirement: "Product roadmap ownership",
+      seniorityLevel: "Lead",
+      priority: "required" as RequirementPriority,
+      evidenceCandidates: [evidenceCandidates[6]],
+    })
+
+    assert.equal(result.status, "met")
+    assert.ok(result.riskFlags?.includes("seniority_mismatch"))
+  })
+
+  it("does not flag seniority mismatch when matched evidence is at the required level", () => {
+    const result = matchRequirementToEvidence({
+      requirement: "Product strategy leadership",
+      seniorityLevel: "Lead",
+      priority: "required" as RequirementPriority,
+      evidenceCandidates: [evidenceCandidates[7]],
+    })
+
+    assert.equal(result.status, "met")
+    assert.ok(!result.riskFlags?.includes("seniority_mismatch"))
   })
 })

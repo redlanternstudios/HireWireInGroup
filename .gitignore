@@ -23,6 +23,7 @@ test_run.log
 tsc_output.txt
 tests/*.log
 test-results/
+.agent/receipts/
 
 # env files
 .env*

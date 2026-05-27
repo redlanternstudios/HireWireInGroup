@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import type { DomainEventInput, DomainEvent } from "./event-types";
 import { relayToAutomation } from "./relay-to-automation";
+import { writeDomainEventReceipt } from "@/lib/receipts";
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -102,6 +103,7 @@ async function writeEvent(
     });
 
     if (!domainError) {
+      void writeDomainEventReceipt(supabase, event, "domain_event.persisted");
       void relayToAutomation(event);
       return;
     }
@@ -126,6 +128,8 @@ async function writeEvent(
       },
       created_at: event.timestamp,
     });
+
+    void writeDomainEventReceipt(supabase, event, "domain_event.fallback_persisted");
 
     // Relay to Zapier/MCP automation after fallback persistence too (non-blocking)
     void relayToAutomation(event);

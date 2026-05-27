@@ -142,7 +142,7 @@ function allowedUsageFromEvidence(evidence: Record<string, unknown>[]): Evidence
 }
 
 function buildRiskFlags(match: RequirementEvidenceMatch, evidence: Record<string, unknown>[]): string[] {
-  const flags = new Set<string>()
+  const flags = new Set<string>(match.riskFlags ?? [])
   if (match.proof_decision === "skipped") flags.add("user_skipped")
   if (match.status === "gap") flags.add("missing_evidence")
   if (match.status === "partial") flags.add("partial_match")
@@ -195,7 +195,10 @@ function mergeExistingMatch(
     reasoning: hasConfirmedEvidence
       ? existingMatch.reasoning || "Includes user-confirmed evidence mapped through the coach."
       : nextMatch.reasoning,
-    riskFlags: existingMatch.riskFlags,
+    riskFlags: Array.from(new Set([
+      ...(nextMatch.riskFlags ?? []),
+      ...(existingMatch.riskFlags ?? []),
+    ])),
     proof_decision: existingMatch.proof_decision ?? (
       status === "met" && matched_evidence_ids.length > 0 ? "auto_mapped" : nextMatch.proof_decision
     ),

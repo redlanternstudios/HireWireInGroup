@@ -11,6 +11,7 @@ import {
   Clock,
   Briefcase,
   Zap,
+  ShieldCheck,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -143,12 +144,64 @@ export default async function LogsPage() {
   if (!user) redirect("/login");
 
   // Primary: domain_events (canonical event store)
-  const { data: domainEvents } = await supabase
-    .from("domain_events")
-    .select("id, event_type, job_id, severity, payload, metadata, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const [
+    domainEventsResult,
+    receiptsResult,
+    aiAuditResult,
+    usageResult,
+    governanceResult,
+    qualityResult,
+  ] = await Promise.all([
+    supabase
+      .from("domain_events")
+      .select("id, event_type, job_id, severity, payload, metadata, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("hirewire_receipts")
+      .select("id, receipt_id, receipt_type, action, job_id, domain_event_id, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("ai_generation_audit_logs")
+      .select("id, request_id, job_id, route, operation, provider, model, status, latency_ms, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("usage_records")
+      .select("id, resource_type, quantity, occurred_at, metadata")
+      .eq("user_id", user.id)
+      .order("occurred_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("generation_governance_runs")
+      .select("id, job_id, governance_passed, drift_score, failed_at_phase, evaluated_at")
+      .eq("user_id", user.id)
+      .order("evaluated_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("generation_quality_checks")
+      .select("id, job_id, passed, issues_count, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
+  ]);
+
+  const domainEvents = domainEventsResult.data ?? [];
+  const receipts = receiptsResult.data ?? [];
+  const aiAudits = aiAuditResult.data ?? [];
+  const usageRecords = usageResult.data ?? [];
+  const governanceRuns = governanceResult.data ?? [];
+  const qualityChecks = qualityResult.data ?? [];
+  const proofArtifactCount =
+    receipts.length +
+    aiAudits.length +
+    usageRecords.length +
+    governanceRuns.length +
+    qualityChecks.length;
 
   type EventRow = {
     id: string | number;
@@ -257,6 +310,12 @@ export default async function LogsPage() {
         <div className="hw-stat">
           <span className="hw-stat-value text-rose-500">{errorCount}</span>
           <span className="hw-stat-label">Errors</span>
+        </div>
+        <div className="hw-stat">
+          <span className="hw-stat-value text-emerald-600">
+            {proofArtifactCount}
+          </span>
+          <span className="hw-stat-label">Proof artifacts</span>
         </div>
       </div>
 
@@ -369,6 +428,66 @@ export default async function LogsPage() {
                     </p>
                     <p className="text-[11px] text-muted-foreground">
                       {cat.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <h2 className="hw-section-label mb-2">Proof Artifacts</h2>
+            <div className="hw-panel p-4 space-y-3">
+              {[
+                {
+                  label: "Receipts",
+                  value: receipts.length,
+                  detail: receipts[0]?.receipt_type ?? "No receipts yet",
+                },
+                {
+                  label: "AI audits",
+                  value: aiAudits.length,
+                  detail: aiAudits[0]
+                    ? `${aiAudits[0].operation} · ${aiAudits[0].status}`
+                    : "No AI audits yet",
+                },
+                {
+                  label: "Usage records",
+                  value: usageRecords.length,
+                  detail: usageRecords[0]?.resource_type ?? "No usage yet",
+                },
+                {
+                  label: "Governance",
+                  value: governanceRuns.length,
+                  detail: governanceRuns[0]
+                    ? governanceRuns[0].governance_passed
+                      ? "Latest passed"
+                      : `Latest failed ${governanceRuns[0].failed_at_phase ?? "governance"}`
+                    : "No governance yet",
+                },
+                {
+                  label: "Quality checks",
+                  value: qualityChecks.length,
+                  detail: qualityChecks[0]
+                    ? qualityChecks[0].passed
+                      ? "Latest passed"
+                      : `${qualityChecks[0].issues_count ?? 0} issues`
+                    : "No quality checks yet",
+                },
+              ].map((item) => (
+                <div key={item.label} className="flex items-start gap-2.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-foreground">
+                        {item.label}
+                      </p>
+                      <span className="text-xs font-semibold text-emerald-700">
+                        {item.value}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {item.detail}
                     </p>
                   </div>
                 </div>

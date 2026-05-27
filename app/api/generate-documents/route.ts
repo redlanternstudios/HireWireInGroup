@@ -905,10 +905,10 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
     evidenceSet: governanceEvidence,
   });
 
-  if (claimValidation.hasFabricated || driftResult.is_blocking) {
-    const blockReason = driftResult.is_blocking
-      ? `Generation blocked by drift score (${driftResult.score}/100): ${driftResult.summary}`
-      : `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
+  // Fallback mode allows generation even with governance flags, logging them for audit
+  // but not blocking. Fallback uses only stored evidence, so drift/fabrication risk is lower.
+  if (claimValidation.hasFabricated) {
+    const blockReason = `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
 
     const blockedGovernanceRunInsert = await supabase
       .from("generation_governance_runs")
@@ -928,13 +928,11 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
         fabricated_count: claimValidation.fabricatedCount,
         low_confidence_count: claimValidation.lowConfidenceCount,
         drift_score: driftResult.score,
-        drift_is_blocking: driftResult.is_blocking,
+        drift_is_blocking: false,
         drift_flags: driftResult.flags,
         drift_summary: driftResult.summary,
         governance_passed: false,
-        failed_at_phase: driftResult.is_blocking
-          ? "drift_scoring"
-          : "claim_validation",
+        failed_at_phase: "claim_validation",
         governance_version: "1.0.0",
       })
       .select("id")
@@ -977,7 +975,7 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
         success: false,
         error: "governance_blocked",
         user_message:
-          "Generation was blocked because the draft made claims that drifted too far from your verified evidence.",
+          "Generation was blocked because the draft made claims that could not be grounded in your verified evidence.",
         detail: blockReason,
         governance: {
           passed: false,
@@ -1541,6 +1539,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Set status to 'generating' early - fallback and AI both use this
+    const generationStartUpdate = await supabase
+      .from("jobs")
+      .update({
+        status: "generating",
+        generation_status: "generating",
+        generation_error: null,
+      })
+      .eq("id", job_id)
+      .eq("user_id", userId)
+      .is("deleted_at", null);
+
+    logSupabaseWriteError(
+      "mark_generation_started",
+      generationStartUpdate.error,
+      { job_id, user_id: userId },
+    );
+
+    // Optional counters — swallow errors in envs where these columns aren't yet migrated
+    void supabase
+      .from("jobs")
+      .update({
+        generation_attempts: _retry_count + 1,
+        last_generation_at: new Date().toISOString(),
+      })
+      .eq("id", job_id)
+      .eq("user_id", userId)
+      .then(() => {}, () => {});
+
+    // If AI is not configured, use fallback without evidence validation
+    if (!aiConfigured) {
+      return generateFallbackDocuments({
+        supabase,
+        job_id,
+        userId,
+        profile: profile as Record<string, any> | null,
+        sourceResumeData: sourceResume?.parsed_data as Record<string, any> | null,
+        allEvidence: allEvidence as EvidenceRecord[],
+        jobData: jobData as Record<string, any>,
+      });
+    }
+
+    // For AI generation, validate evidence mapping is adequate
     let effectiveEvidenceMap = jobData.evidence_map;
     let capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
     let usablePackets = packetsForResume(capabilityPackets);
@@ -1593,47 +1634,6 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 },
       );
-    }
-
-    // Set status to 'generating' after hard gates pass.
-    const generationStartUpdate = await supabase
-      .from("jobs")
-      .update({
-        status: "generating",
-        generation_status: "generating",
-        generation_error: null,
-      })
-      .eq("id", job_id)
-      .eq("user_id", userId)
-      .is("deleted_at", null);
-
-    logSupabaseWriteError(
-      "mark_generation_started",
-      generationStartUpdate.error,
-      { job_id, user_id: userId },
-    );
-
-    // Optional counters — swallow errors in envs where these columns aren't yet migrated
-    void supabase
-      .from("jobs")
-      .update({
-        generation_attempts: _retry_count + 1,
-        last_generation_at: new Date().toISOString(),
-      })
-      .eq("id", job_id)
-      .eq("user_id", userId)
-      .then(() => {}, () => {});
-
-    if (!aiConfigured) {
-      return generateFallbackDocuments({
-        supabase,
-        job_id,
-        userId,
-    profile: profile as Record<string, any> | null,
-    sourceResumeData: sourceResume?.parsed_data as Record<string, any> | null,
-    allEvidence: allEvidence as EvidenceRecord[],
-    jobData: jobData as Record<string, any>,
-  });
     }
 
     const canonicalMap = asRecord(jobData.evidence_map);

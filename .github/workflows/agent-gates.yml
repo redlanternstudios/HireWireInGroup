@@ -32,5 +32,16 @@ jobs:
       - name: Agent dead UI gate
         run: npm run agent:dead-ui
 
+      - name: Agent receipt gate
+        run: npm run agent:receipts
+
       - name: Typecheck, lint, and build
         run: npm run agent:verify
+
+      - name: Upload receipt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hirewire-agent-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .agent/receipts
+          if-no-files-found: warn

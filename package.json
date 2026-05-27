@@ -19,6 +19,8 @@
     "agent:protected": "node scripts/agent/protected-file-check.mjs",
     "agent:preflight": "node scripts/agent/preflight.mjs",
     "agent:dead-ui": "node scripts/agent/dead-ui-check.mjs",
+    "agent:receipts": "node scripts/agent/receipt-gate.mjs",
+    "agent:proof-pass": "node scripts/agent/proof-pass.mjs",
     "agent:handoff": "node scripts/agent/handoff.mjs",
     "agent:new-task": "node scripts/agent/new-task.mjs",
     "agent:verify": "npm run typecheck && npm run lint && npm run build"

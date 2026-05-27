@@ -5,6 +5,7 @@ import {
   streamText as aiStreamText,
 } from "ai"
 import type { z } from "zod"
+import { writeAiAuditEvent } from "./audit"
 
 const DEFAULT_OPENAI_MODEL = "gpt-4o"
 const DEFAULT_OPENAI_FAST_MODEL = "gpt-4o-mini"
@@ -34,6 +35,9 @@ type StreamTextOptions = Parameters<typeof aiStreamText>[0]
 type AiTelemetry = {
   route: string
   operation: string
+  userId?: string | null
+  jobId?: string | null
+  metadata?: Record<string, unknown>
 }
 
 type ProviderConfig =
@@ -214,6 +218,8 @@ export async function generateText(
   const startedAt = Date.now()
   const status = getAiGatewayStatus()
   const source = telemetry?.route ?? inferCallerSource()
+  const requestId = generateAiRequestId()
+  const requestedModel = getRequestedModelName(options)
   try {
     const result = await aiGenerateText({
       ...options,
@@ -226,15 +232,49 @@ export async function generateText(
       success: true,
       latencyMs: Date.now() - startedAt,
     })
+    void writeAiAuditEvent({
+      requestId,
+      userId: telemetry?.userId ?? null,
+      jobId: telemetry?.jobId ?? null,
+      route: source,
+      operation: telemetry?.operation ?? "unknown",
+      requestedModel,
+      selectedProvider: status.provider,
+      selectedModel: status.model,
+      keySource: status.keySource,
+      timeoutMs: status.timeoutMs,
+      success: true,
+      latencyMs: Date.now() - startedAt,
+      usage: readAiUsage(result),
+      finishReason: readFinishReason(result),
+      metadata: telemetry?.metadata,
+    })
     return result
   } catch (error) {
+    const failureReason = error instanceof Error ? error.message : "Unknown AI gateway error"
     recordAiTelemetry({
       ...status,
       ...telemetry,
       route: source,
       success: false,
       latencyMs: Date.now() - startedAt,
-      failureReason: error instanceof Error ? error.message : "Unknown AI gateway error",
+      failureReason,
+    })
+    void writeAiAuditEvent({
+      requestId,
+      userId: telemetry?.userId ?? null,
+      jobId: telemetry?.jobId ?? null,
+      route: source,
+      operation: telemetry?.operation ?? "unknown",
+      requestedModel,
+      selectedProvider: status.provider,
+      selectedModel: status.model,
+      keySource: status.keySource,
+      timeoutMs: status.timeoutMs,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      failureReason,
+      metadata: telemetry?.metadata,
     })
     throw error
   }
@@ -308,6 +348,8 @@ export function streamText(
   const startedAt = Date.now()
   const status = getAiGatewayStatus()
   const source = telemetry?.route ?? inferCallerSource()
+  const requestId = generateAiRequestId()
+  const requestedModel = getRequestedModelName(options)
   try {
     const originalOnFinish = options.onFinish
     return aiStreamText({
@@ -321,20 +363,87 @@ export function streamText(
           success: true,
           latencyMs: Date.now() - startedAt,
         })
+        void writeAiAuditEvent({
+          requestId,
+          userId: telemetry?.userId ?? null,
+          jobId: telemetry?.jobId ?? null,
+          route: source,
+          operation: telemetry?.operation ?? "unknown",
+          requestedModel,
+          selectedProvider: status.provider,
+          selectedModel: status.model,
+          keySource: status.keySource,
+          timeoutMs: status.timeoutMs,
+          success: true,
+          latencyMs: Date.now() - startedAt,
+          usage: readAiUsage(event),
+          finishReason: readFinishReason(event),
+          metadata: telemetry?.metadata,
+        })
         await originalOnFinish?.(event)
       },
     })
   } catch (error) {
+    const failureReason = error instanceof Error ? error.message : "Unknown AI gateway error"
     recordAiTelemetry({
       ...status,
       ...telemetry,
       route: source,
       success: false,
       latencyMs: Date.now() - startedAt,
-      failureReason: error instanceof Error ? error.message : "Unknown AI gateway error",
+      failureReason,
+    })
+    void writeAiAuditEvent({
+      requestId,
+      userId: telemetry?.userId ?? null,
+      jobId: telemetry?.jobId ?? null,
+      route: source,
+      operation: telemetry?.operation ?? "unknown",
+      requestedModel,
+      selectedProvider: status.provider,
+      selectedModel: status.model,
+      keySource: status.keySource,
+      timeoutMs: status.timeoutMs,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      failureReason,
+      metadata: telemetry?.metadata,
     })
     throw error
   }
+}
+
+function generateAiRequestId() {
+  return `air_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+function getRequestedModelName(options: GenerateTextOptions | StreamTextOptions) {
+  const model = (options as { model?: unknown }).model
+  if (!model) return null
+  if (typeof model === "string") return model
+  if (typeof model === "object" && model !== null) {
+    const record = model as Record<string, unknown>
+    return String(record.modelId ?? record.model ?? record.id ?? "configured-model")
+  }
+  return "configured-model"
+}
+
+function readAiUsage(result: unknown) {
+  const usage = ((result as { usage?: Record<string, unknown> }).usage ?? {})
+  const promptTokens = usage.promptTokens ?? usage.inputTokens
+  const completionTokens = usage.completionTokens ?? usage.outputTokens
+  const totalTokens = usage.totalTokens
+
+  return {
+    promptTokens: typeof promptTokens === "number" ? promptTokens : undefined,
+    completionTokens: typeof completionTokens === "number" ? completionTokens : undefined,
+    totalTokens: typeof totalTokens === "number" ? totalTokens : undefined,
+  }
+}
+
+function readFinishReason(result: unknown) {
+  const finishReason = (result as { finishReason?: unknown }).finishReason
+  return typeof finishReason === "string" ? finishReason : null
 }
 
 function inferCallerSource() {
