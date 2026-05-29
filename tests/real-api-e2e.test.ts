@@ -91,6 +91,19 @@ let createdEvidenceId: string
 let evidenceCountBefore: number
 let generationBody: Awaited<ReturnType<typeof generateDocuments>>["body"]
 
+const hasLiveE2EEnv = Boolean(
+  process.env.E2E_TEST_EMAIL &&
+  process.env.E2E_TEST_PASSWORD &&
+  process.env.NEXT_PUBLIC_SUPABASE_URL &&
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+)
+
+if (!hasLiveE2EEnv) {
+  describe("Real API E2E prerequisites", { skip: "requires E2E_TEST_EMAIL, E2E_TEST_PASSWORD, NEXT_PUBLIC_SUPABASE_URL, and NEXT_PUBLIC_SUPABASE_ANON_KEY" }, () => {
+    it("has live credentials", () => {})
+  })
+} else {
+
 // ---------------------------------------------------------------------------
 // Step 1: Login
 // ---------------------------------------------------------------------------
@@ -587,6 +600,8 @@ describe("Error handling: malformed / unauthorised requests", () => {
     )
   })
 })
+
+}
 
 // ---------------------------------------------------------------------------
 // helpers needed inside test scope

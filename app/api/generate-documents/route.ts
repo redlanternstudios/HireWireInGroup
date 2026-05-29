@@ -3011,7 +3011,8 @@ If no issues found, return empty arrays and overall_passed: true.`,
       });
     }
     if (voiceDriftResult && voiceDriftResult.driftLevel !== "none") {
-      void emitDomainEventWithClient(supabase, {
+      void handleDomainEvent({
+        supabase,
         event_type: "voice_drift_detected",
         job_id,
         user_id: userId,
@@ -3023,17 +3024,6 @@ If no issues found, return empty arrays and overall_passed: true.`,
           recommended_action: voiceDriftResult.recommendedAction,
           warnings: voiceDriftResult.warnings,
         },
-        invalidates: voiceDriftResult.passed
-          ? ["coach_state"]
-          : ["readiness", "coach_state"],
-        recomputes: voiceDriftResult.passed ? [] : ["readiness"],
-        affected_routes: [
-          `/jobs/${job_id}`,
-          `/jobs/${job_id}/documents`,
-          "/dashboard",
-        ],
-        severity: voiceDriftResult.driftLevel === "high" ? "warning" : "info",
-        metadata: {},
       });
     }
 

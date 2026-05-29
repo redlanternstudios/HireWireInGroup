@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server"
 import { streamText } from "@/lib/ai/gateway"
 import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
 import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
@@ -14,6 +13,7 @@ import { COACH_TOOLS } from "@/lib/coach/tools"
 import { routeToolCall, formatToolResultForStream } from "@/lib/coach/tool-router"
 import { buildCoachSystemPrompt } from "@/lib/coach/buildCoachPrompt"
 import { stepCountIs } from "ai"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export const maxDuration = 60
 
@@ -69,19 +69,19 @@ export async function POST(request: Request) {
   const { createCorrelationId } = await import("@/lib/errors/correlation")
   const correlationId = createCorrelationId()
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authErrorObj } = await supabase.auth.getUser()
-    if (authErrorObj || !user) {
+    const auth = await requireUser()
+    if (!auth.ok) {
       const err = authError({ code: "NOT_AUTHENTICATED", correlationId })
       logErr(err, { route: "/api/coach" })
       return new Response(JSON.stringify(toApiErrorResponse(err)), { status: 401, headers: { "Content-Type": "application/json" } })
     }
+    const { supabase, userId } = auth
 
     if (!isAnthropicConfigured()) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "AI Coach is not connected in this environment. Add AI_GATEWAY_API_KEY to enable live coaching.",
+          error: "AI Coach requires OPENAI_API_KEY or AI_GATEWAY_API_KEY in this environment.",
         }),
         { status: 503, headers: { "Content-Type": "application/json" } }
       )
@@ -133,19 +133,19 @@ export async function POST(request: Request) {
       supabase
         .from("user_profile")
         .select("full_name, name, title, summary, skills, tools, domains, certifications, education, experience, location")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .single(),
       supabase
         .from("evidence_library")
         .select("id, source_type, source_title, company_name, role_name, date_range, responsibilities, tools_used, outcomes, proof_snippet, confidence_level")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .eq("is_active", true)
         .order("updated_at", { ascending: false })
         .limit(20),
       supabase
         .from("jobs")
         .select("id, role_title, company_name, status, score, score_gaps, gap_clarifications, gaps_addressed, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
         .limit(10),
@@ -154,14 +154,14 @@ export async function POST(request: Request) {
             .from("jobs")
             .select("id, role_title, company_name, job_description, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, responsibilities, qualifications_required, qualifications_preferred, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
             .eq("id", jobId)
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .is("deleted_at", null)
             .single()
         : Promise.resolve({ data: null, error: null }),
       supabase
         .from("application_outcomes")
         .select("job_id, outcome, outcome_date, notes, days_to_response, created_at")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(8),
     ])
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     })
 
     const signals = detectCoachSignals(coachContext, createCoachMemory())
-    void emitCoachSignals(supabase, signals, user.id, jobId)
+    void emitCoachSignals(supabase, signals, userId, jobId)
     const recommendations = generateRecommendations(coachContext, signals)
 
     // ── Assemble system prompt ────────────────────────────────────────────────
@@ -288,7 +288,7 @@ export async function POST(request: Request) {
 
     if (isContextEngineEnabled() && evidenceLibrary.length > 0) {
       const contextProfile = buildEvidenceLibraryContext({
-        userId: user.id,
+        userId: userId,
         records: evidenceLibrary as Array<Record<string, any>>,
       })
       const allowed = contextProfile.capabilities
@@ -375,7 +375,7 @@ export async function POST(request: Request) {
         .from("coach_sessions")
         .select("id")
         .eq("id", requestedSessionId)
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .eq("status", "active")
         .maybeSingle()
       if (ownedSession?.id) {

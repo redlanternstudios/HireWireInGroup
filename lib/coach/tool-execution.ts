@@ -17,6 +17,7 @@
 import { requireUser } from "@/lib/supabase/require-user"
 import { handleDomainEvent } from "@/lib/domain-events/handle-event"
 import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
+import { validateCoachAnswer } from "@/lib/coach/claim-validator"
 import type { ToolCallResult, ToolExecutionContext } from "./tools"
 import { revalidatePath } from "next/cache"
 import {
@@ -1042,6 +1043,10 @@ export async function executeConfirmProof(
     )
     if (!requirement) return { success: false, error: "Requirement not found" }
 
+    const answerValidation = validateCoachAnswer(
+      params.claim_text,
+      requirement.requirement_text,
+    )
     const evidenceTitle = `Confirmed fit: ${requirement.normalized_requirement || requirement.requirement_text}`.slice(0, 180)
 
     const { data: evidenceRow, error: evidenceError } = await supabase
@@ -1052,12 +1057,14 @@ export async function executeConfirmProof(
         source_title: evidenceTitle,
         proof_snippet: params.claim_text,
         confidence_level: "medium",
+        confidence_score: answerValidation.confidence,
         is_active: true,
         is_user_approved: true,
         raw_resume_section: "match_interview",
         responsibilities: [requirement.requirement_text],
         approved_keywords: requirement.related_skills ?? [],
         normalized_label: requirement.normalized_requirement,
+        what_not_to_overstate: answerValidation.what_not_to_overstate,
       })
       .select("id")
       .single()

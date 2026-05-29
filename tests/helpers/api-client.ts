@@ -9,13 +9,18 @@
  */
 
 import fetch, { type Response, FormData, Blob } from "node-fetch"
+import { createServerClient } from "@supabase/ssr"
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 export const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000"
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+function cleanEnv(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^['"]|['"]$/g, "").replace(/[\r\n\t]/g, "")
+}
+
+const SUPABASE_URL = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL)
+const SUPABASE_ANON_KEY = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error(
@@ -36,28 +41,29 @@ export interface Session {
 }
 
 export async function signIn(email: string, password: string): Promise<Session> {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
-    body: JSON.stringify({ email, password }),
+  let authCookies: { name: string; value: string }[] = []
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies: {
+      getAll() {
+        return authCookies
+      },
+      setAll(cookiesToSet) {
+        authCookies = cookiesToSet.map(({ name, value }) => ({ name, value }))
+      },
+    },
   })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`signIn failed (${res.status}): ${body}`)
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error || !data.session || !data.user) {
+    throw new Error(`signIn failed: ${error?.message ?? "No session returned"}`)
   }
-  const data = (await res.json()) as {
-    access_token: string
-    refresh_token: string
-    user: { id: string; email: string }
-  }
-  const rawCookies =
-    (res.headers.raw()["set-cookie"] as string[] | undefined) ?? []
+
   return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
+    accessToken: data.session.access_token,
+    refreshToken: data.session.refresh_token,
     userId: data.user.id,
     email: data.user.email ?? email,
-    cookies: rawCookies,
+    cookies: authCookies.map(({ name, value }) => `${name}=${value}`),
   }
 }
 

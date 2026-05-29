@@ -734,3 +734,18 @@ Insights are generated when patterns emerge. Every insight must be: short, actio
 8. Use semantic Tailwind tokens (`bg-background`, `text-foreground`, `text-muted-foreground`) — never hardcoded colors.
 9. Use `gap-*` for spacing between elements — never `space-x-*` / `space-y-*`.
 10. After any job analysis completes, call the `jobs` row backfill update (see `analyzeJobCore.ts`).
+
+---
+
+## By Red OS — Active Operating Rules (Lesson Ledger)
+
+These rules are permanent operating constraints for all AI assistants working in this workspace.
+Source of truth: `/workspaces/HireWireInGroup/LESSON_LEDGER.md`
+Auto-synced by `byred-session-brain` on every session close.
+
+| ID | Domain | Rule |
+|----|--------|------|
+| LL-001 | general | Always run `byred-pre-flight` before generating any strategic brief, proposal, or outbound communication. |
+| LL-002 | general | Stage outbound communications as drafts — never send email, iMessage, or Notion canonical writes without Ro approval. |
+| LL-003 | skills | Every skill must embed all static IDs (Supabase project, Monday board, Notion page) so Claude never looks them up mid-execution. |
+| LL-004 | operations | Save session logs and lesson ledger in Supabase (By Red, LLC. project) and as .md files — not in Notion (unpaid tier). |

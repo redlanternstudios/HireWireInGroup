@@ -9,6 +9,13 @@ export interface PackageActionResult {
   error?: string
 }
 
+const OUTCOME_STATUSES = new Set(["applied", "interviewing", "offered", "rejected", "archived"])
+
+interface AcceptPackageOptions {
+  resumeFormat?: string | null
+  resumeFont?: string | null
+}
+
 /**
  * acceptApplicationPackage
  *
@@ -23,6 +30,7 @@ export interface PackageActionResult {
 export async function acceptApplicationPackage(
   jobId: string,
   overrideReason?: string | null,
+  options: AcceptPackageOptions = {},
 ): Promise<PackageActionResult> {
   const supabase = await createClient()
   const {
@@ -33,7 +41,7 @@ export async function acceptApplicationPackage(
   // Gate: documents must exist before acceptance
   const { data: job, error: fetchError } = await supabase
     .from("jobs")
-    .select("id, generated_resume, generated_cover_letter, quality_passed, generation_status")
+    .select("id, generated_resume, generated_cover_letter, quality_passed, generation_status, status")
     .eq("id", jobId)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -56,6 +64,9 @@ export async function acceptApplicationPackage(
     .update({
       quality_passed: true,
       generation_status: "ready",
+      ...(OUTCOME_STATUSES.has(job.status ?? "") ? {} : { status: "ready" }),
+      ...(options.resumeFormat ? { resume_format: options.resumeFormat } : {}),
+      ...(options.resumeFont ? { resume_font: options.resumeFont } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", jobId)
@@ -93,14 +104,31 @@ export async function acceptApplicationPackage(
       previousStatus,
       was_quality_override: job.quality_passed === false && !!normalizedOverrideReason,
       override_reason: normalizedOverrideReason,
+      resume_format: options.resumeFormat ?? null,
+      resume_font: options.resumeFont ?? null,
     },
   })
 
   revalidatePath(`/jobs/${jobId}/documents`)
   revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/dashboard")
+  revalidatePath("/ready-to-apply")
   revalidatePath("/ready-queue")
 
   return { success: true }
+}
+
+export async function overridePackageQuality(
+  jobId: string,
+  reason: string,
+  options: AcceptPackageOptions = {},
+): Promise<PackageActionResult> {
+  const normalizedReason = reason.trim()
+  if (!normalizedReason) {
+    return { success: false, error: "A reason is required to override quality." }
+  }
+
+  return acceptApplicationPackage(jobId, normalizedReason, options)
 }
 
 /**
@@ -123,11 +151,22 @@ export async function markPackageNeedsReview(
   } = await supabase.auth.getUser()
   if (!user) return { success: false, error: "Not authenticated" }
 
+  const { data: job, error: fetchError } = await supabase
+    .from("jobs")
+    .select("id, status")
+    .eq("id", jobId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .single()
+
+  if (fetchError || !job) return { success: false, error: "Job not found" }
+
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
       quality_passed: false,
       generation_status: "needs_review",
+      ...(OUTCOME_STATUSES.has(job.status ?? "") ? {} : { status: "needs_review" }),
       updated_at: new Date().toISOString(),
     })
     .eq("id", jobId)
@@ -150,6 +189,8 @@ export async function markPackageNeedsReview(
 
   revalidatePath(`/jobs/${jobId}/documents`)
   revalidatePath(`/jobs/${jobId}`)
+  revalidatePath("/dashboard")
+  revalidatePath("/ready-to-apply")
 
   return { success: true }
 }
@@ -171,11 +212,22 @@ export async function resetPackageReviewStatus(
   } = await supabase.auth.getUser()
   if (!user) return { success: false, error: "Not authenticated" }
 
+  const { data: job, error: fetchError } = await supabase
+    .from("jobs")
+    .select("id, status")
+    .eq("id", jobId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .single()
+
+  if (fetchError || !job) return { success: false, error: "Job not found" }
+
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
       quality_passed: false,
       generation_status: "needs_review",
+      ...(OUTCOME_STATUSES.has(job.status ?? "") ? {} : { status: "needs_review" }),
       updated_at: new Date().toISOString(),
     })
     .eq("id", jobId)

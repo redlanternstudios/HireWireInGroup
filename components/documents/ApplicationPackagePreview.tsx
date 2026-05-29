@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { acceptApplicationPackage, markPackageNeedsReview, overridePackageQuality } from "@/lib/actions/package-review"
+import { acceptApplicationPackage, overridePackageQuality } from "@/lib/actions/package"
 import { useRouter } from "next/navigation"
 
 type BulletTrace = {
@@ -52,7 +52,6 @@ function getConfirmedProofUsage(job: any): ConfirmedProofUsage[] {
 export default function ApplicationPackagePreview({
   job,
   readiness,
-  userId,
 }: {
   job: any
   readiness: any
@@ -72,9 +71,11 @@ export default function ApplicationPackagePreview({
     startTransition(async () => {
       const result = await acceptApplicationPackage(
         job.id,
-        job.resume_format,
-        job.resume_font,
-        userId
+        null,
+        {
+          resumeFormat: job.resume_format,
+          resumeFont: job.resume_font,
+        },
       )
       setAccepting(false)
       if (result.error) {
@@ -94,7 +95,10 @@ export default function ApplicationPackagePreview({
     }
     setOverriding(true)
     startTransition(async () => {
-      const result = await overridePackageQuality(job.id, trimmed, userId)
+      const result = await overridePackageQuality(job.id, trimmed, {
+        resumeFormat: job.resume_format,
+        resumeFont: job.resume_font,
+      })
       setOverriding(false)
       if (result.error) {
         setStatus(`Override error: ${result.error}`)

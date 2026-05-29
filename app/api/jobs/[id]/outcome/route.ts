@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event"
+import { handleDomainEvent } from "@/lib/domain-events"
+import { writeOutcomeLearning } from "@/lib/actions/outcome-learning"
+import { requireUser } from "@/lib/supabase/require-user"
 
 const VALID_OUTCOMES = [
   "callback",
@@ -22,11 +23,9 @@ export async function POST(
 ) {
   const { id: jobId } = await params
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-  }
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   let body: Record<string, unknown>
   try {
@@ -48,7 +47,7 @@ export async function POST(
     .from("jobs")
     .select("id, role_title, company_name, intelligence, score, resume_strategy")
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null)
     .single()
 
@@ -65,7 +64,7 @@ export async function POST(
     .from("jobs")
     .select("applied_at")
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .single()
 
   const appliedAt = jobFull?.applied_at
@@ -77,7 +76,7 @@ export async function POST(
   const { data: outcomeRecord, error: upsertError } = await supabase
     .from("application_outcomes")
     .upsert({
-      user_id: user.id,
+      user_id: userId,
       job_id: jobId,
       outcome: outcome as OutcomeValue,
       outcome_date: outcomeDate,
@@ -118,13 +117,20 @@ export async function POST(
       ...(jobStatus ? { status: jobStatus } : {}),
     })
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
 
-  // Emit domain event
-  void emitDomainEventWithClient(supabase, {
+  await writeOutcomeLearning(supabase, userId, outcome as OutcomeValue, {
+    role_archetype: intel?.role_archetype as string | undefined ?? null,
+    narrative_mode: intel?.narrative_mode as string | undefined ?? null,
+    fit_score: typeof job.score === "number" ? job.score : null,
+    days_to_response: daysToResponse,
+  })
+
+  await handleDomainEvent({
+    supabase,
     event_type: "outcome_updated",
     job_id: jobId,
-    user_id: user.id,
+    user_id: userId,
     source: "user",
     payload: {
       outcome,
@@ -132,11 +138,6 @@ export async function POST(
       narrative_mode: intel?.narrative_mode ?? null,
       days_to_response: daysToResponse,
     },
-    invalidates: ["coach_state", "readiness"],
-    recomputes: [],
-    affected_routes: [`/jobs/${jobId}`, "/dashboard", "/analytics"],
-    severity: "info",
-    metadata: {},
   })
 
   return NextResponse.json({
@@ -153,17 +154,15 @@ export async function GET(
 ) {
   const { id: jobId } = await params
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-  }
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   const { data, error } = await supabase
     .from("application_outcomes")
     .select("*")
     .eq("job_id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .maybeSingle()
 
   if (error) {
