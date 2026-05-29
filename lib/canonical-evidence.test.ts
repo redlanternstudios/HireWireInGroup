@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
 import {
+  categorizeGap,
   calculateExplainableFit,
   type CanonicalEvidence,
   type DimensionScores,
@@ -60,5 +61,16 @@ describe("calculateExplainableFit", () => {
 
     assert.ok(fit.score > 32)
     assert.equal(fit.matched_requirements_count, 1)
+  })
+})
+
+describe("categorizeGap", () => {
+  it("treats military and volunteer evidence as transferable proof instead of missing evidence", () => {
+    assert.equal(categorizeGap("military", "unsupported"), "transferable_unproven")
+    assert.equal(categorizeGap("volunteer", "unsupported"), "transferable_unproven")
+  })
+
+  it("keeps true no-evidence requirements as missing evidence", () => {
+    assert.equal(categorizeGap(null, "no_evidence"), "missing_evidence")
   })
 })

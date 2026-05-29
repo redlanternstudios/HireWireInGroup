@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { requireUser } from "@/lib/supabase/require-user"
 
 /**
  * POST /api/re-analyze
@@ -26,22 +27,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-    }
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     // Fetch the existing job to get its URL
     const { data: job, error: jobError } = await supabase
       .from("jobs")
       .select("id, job_url, status")
       .eq("id", job_id)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .is("deleted_at", null)
       .single()
 
@@ -61,11 +56,11 @@ export async function POST(request: NextRequest) {
       .from("jobs")
       .update({ status: "analyzing" })
       .eq("id", job_id)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
 
     // Delete any stale analysis/scores rows so re-insert works cleanly
     await Promise.all([
-      supabase.from("job_analyses").delete().eq("job_id", job_id).eq("user_id", user.id),
+      supabase.from("job_analyses").delete().eq("job_id", job_id).eq("user_id", userId),
       supabase.from("job_scores").delete().eq("job_id", job_id),
     ])
 
@@ -73,7 +68,7 @@ export async function POST(request: NextRequest) {
     // with the duplicate response, so we bypass that by deleting first then calling
     // the core function differently. Instead, we call the HTTP analyze endpoint
     // logic directly, bypassing duplicate detection for re-analysis.
-    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, user, request)
+    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId, request)
 
     if (!result.success) {
       // Restore the previous status on failure
@@ -81,7 +76,7 @@ export async function POST(request: NextRequest) {
         .from("jobs")
         .update({ status: "analyzed" })
         .eq("id", job_id)
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
 
       return NextResponse.json({ success: false, error: result.error }, { status: 500 })
     }
@@ -91,7 +86,7 @@ export async function POST(request: NextRequest) {
       supabase,
       event_type: "job_analyzed",
       job_id,
-      user_id: user.id,
+      user_id: userId,
       source: "analyze_job_route",
       payload: { triggeredAt: new Date().toISOString(), reanalysis: true },
     })
@@ -142,7 +137,6 @@ import {
   calculateWeightedScore,
 } from "@/lib/scoring-weights"
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
-import type { User } from "@supabase/supabase-js"
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
 const ROLE_FAMILIES = [
@@ -150,6 +144,32 @@ const ROLE_FAMILIES = [
   "Product Manager", "Senior Product Manager", "Systems Product Manager",
   "Workflow Product Manager", "Analytics Product Manager", "Product Owner",
   "Program Manager", "Other",
+] as const
+
+const SOC_CATEGORIES = [
+  "Management",
+  "Business_Financial",
+  "Computer_Mathematical",
+  "Architecture_Engineering",
+  "Life_Physical_Social_Science",
+  "Community_Social_Services",
+  "Legal",
+  "Education_Library",
+  "Arts_Design_Entertainment_Sports_Media",
+  "Healthcare_Practitioners",
+  "Healthcare_Support",
+  "Protective_Service",
+  "Food_Preparation_Serving",
+  "Building_Grounds",
+  "Personal_Care_Service",
+  "Sales",
+  "Office_Administrative",
+  "Farming_Fishing_Forestry",
+  "Construction_Extraction",
+  "Installation_Maintenance_Repair",
+  "Production",
+  "Transportation_Material_Moving",
+  "Military",
 ] as const
 
 const JobAnalysisSchema = z.object({
@@ -166,6 +186,9 @@ const JobAnalysisSchema = z.object({
   ats_phrases: z.array(z.string()),
   tech_stack: z.array(z.string()),
   role_family: z.enum(ROLE_FAMILIES),
+  soc_major_group: z.number().int().min(11).max(55).nullable(),
+  soc_group_name: z.string().nullable(),
+  soc_category: z.enum(SOC_CATEGORIES).nullable(),
   industry_guess: z.string().nullable(),
   seniority_level: z.string().nullable(),
   fit_signals: z.object({
@@ -194,7 +217,7 @@ async function reAnalyzeExistingJob(
   jobUrl: string,
   jobId: string,
   supabase: ServerSupabase,
-  user: User,
+  userId: string,
   requestLike: { headers: { get(name: string): string | null } }
 ): Promise<{ success: true; job: unknown } | { success: false; error: string }> {
   // Fetch page
@@ -235,6 +258,9 @@ async function reAnalyzeExistingJob(
   "ats_phrases": string[],
   "tech_stack": string[],
   "role_family": "AI Technical Product Manager"|"Technical Product Manager"|"AI Product Manager"|"Product Manager"|"Senior Product Manager"|"Systems Product Manager"|"Workflow Product Manager"|"Analytics Product Manager"|"Product Owner"|"Program Manager"|"Other",
+  "soc_major_group": number | null,
+  "soc_group_name": string | null,
+  "soc_category": "Management"|"Business_Financial"|"Computer_Mathematical"|"Architecture_Engineering"|"Life_Physical_Social_Science"|"Community_Social_Services"|"Legal"|"Education_Library"|"Arts_Design_Entertainment_Sports_Media"|"Healthcare_Practitioners"|"Healthcare_Support"|"Protective_Service"|"Food_Preparation_Serving"|"Building_Grounds"|"Personal_Care_Service"|"Sales"|"Office_Administrative"|"Farming_Fishing_Forestry"|"Construction_Extraction"|"Installation_Maintenance_Repair"|"Production"|"Transportation_Material_Moving"|"Military" | null,
   "industry_guess": string | null,
   "seniority_level": string | null,
   "fit_signals": {
@@ -258,8 +284,8 @@ async function reAnalyzeExistingJob(
 
   // Load evidence for scoring
   const [evidenceResult, profileResult] = await Promise.all([
-    supabase.from("evidence_library").select("*").eq("user_id", user.id).eq("is_active", true),
-    supabase.from("user_profile").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase.from("evidence_library").select("*").eq("user_id", userId).eq("is_active", true),
+    supabase.from("user_profile").select("*").eq("user_id", userId).maybeSingle(),
   ])
 
   const canonicalEvidence: CanonicalEvidence[] = []
@@ -268,7 +294,7 @@ async function reAnalyzeExistingJob(
   }
   if (profileResult.data?.experience) {
     const exps = Array.isArray(profileResult.data.experience) ? profileResult.data.experience : []
-    for (const exp of exps) canonicalEvidence.push(...normalizeProfileExperience(exp, user.id))
+    for (const exp of exps) canonicalEvidence.push(...normalizeProfileExperience(exp, userId))
   }
 
   const techMatch = analysis.tech_stack.filter((t) =>
@@ -287,7 +313,7 @@ async function reAnalyzeExistingJob(
   }
 
   const inferredRole = inferRoleFromJobTitle(title)
-  const weights = getWeightsForRole(inferredRole)
+  const weights = getWeightsForRole(inferredRole, analysis.soc_category ?? undefined)
   calculateWeightedScore({
     experience_relevance: dimensionScores.experience,
     evidence_quality: dimensionScores.evidence,
@@ -300,7 +326,8 @@ async function reAnalyzeExistingJob(
     canonicalEvidence,
     analysis.qualifications_required,
     analysis.qualifications_preferred,
-    dimensionScores
+    dimensionScores,
+    weights
   )
 
   const fitBandToLegacy: Record<FitBand, "HIGH" | "MEDIUM" | "LOW"> = {
@@ -328,7 +355,7 @@ async function reAnalyzeExistingJob(
       job_description: pageContent.slice(0, 10000),
     })
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
 
   if (updateError) {
     console.error("[re-analyze] jobs PATCH error:", updateError.message, updateError.details)
@@ -337,7 +364,7 @@ async function reAnalyzeExistingJob(
 
   // Insert fresh analysis record
   const { error: analysisError } = await supabase.from("job_analyses").insert({
-    user_id: user.id,
+    user_id: userId,
     job_id: jobId,
     title,
     company,
@@ -352,6 +379,9 @@ async function reAnalyzeExistingJob(
     ats_phrases: analysis.ats_phrases,
     matched_skills: strengths.filter((r: string) => !/^Gap:/i.test(r)),
     known_gaps: gaps.filter((r: string) => /^Gap:/i.test(r)),
+    soc_major_group: analysis.soc_major_group ?? null,
+    soc_group_name: analysis.soc_group_name ?? null,
+    soc_category: analysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
     analysis_model: "claude-sonnet",
   })
@@ -375,7 +405,7 @@ async function reAnalyzeExistingJob(
   await runJobFlow({
     supabase,
     request: requestLike,
-    userId: user.id,
+    userId,
     jobId,
     triggerInterviewPrep: false,
   })
@@ -384,7 +414,7 @@ async function reAnalyzeExistingJob(
     .from("jobs")
     .select("*")
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .single()
 
   return { success: true, job: updatedJob }

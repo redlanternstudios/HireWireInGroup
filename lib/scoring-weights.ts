@@ -426,16 +426,189 @@ export const ROLE_WEIGHT_PROFILES: RoleWeightProfile[] = [
 ]
 
 // ============================================================================
+// SOC WEIGHT PROFILES - Bureau of Labor Statistics Standard Occupational Classification
+// Format: experience_relevance / evidence_quality / skills_match / seniority_alignment / ats_keywords
+// ============================================================================
+
+export const SOC_WEIGHT_PROFILES: Record<string, ScoringWeights> = {
+  Management: {
+    experience_relevance: 40,
+    evidence_quality: 30,
+    skills_match: 15,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Business_Financial: {
+    experience_relevance: 30,
+    evidence_quality: 35,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Computer_Mathematical: {
+    experience_relevance: 30,
+    evidence_quality: 25,
+    skills_match: 30,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Architecture_Engineering: {
+    experience_relevance: 35,
+    evidence_quality: 25,
+    skills_match: 30,
+    seniority_alignment: 5,
+    ats_keywords: 5,
+  },
+  Life_Physical_Social_Science: {
+    experience_relevance: 25,
+    evidence_quality: 35,
+    skills_match: 20,
+    seniority_alignment: 15,
+    ats_keywords: 5,
+  },
+  Community_Social_Services: {
+    experience_relevance: 35,
+    evidence_quality: 30,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Legal: {
+    experience_relevance: 40,
+    evidence_quality: 30,
+    skills_match: 15,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Education_Library: {
+    experience_relevance: 30,
+    evidence_quality: 30,
+    skills_match: 20,
+    seniority_alignment: 15,
+    ats_keywords: 5,
+  },
+  Arts_Design_Entertainment_Sports_Media: {
+    experience_relevance: 20,
+    evidence_quality: 45,
+    skills_match: 25,
+    seniority_alignment: 5,
+    ats_keywords: 5,
+  },
+  Healthcare_Practitioners: {
+    experience_relevance: 40,
+    evidence_quality: 25,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Healthcare_Support: {
+    experience_relevance: 30,
+    evidence_quality: 25,
+    skills_match: 25,
+    seniority_alignment: 10,
+    ats_keywords: 10,
+  },
+  Protective_Service: {
+    experience_relevance: 35,
+    evidence_quality: 25,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 10,
+  },
+  Food_Preparation_Serving: {
+    experience_relevance: 25,
+    evidence_quality: 20,
+    skills_match: 30,
+    seniority_alignment: 10,
+    ats_keywords: 15,
+  },
+  Building_Grounds: {
+    experience_relevance: 30,
+    evidence_quality: 20,
+    skills_match: 30,
+    seniority_alignment: 10,
+    ats_keywords: 10,
+  },
+  Personal_Care_Service: {
+    experience_relevance: 30,
+    evidence_quality: 25,
+    skills_match: 25,
+    seniority_alignment: 10,
+    ats_keywords: 10,
+  },
+  Sales: {
+    experience_relevance: 25,
+    evidence_quality: 40,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Office_Administrative: {
+    experience_relevance: 25,
+    evidence_quality: 25,
+    skills_match: 25,
+    seniority_alignment: 10,
+    ats_keywords: 15,
+  },
+  Farming_Fishing_Forestry: {
+    experience_relevance: 40,
+    evidence_quality: 20,
+    skills_match: 25,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Construction_Extraction: {
+    experience_relevance: 40,
+    evidence_quality: 25,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Installation_Maintenance_Repair: {
+    experience_relevance: 35,
+    evidence_quality: 20,
+    skills_match: 30,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Production: {
+    experience_relevance: 35,
+    evidence_quality: 25,
+    skills_match: 25,
+    seniority_alignment: 10,
+    ats_keywords: 5,
+  },
+  Transportation_Material_Moving: {
+    experience_relevance: 35,
+    evidence_quality: 20,
+    skills_match: 25,
+    seniority_alignment: 10,
+    ats_keywords: 10,
+  },
+  Military: {
+    experience_relevance: 45,
+    evidence_quality: 25,
+    skills_match: 20,
+    seniority_alignment: 10,
+    ats_keywords: 0,
+  },
+}
+
+// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
 /**
- * Get weights for a specific role (case-insensitive partial match)
+ * Get weights for a specific role (case-insensitive partial match).
+ * If socCategory is provided and matches a SOC_WEIGHT_PROFILES key, that profile takes priority.
  */
-export function getWeightsForRole(role: string | null | undefined): ScoringWeights {
-  if (!role) return DEFAULT_WEIGHTS
-  
-  const roleLower = role.toLowerCase().trim()
+export function getWeightsForRole(roleTitle: string | null | undefined, socCategory?: string): ScoringWeights {
+  if (socCategory && SOC_WEIGHT_PROFILES[socCategory]) {
+    return SOC_WEIGHT_PROFILES[socCategory]
+  }
+  if (!roleTitle) return DEFAULT_WEIGHTS
+
+  const roleLower = roleTitle.toLowerCase().trim()
   
   // Try exact match first
   const exactMatch = ROLE_WEIGHT_PROFILES.find(

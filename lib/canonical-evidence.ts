@@ -40,8 +40,47 @@ export type EvidenceType =
   | "portfolio_entry"
   | "shipped_product"
   | "open_source"
-  | "metric"
-  | "testimonial"
+  | "live_site"
+  | "language"
+  | "award"
+  | "volunteer"
+  | "military"
+  | "website"
+  | "linkedin"
+  | "github"
+  | "user_input"
+  | "ai_inferred"
+
+const EVIDENCE_TYPES = new Set<EvidenceType>([
+  "work_experience",
+  "project",
+  "achievement",
+  "skill",
+  "certification",
+  "education",
+  "publication",
+  "portfolio_entry",
+  "shipped_product",
+  "open_source",
+  "live_site",
+  "language",
+  "award",
+  "volunteer",
+  "military",
+  "website",
+  "linkedin",
+  "github",
+  "user_input",
+  "ai_inferred",
+])
+
+function normalizeEvidenceType(sourceType: string): EvidenceType {
+  if (EVIDENCE_TYPES.has(sourceType as EvidenceType)) {
+    return sourceType as EvidenceType
+  }
+
+  throw new Error(`[HireWire] Unsupported evidence source_type: ${sourceType}`)
+}
 
 export type QuantificationSafety =
   | "explicit_metric"       // User-provided or source-documented number
@@ -406,7 +445,7 @@ export function normalizeEvidenceRecord(
     source_id: record.id,
     text: mainText,
     title: record.source_title,
-    evidence_type: record.source_type as EvidenceType,
+    evidence_type: normalizeEvidenceType(record.source_type),
     company: record.company_name || undefined,
     role: record.role_name || undefined,
     date_range: record.date_range || undefined,
@@ -509,6 +548,52 @@ export function matchEvidenceToRequirement(
   }
 }
 
+const TRANSFERABLE_EVIDENCE_TYPES = new Set<EvidenceType>([
+  "project",
+  "achievement",
+  "publication",
+  "portfolio_entry",
+  "shipped_product",
+  "open_source",
+  "live_site",
+  "award",
+  "volunteer",
+  "military",
+  "website",
+  "linkedin",
+  "github",
+  "user_input",
+  "ai_inferred",
+])
+
+export function categorizeGap(
+  evidenceType: EvidenceType | null,
+  matchType: RequirementMatchType | "no_evidence"
+): GapCategory {
+  if (matchType === "no_evidence") return "missing_evidence"
+  if (matchType === "partial_match") return "weak_phrasing"
+  if (matchType === "adjacent_transferable") return "transferable_unproven"
+
+  if (!evidenceType) return "missing_evidence"
+
+  if (
+    evidenceType === "skill" ||
+    evidenceType === "certification" ||
+    evidenceType === "education" ||
+    evidenceType === "language"
+  ) {
+    return "missing_skill"
+  }
+
+  if (TRANSFERABLE_EVIDENCE_TYPES.has(evidenceType)) {
+    return "transferable_unproven"
+  }
+
+  if (matchType === "unsupported") return "missing_direct_experience"
+
+  return "missing_evidence"
+}
+
 /**
  * Calculate explainable fit score from evidence and requirements
  */
@@ -564,7 +649,7 @@ export function calculateExplainableFit(
       } else if (bestMatch.match_type === "adjacent_transferable") {
         gaps.push({
           requirement,
-          gap_category: "transferable_unproven",
+          gap_category: categorizeGap(bestEvidence.evidence_type, bestMatch.match_type),
           severity: "moderate",
           suggestion: "Emphasize transferable skills from related experience",
           transferable_evidence: bestEvidence.text.slice(0, 150),
@@ -573,7 +658,7 @@ export function calculateExplainableFit(
         missing++
         gaps.push({
           requirement,
-          gap_category: "missing_direct_experience",
+          gap_category: categorizeGap(bestEvidence.evidence_type, bestMatch.match_type),
           severity: "critical",
           suggestion: "Consider if this is a stretch role",
         })
@@ -582,7 +667,7 @@ export function calculateExplainableFit(
       missing++
       gaps.push({
         requirement,
-        gap_category: "missing_evidence",
+        gap_category: categorizeGap(null, "no_evidence"),
         severity: "critical",
         suggestion: "Add evidence for this requirement to your profile",
       })
@@ -606,7 +691,7 @@ export function calculateExplainableFit(
       strengths: [],
       gaps: requirements.map(req => ({
         requirement: req,
-        gap_category: "missing_evidence" as GapCategory,
+        gap_category: categorizeGap(null, "no_evidence"),
         severity: "critical" as const,
         suggestion: "Add evidence for this requirement to your profile",
       })),

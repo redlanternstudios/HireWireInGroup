@@ -108,6 +108,9 @@ const JobAnalysisSchema = z.object({
   role_family: z
     .enum(ROLE_FAMILIES)
     .describe("Best matching role family for categorization"),
+  soc_major_group: z.number().int().min(11).max(55).nullable().describe("BLS SOC 2-digit major group code. 11=Management 13=Business/Financial 15=Computer/Mathematical 17=Architecture/Engineering 19=Life/Physical/Social_Science 21=Community/Social_Services 23=Legal 25=Education/Library 27=Arts/Design/Entertainment 29=Healthcare_Practitioners 31=Healthcare_Support 33=Protective_Service 35=Food_Preparation 37=Building/Grounds 39=Personal_Care 41=Sales 43=Office/Administrative 45=Farming/Fishing/Forestry 47=Construction/Extraction 49=Installation/Maintenance/Repair 51=Production 53=Transportation/Material_Moving 55=Military"),
+  soc_group_name: z.string().nullable().describe("BLS SOC major group name e.g. Computer and Mathematical Occupations"),
+  soc_category: z.enum(["Management","Business_Financial","Computer_Mathematical","Architecture_Engineering","Life_Physical_Social_Science","Community_Social_Services","Legal","Education_Library","Arts_Design_Entertainment_Sports_Media","Healthcare_Practitioners","Healthcare_Support","Protective_Service","Food_Preparation_Serving","Building_Grounds","Personal_Care_Service","Sales","Office_Administrative","Farming_Fishing_Forestry","Construction_Extraction","Installation_Maintenance_Repair","Production","Transportation_Material_Moving","Military"]).nullable().describe("BLS SOC category enum for scoring profile selection"),
   industry_guess: z
     .string()
     .nullable()
@@ -374,6 +377,9 @@ function fallbackAnalyzeJob(
       lowerContent.includes(tech.toLowerCase().replace("llms", "llm")),
     ),
     role_family: "AI Product Manager",
+    soc_major_group: null,
+    soc_group_name: null,
+    soc_category: null,
     industry_guess: "Enterprise AI workflow software",
     seniority_level: "Mid",
     fit_signals: {
@@ -648,7 +654,7 @@ Extract the job details following the schema.`,
   };
 
   const inferredRole = inferRoleFromJobTitle(validatedAnalysis.title);
-  const weights = getWeightsForRole(inferredRole);
+  const weights = getWeightsForRole(inferredRole, validatedAnalysis.soc_category ?? undefined);
 
   const explainableFit: ExplainableFitScore = calculateExplainableFit(
     canonicalEvidence,
@@ -750,6 +756,9 @@ Extract the job details following the schema.`,
     known_gaps: fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r)),
     strengths_json: explainableFit.strengths,
     gaps_json: gapAnalysis.gaps,
+    soc_major_group: validatedAnalysis.soc_major_group ?? null,
+    soc_group_name: validatedAnalysis.soc_group_name ?? null,
+    soc_category: validatedAnalysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
     analysis_model: "llama-3.3-70b-versatile",
   });

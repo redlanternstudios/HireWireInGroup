@@ -274,7 +274,27 @@ export interface Job {
 
 export interface EvidenceRecord {
   id: string
-  source_type: "work_experience" | "project" | "portfolio_entry" | "shipped_product" | "live_site" | "achievement" | "certification" | "publication" | "open_source" | "education" | "skill"
+  source_type:
+    | "work_experience"
+    | "education"
+    | "skill"
+    | "certification"
+    | "project"
+    | "achievement"
+    | "publication"
+    | "portfolio_entry"
+    | "shipped_product"
+    | "open_source"
+    | "live_site"
+    | "language"
+    | "award"
+    | "volunteer"
+    | "military"
+    | "website"
+    | "linkedin"
+    | "github"
+    | "user_input"
+    | "ai_inferred"
   source_title: string
   source_url?: string | null
   
