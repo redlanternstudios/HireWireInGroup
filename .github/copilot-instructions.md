@@ -749,3 +749,277 @@ Auto-synced by `byred-session-brain` on every session close.
 | LL-002 | general | Stage outbound communications as drafts — never send email, iMessage, or Notion canonical writes without Ro approval. |
 | LL-003 | skills | Every skill must embed all static IDs (Supabase project, Monday board, Notion page) so Claude never looks them up mid-execution. |
 | LL-004 | operations | Save session logs and lesson ledger in Supabase (By Red, LLC. project) and as .md files — not in Notion (unpaid tier). |
+
+---
+
+## Scoring & Match System
+
+HireWire uses a multi-dimensional scoring system with role-specific weights.
+
+### Match Score Dimensions
+
+| Dimension | Description | Weight Range |
+|-----------|-------------|--------------|
+| `experience_relevance` | How well user's experience aligns with job requirements | 0-50 |
+| `evidence_quality` | Strength, specificity, measurability of supporting evidence | 0-40 |
+| `skills_match` | Technical/domain skill coverage vs requirements | 0-30 |
+| `seniority_alignment` | Level match (IC, Manager, Director, etc.) | 0-25 |
+| `ats_keywords` | ATS keyword coverage for automated screening | 0-20 |
+
+### Role-Specific Weights (lib/scoring-weights.ts)
+
+50 role profiles exist. Weights always sum to 100. Examples:
+
+| Role | experience | evidence | skills | seniority | ats |
+|------|------------|----------|--------|-----------|-----|
+| Senior Software Engineer | 40 | 15 | 25 | 10 | 10 |
+| Product Manager | 35 | 25 | 15 | 15 | 10 |
+| Entry-Level Marketing | 15 | 35 | 25 | 10 | 15 |
+| Engineering Manager | 30 | 20 | 15 | 25 | 10 |
+
+### Evidence Classification (lib/canonical-evidence.ts)
+
+| Status | Meaning |
+|--------|---------|
+| `direct_match` | Evidence directly proves the requirement |
+| `partial_match` | Evidence partially addresses requirement |
+| `adjacent_transferable` | Related experience that could transfer |
+| `not_met` | No relevant evidence found |
+
+### Key Files
+
+- `lib/scoring-weights.ts` (658 LOC) — role profiles + weight calculation
+- `lib/canonical-evidence.ts` (645 LOC) — explainable fit scoring
+- `lib/analyze/analyze-job-core.ts` (921 LOC) — full analysis pipeline
+- `lib/gap-detection.ts` (645 LOC) — gap detection logic
+
+---
+
+## Coach System
+
+The coach is a conversational AI that helps users fill evidence gaps. It uses AI SDK 6 with streaming.
+
+### Architecture
+
+```
+lib/coach/
+  buildCoachPrompt.ts      — builds system prompt from context
+  tool-execution.ts        — executes tool calls (998 LOC)
+  tool-router.ts           — routes tools to handlers
+  tools.ts                 — available tools definition
+  claim-validator.ts       — validates user claims before save
+  drift-scorer.ts          — measures voice consistency drift
+  generation-strategy.ts   — picks conservative/balanced/aggressive
+  rate-limiter.ts          — prevents abuse
+  context/                 — builds job/evidence/profile context
+  messaging/               — 20+ message templates
+  signals/                 — next-action hints
+  recommendations/         — generates recommendations
+```
+
+### Coach Session Flow
+
+1. User opens gap coach modal → `POST /api/coach/sessions` creates session with job + gap context
+2. User sends message → `POST /api/coach/sessions/[sessionId]/messages` streams response
+3. Coach uses tools → `POST /api/coach/confirm-tool-call` confirms evidence save
+4. Evidence saved → domain event emitted → readiness recomputed
+
+### UI Components
+
+- `components/coach-chat.tsx` (576 LOC) — AI SDK chat with streaming, markdown, history
+- `components/coach/GapCoachDrawer.tsx` — per-gap modal with evidence confirmation (delegates to MatchInterviewModal)
+- `components/coach/GuidedRequirementCoachFlow.tsx` (204 LOC) — guided flow for requirements
+
+### Key Rules
+
+1. Coach sessions are scoped to (user, job, requirement) — always pass context
+2. Every evidence save must go through claim-validator
+3. Tool calls must be idempotent (use correlation IDs)
+4. Never skip rate limiting
+
+---
+
+## Communications Registry (lib/comms/)
+
+Centralized system for all user-facing messages. Every message must have a reason.
+
+### Message Structure
+
+```typescript
+interface CommsMessage {
+  id: string
+  reason: CommunicationReason
+  domain: "account" | "job" | "coach" | "evidence" | "generation"
+  audience: "user" | "admin"
+  intent: string           // why we're communicating
+  channel: "toast" | "banner" | "modal" | "email" | "in_app"
+  brandSurface: string     // where it appears
+  tone: "direct" | "informational" | "celebratory" | "cautionary"
+  priority: "low" | "normal" | "high"
+  title: string
+  body: string
+  actionLabel?: string
+  actionHref?: string
+  requiresApproval: boolean
+}
+```
+
+### Communication Reasons (30+ codes)
+
+- `ACCOUNT_ACCESS` — session expired, magic link sent, signup confirmation
+- `ONBOARDING_GUIDANCE` — career context empty, profile incomplete
+- `JOB_PROGRESS` — analysis complete, evidence mapped, materials ready
+- `GENERATION_QUALITY` — quality check passed/failed, voice drift detected
+- `APPLY_GATE` — ready to apply, blocked reasons, override needed
+
+### Key Files
+
+- `lib/comms/registry.ts` — COMMS_REGISTRY with all approved templates
+- `lib/comms/reasons.ts` — CommunicationReason enum
+- `lib/comms/render.ts` — renders for different channels
+
+---
+
+## Context Engine (lib/context-engine/ — experimental)
+
+Advanced profile/evidence context building. Feature-flagged via `CONTEXT_ENGINE_ENABLED`.
+
+### Capabilities
+
+- `buildProfileContext()` — builds rich context from profile sources
+- `buildEvidenceLibraryContext()` — builds context from evidence records
+- `inferCapabilities()` — infers skills/capabilities from evidence
+- `generatePositioning()` — generates positioning statements
+- `reverseEngineerJob()` — extracts hidden job requirements
+- `validateClaims()` — validates claim accuracy
+
+### Enable
+
+```env
+CONTEXT_ENGINE_ENABLED=true
+```
+
+---
+
+## Contracts (lib/contracts/hirewire.ts)
+
+Canonical data shapes for go-live. Use these, not legacy mixed types.
+
+### Plan Limits
+
+| Plan | Jobs/Month | Generations/Month | Evidence Items | Interview Prep |
+|------|------------|-------------------|----------------|----------------|
+| Free | 5 | 5 | Unlimited | No |
+| Pro | Unlimited | Unlimited | Unlimited | Yes |
+
+### Core Interfaces
+
+- `HireWireUser` — links to auth.users
+- `HireWireProfile` — user profile data
+- `HireWireJob` — job tracking (NO generated_resume/cover_letter)
+- `HireWireDocument` — generated document metadata
+- `HireWireApplication` — application tracking
+
+---
+
+## Job Orchestrator (lib/orchestrator/runJobFlow.ts)
+
+Orchestrates full job flow with step-by-step logging.
+
+```typescript
+const result = await runJobFlow({
+  supabase,
+  request,
+  userId,
+  jobId,
+  triggerDocuments: true,
+  triggerInterviewPrep: false,
+})
+// result.steps shows each step status
+// result.generation shows generation outcome
+```
+
+---
+
+## ATS Parsers (lib/parsers/)
+
+Job description parsers for different ATS systems:
+
+- `greenhouse.ts` — Greenhouse ATS
+- `lever.ts` — Lever ATS
+- `linkedin.ts` — LinkedIn job posts
+- `workday.ts` — Workday ATS
+- `generic.ts` — fallback parser
+- `index.ts` — auto-detection
+
+---
+
+## Error System (lib/errors/)
+
+Structured error handling with correlation tracking.
+
+```typescript
+import { AppError, createNotFoundError, createValidationError } from "@/lib/errors/factory"
+
+// Throw structured errors
+throw createNotFoundError("Job", jobId)
+throw createValidationError("Missing required field: evidence_id")
+
+// Errors include correlation ID for tracing
+```
+
+---
+
+## TruthSerum Provenance (lib/truthserum.ts — 809 LOC)
+
+Every generated bullet traces back to real evidence.
+
+### Decision Types
+
+| Decision | Meaning |
+|----------|---------|
+| `confirmed` | User explicitly confirmed this evidence |
+| `skipped` | User explicitly skipped this requirement |
+| `auto_mapped` | System auto-matched with high confidence |
+| `needs_judgment` | Requires user review before use |
+
+### Quality Flags
+
+| Flag | Meaning |
+|------|---------|
+| `weak_evidence` | Evidence exists but is thin |
+| `conflicting_sources` | Multiple evidence items conflict |
+| `outdated` | Evidence is >3 years old |
+| `inferred` | Capability inferred, not stated |
+
+### Bullet Trace
+
+Every bullet in the generated resume has a `BulletTrace`:
+- Which evidence record it came from
+- What decision type approved it
+- Confidence level
+- Quality flags
+
+---
+
+## Safety Systems
+
+### Injection Detection (lib/safety/injection-detector.ts — 1201 LOC)
+
+Detects prompt injection attacks in user evidence inputs.
+
+### Content Moderation (lib/safety/content-moderator.ts)
+
+Flags inappropriate content (harassment, hate speech, etc.).
+
+### PII Detection (lib/safety/pii-detector.ts)
+
+Detects and masks personally identifiable information.
+
+### Claim Safety (lib/claim-safety.ts — 393 LOC)
+
+Validates claims for factuality and consistency before saving.
+
+### Semantic Gates (lib/semantic-gates.ts — 508 LOC)
+
+Checks meaning, coherence, and completeness of generated content.

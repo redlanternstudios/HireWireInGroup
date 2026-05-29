@@ -142,9 +142,7 @@ export function GuidedRequirementCoachFlow({
               const nextIndex = safeActiveIndex + 1
               const next = unresolvedMatches[nextIndex]
               setActiveIndex(nextIndex)
-              if (next) {
-                setResolveParam(next.requirement_id)
-              }
+              if (next) setResolveParam(next.requirement_id)
               setTimeout(() => setFlowOpen(true), 0)
             } else {
               setResolveParam(null)
@@ -171,6 +169,27 @@ export function GuidedRequirementCoachFlow({
         evidenceItems={evidenceItems}
         progressLabel={stepLabel}
         showGenerationUnlock={generationBlocked}
+        totalCount={unresolvedMatches.length}
+        currentIndex={safeActiveIndex}
+        onPrev={() => {
+          if (safeActiveIndex > 0) {
+            const prevIndex = safeActiveIndex - 1
+            const prev = unresolvedMatches[prevIndex]
+            setActiveIndex(prevIndex)
+            if (prev) setResolveParam(prev.requirement_id)
+          }
+        }}
+        onNext={() => {
+          const nextIndex = safeActiveIndex + 1
+          if (nextIndex < unresolvedMatches.length) {
+            const next = unresolvedMatches[nextIndex]
+            setActiveIndex(nextIndex)
+            if (next) setResolveParam(next.requirement_id)
+          } else {
+            setResolveParam(null)
+            setFlowOpen(false)
+          }
+        }}
       />
     </div>
   )
