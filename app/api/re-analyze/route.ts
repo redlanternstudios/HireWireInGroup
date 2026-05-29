@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { requireUser } from "@/lib/supabase/require-user"
@@ -51,30 +50,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Mark the job as analyzing so the UI shows a loading state
+    // Mark the job as analyzing so the UI shows a loading state.
+    // Existing analysis artifacts are left intact until fresh extraction succeeds.
     await supabase
       .from("jobs")
       .update({ status: "analyzing" })
       .eq("id", job_id)
       .eq("user_id", userId)
 
-    // Delete any stale analysis/scores rows so re-insert works cleanly
-    await Promise.all([
-      supabase.from("job_analyses").delete().eq("job_id", job_id).eq("user_id", userId),
-      supabase.from("job_scores").delete().eq("job_id", job_id),
-    ])
-
-    // Run analyzeJobCore — it will find the existing job by URL and return early
-    // with the duplicate response, so we bypass that by deleting first then calling
-    // the core function differently. Instead, we call the HTTP analyze endpoint
-    // logic directly, bypassing duplicate detection for re-analysis.
     const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId)
 
     if (!result.success) {
-      // Restore the previous status on failure
+      // Restore the previous status. Existing analysis rows were never deleted.
       await supabase
         .from("jobs")
-        .update({ status: "analyzed" })
+        .update({ status: job.status ?? "analyzed" })
         .eq("id", job_id)
         .eq("user_id", userId)
 
@@ -121,7 +111,7 @@ export async function POST(request: NextRequest) {
 //
 // Simpler approach: just call the shared extraction logic directly.
 
-import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
+import { generateStructuredText, CLAUDE_MODELS, getAiGatewayStatus } from "@/lib/ai/gateway"
 import { z } from "zod"
 import {
   normalizeEvidenceRecord,
@@ -213,37 +203,22 @@ function normalizeSeniority(level: string | null): string {
   return "Mid"
 }
 
-async function reAnalyzeExistingJob(
-  jobUrl: string,
-  jobId: string,
-  supabase: ServerSupabase,
-  userId: string
-): Promise<{ success: true; job: unknown } | { success: false; error: string }> {
-  // Fetch page
-  let pageContent: string
-  try {
-    const controller = new AbortController()
-    setTimeout(() => controller.abort(), 30000)
-    const response = await fetch(jobUrl, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: controller.signal,
-    })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const html = await response.text()
-    const parsed = parseJobPage(html, jobUrl)
-    pageContent = parsed.text
-  } catch (e) {
-    return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
-  }
+type ExtractionResult = {
+  analysis: z.infer<typeof JobAnalysisSchema>
+  analysisModel: string
+}
 
-  // Extract structured data via generateStructuredText (works with all Groq models)
-  let analysis: z.infer<typeof JobAnalysisSchema>
-  try {
-    analysis = await generateStructuredText({
-      model: CLAUDE_MODELS.SONNET,
-      schema: JobAnalysisSchema,
-      contextPrompt: `Analyze this job posting:\n\n${pageContent.slice(0, 12000)}`,
-      schemaDescription: `{
+function isAccessDeniedError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /(^|\D)403(\D|$)|forbidden|access denied/i.test(message)
+}
+
+async function extractWithFallback(
+  pageContent: string,
+  telemetry: { userId: string; jobId: string }
+): Promise<ExtractionResult> {
+  const status = getAiGatewayStatus()
+  const schemaDescription = `{
   "title": string | null,
   "company": string | null,
   "location": string | null,
@@ -271,8 +246,70 @@ async function reAnalyzeExistingJob(
     "has_people_management": boolean,
     "product_ownership_level": "low"|"medium"|"high"
   }
-}`,
-    }, { route: "re-analyze", operation: "job-analysis" })
+}`
+
+  const attempts = [
+    { model: CLAUDE_MODELS.SONNET, label: status.model, tier: "primary" },
+    { model: CLAUDE_MODELS.HAIKU, label: status.fastModel, tier: "fallback" },
+  ] as const
+
+  let lastError: unknown
+  for (const attempt of attempts) {
+    try {
+      const analysis = await generateStructuredText({
+        model: attempt.model,
+        schema: JobAnalysisSchema,
+        contextPrompt: `Analyze this job posting:\n\n${pageContent.slice(0, 12000)}`,
+        schemaDescription,
+      }, {
+        route: "re-analyze",
+        operation: "job-analysis",
+        userId: telemetry.userId,
+        jobId: telemetry.jobId,
+        metadata: { model_tier: attempt.tier },
+      })
+
+      return { analysis, analysisModel: attempt.label }
+    } catch (error) {
+      lastError = error
+      if (!isAccessDeniedError(error)) throw error
+      if (attempt.tier === "fallback") break
+      console.warn("[re-analyze] primary model access denied; trying fallback model")
+    }
+  }
+
+  throw lastError ?? new Error("AI extraction failed")
+}
+
+async function reAnalyzeExistingJob(
+  jobUrl: string,
+  jobId: string,
+  supabase: ServerSupabase,
+  userId: string
+): Promise<{ success: true; job: unknown } | { success: false; error: string }> {
+  // Fetch page
+  let pageContent: string
+  try {
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 30000)
+    const response = await fetch(jobUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const html = await response.text()
+    const parsed = parseJobPage(html, jobUrl)
+    pageContent = parsed.text
+  } catch (e) {
+    return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
+  }
+
+  let analysis: z.infer<typeof JobAnalysisSchema>
+  let analysisModel: string
+  try {
+    const extraction = await extractWithFallback(pageContent, { userId, jobId })
+    analysis = extraction.analysis
+    analysisModel = extraction.analysisModel
   } catch (e) {
     return { success: false, error: `AI extraction failed: ${e instanceof Error ? e.message : "unknown"}` }
   }
@@ -337,6 +374,18 @@ async function reAnalyzeExistingJob(
   const gaps = explainableFit.gaps.filter((g) => g.severity === "critical").slice(0, 5).map((g) => `Gap: ${g.requirement.slice(0, 80)}`)
   const strengths = explainableFit.strengths.slice(0, 5).map((s) => `Strong: ${s.requirement.slice(0, 80)}`)
 
+  // Only replace prior analysis artifacts after AI extraction and scoring succeed.
+  const [deleteAnalyses, deleteScores] = await Promise.all([
+    supabase.from("job_analyses").delete().eq("job_id", jobId).eq("user_id", userId),
+    supabase.from("job_scores").delete().eq("job_id", jobId),
+  ])
+  if (deleteAnalyses.error || deleteScores.error) {
+    return {
+      success: false,
+      error: deleteAnalyses.error?.message ?? deleteScores.error?.message ?? "Failed to clear stale analysis rows",
+    }
+  }
+
   // Update the existing jobs row — only columns that exist on public.jobs
   const { error: updateError } = await supabase
     .from("jobs")
@@ -382,7 +431,7 @@ async function reAnalyzeExistingJob(
     soc_group_name: analysis.soc_group_name ?? null,
     soc_category: analysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
-    analysis_model: "claude-sonnet",
+    analysis_model: analysisModel,
   })
   if (analysisError) console.error("Analysis insert error:", analysisError)
 
