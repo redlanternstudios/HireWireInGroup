@@ -112,15 +112,15 @@ export type GenerationStrategy =
   | "full_match"        // ≥80% requirement coverage, high confidence
   | "strong_match"      // 65–79% coverage
   | "partial_match"     // 40–64% coverage, gaps noted honestly
-  | "honest_stretch"    // 25–39% coverage, transparent framing
-  | "do_not_generate"   // <25% coverage or critical fabrication risk
+  | "honest_stretch"    // <40% coverage, transparent framing
+  | "do_not_generate"   // critical fabrication risk
 
 export type StrategyDecision = {
   strategy: GenerationStrategy
   requirement_coverage: number
   evidence_quality_pct: number
   reasoning: string
-  /** If do_not_generate, the user-facing reason. */
+  /** If do_not_generate, the user-facing safety reason. */
   block_reason?: string
 }
 

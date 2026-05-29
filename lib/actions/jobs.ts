@@ -205,11 +205,8 @@ export async function generateDocumentsForJob(jobId: string): Promise<GenerateDo
 }
 
 /**
- * Analyzes job and immediately generates documents.
- * Combined flow for single-click operation.
- * 
- * NOTE: The /api/analyze endpoint now handles generation internally,
- * so this function just needs to call analyze and return the results.
+ * Analyzes a job URL and returns analysis + job record.
+ * Generation is explicit and separate — call generate-documents after readiness.
  */
 export async function analyzeAndGenerateForJob(url: string): Promise<
   | {

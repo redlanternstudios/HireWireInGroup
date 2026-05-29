@@ -62,7 +62,7 @@ type ProviderConfig =
 
 function getProviderConfig(): ProviderConfig {
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim()
-  if (openAiApiKey) {
+  if (openAiApiKey && !isPlaceholderApiKey(openAiApiKey)) {
     return {
       configured: true,
       provider: "openai",
@@ -72,7 +72,7 @@ function getProviderConfig(): ProviderConfig {
   }
 
   const aiGatewayApiKey = process.env.AI_GATEWAY_API_KEY?.trim()
-  if (!aiGatewayApiKey) {
+  if (!aiGatewayApiKey || isPlaceholderApiKey(aiGatewayApiKey)) {
     return {
       configured: false,
       provider: "none",
@@ -100,6 +100,17 @@ function getProviderConfig(): ProviderConfig {
 
 function looksLikeOpenAiKey(apiKey: string) {
   return apiKey.startsWith("sk-")
+}
+
+function isPlaceholderApiKey(apiKey: string) {
+  const normalized = apiKey.toLowerCase()
+  return (
+    normalized.includes("replace") ||
+    normalized.includes("your_") ||
+    normalized.includes("your-") ||
+    normalized.includes("changeme") ||
+    normalized.includes("placeholder")
+  )
 }
 
 function getTimeoutMs() {

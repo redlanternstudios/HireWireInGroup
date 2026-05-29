@@ -11,11 +11,11 @@
  *   full_match      ≥80% required qualifications covered + evidence quality ≥70%
  *   strong_match    65–79% covered OR coverage ≥80% but evidence quality 40–69%
  *   partial_match   40–64% covered
- *   honest_stretch  25–39% covered
- *   do_not_generate <25% covered, or any direct fabrication risk detected
+ *   honest_stretch  <40% covered
+ *   do_not_generate direct fabrication risk detected
  *
- * GOVERNANCE INVARIANT: "do_not_generate" is a hard block. No document may be
- * generated, no DB row updated to "ready". The pipeline must return 400.
+ * GOVERNANCE INVARIANT: Low evidence coverage is a user-facing warning, not an
+ * algorithmic veto. Direct fabrication risk remains a hard safety block.
  */
 
 import type { StrategyDecision, GenerationStrategy } from "./types"
@@ -28,7 +28,6 @@ const THRESHOLDS = {
   STRONG_MATCH_COVERAGE: 65,
   PARTIAL_MATCH_COVERAGE: 40,
   HONEST_STRETCH_COVERAGE: 25,
-  // Below HONEST_STRETCH_COVERAGE → do_not_generate
 } as const
 
 // ── Strategy prompt fragments (used by the generation route) ──────────────────
@@ -70,7 +69,7 @@ The candidate is stretching for this role. Be transparent.
 
   do_not_generate: `
 STRATEGY: DO NOT GENERATE
-This generation is blocked due to insufficient evidence coverage.
+This generation is blocked because direct fabrication risk was detected.
 `.trim(),
 }
 
@@ -96,14 +95,13 @@ export function resolveStrategy(params: {
     }
   }
 
-  // Below minimum threshold
+  // Very low coverage is an honest-stretch warning, not a qualification veto.
   if (requirementCoverage < THRESHOLDS.HONEST_STRETCH_COVERAGE) {
     return {
-      strategy: "do_not_generate",
+      strategy: "honest_stretch",
       requirement_coverage: requirementCoverage,
       evidence_quality_pct: evidenceQualityPct,
-      reasoning: `Requirement coverage (${requirementCoverage}%) is below the minimum threshold (${THRESHOLDS.HONEST_STRETCH_COVERAGE}%) for any generation.`,
-      block_reason: `Generation blocked: this role requires qualifications that the candidate does not have evidence for (${requirementCoverage}% coverage). Building the evidence library or selecting a better-matched role is recommended.`,
+      reasoning: `Requirement coverage (${requirementCoverage}%) is very low. Continue only with conservative, evidence-only positioning after user acknowledgment.`,
     }
   }
 

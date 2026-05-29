@@ -89,7 +89,7 @@ export async function runJobFlow(input: RunJobFlowInput): Promise<RunJobFlowResu
         .eq("id", jobId)
         .eq("user_id", userId)
       await addStep("analysis", "started", "Analysis step started")
-      await addStep("analysis", "success", "Analysis placeholder complete")
+      await addStep("analysis", "success", "Job status updated for analysis")
     } else {
       await addStep("analysis", "skipped", "Analysis already completed")
     }

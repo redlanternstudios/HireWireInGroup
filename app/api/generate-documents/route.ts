@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/ai/gateway";
 import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake";
+import { requireUser } from "@/lib/supabase/require-user";
 import {
   BANNED_PHRASES,
   detectBannedPhrases,
@@ -79,7 +80,7 @@ async function withRetry<T>(
 
       if (isRateLimited && attempt < maxRetries) {
         const delay = baseDelayMs * Math.pow(2, attempt); // 2s, 4s, 8s
-        console.log(
+        console.error(
           `[hirewire] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -379,6 +380,42 @@ function buildPacketEvidenceMap(packets: EvidenceIntelligencePacket[]) {
   };
 }
 
+// Bias guard 2.4: dates normalized to durations in generation context
+function durationFromDates(
+  startDate: string | undefined | null,
+  endDate: string | undefined | null,
+): string {
+  const FALLBACK_YEAR = 2026;
+  if (!startDate) return "Unknown duration";
+
+  const parseYearMonth = (
+    dateStr: string,
+  ): { year: number; month: number } | null => {
+    if (!dateStr) return null;
+    // Try YYYY-MM or YYYY-MM-DD
+    const match = dateStr.match(/^(\d{4})[-/]?(\d{2})?/);
+    if (!match) return null;
+    return {
+      year: parseInt(match[1], 10),
+      month: match[2] ? parseInt(match[2], 10) : 1,
+    };
+  };
+
+  const start = parseYearMonth(startDate);
+  if (!start) return "Unknown duration";
+
+  const end = endDate
+    ? parseYearMonth(endDate) ?? { year: FALLBACK_YEAR, month: 1 }
+    : { year: FALLBACK_YEAR, month: 1 };
+
+  const totalMonths =
+    (end.year - start.year) * 12 + (end.month - start.month);
+  if (totalMonths <= 0) return "Less than 1 month";
+  if (totalMonths < 12) return `${totalMonths} month${totalMonths !== 1 ? "s" : ""}`;
+  const years = Math.round(totalMonths / 12);
+  return `${years} year${years !== 1 ? "s" : ""}`;
+}
+
 function formatGenerationPackets(packets: EvidenceIntelligencePacket[]) {
   return packetsForResume(packets)
     .map(packet => `
@@ -393,7 +430,8 @@ Matched Evidence IDs: ${packet.matchedEvidenceIds.join(", ")}
 Matched Evidence Titles: ${packet.matchedEvidenceTitles.join(", ")}
 Systems: ${packet.systems.join(", ") || "None specified"}
 Tools: ${packet.tools.join(", ") || "None specified"}
-Companies/Roles: ${[...packet.companies, ...packet.roles].join(", ") || "None specified"}
+// Bias guard 2.3: company names anonymized in generation context
+Roles: ${packet.roles.join(", ") || "None specified"}
 Proof Snippets:
 ${packet.proofSnippets.map(snippet => `- ${snippet}`).join("\n") || "- None"}
 Outcomes:
@@ -1317,9 +1355,8 @@ Do NOT exaggerate or invent qualifications.${gapWarning}`;
 
     case "do_not_generate":
       return `
-GENERATION BLOCKED: DO NOT GENERATE
-This role is too much of a stretch. Generating materials would require invention.
-Return an error explaining why generation was blocked.`;
+GENERATION STRATEGY: SAFETY BLOCK
+Direct fabrication risk was detected. Do not generate application materials.`;
   }
 }
 
@@ -1399,20 +1436,12 @@ export async function POST(request: NextRequest) {
     const MAX_RETRIES = 1; // Auto-retry once if quality check fails
     const aiConfigured = isAnthropicConfigured();
 
-    const userClient = await createClient();
-    const {
-      data: { user },
-    } = await userClient.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 },
-      );
-    }
-    const userId = user.id;
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+    const userId = auth.userId;
 
     // Use user-scoped client for all reads and writes (RLS enforced)
-    const supabase = userClient;
+    const supabase = auth.supabase;
 
     // === PLAN ENFORCEMENT ===
     // Check user's plan and generation count this month
@@ -1762,6 +1791,11 @@ export async function POST(request: NextRequest) {
           ? sourceResumeData.education
           : [];
 
+    // NOTE: profileContext is built for completeness but is NOT injected into AI prompts.
+    // Bias guard 2.1: name would need stripping here if this context were ever added to a prompt.
+    // Bias guard 2.2: institution would need stripping here if this context were ever added to a prompt.
+    // Bias guard 2.3: company names would need anonymizing here if this context were ever added to a prompt.
+    // Bias guard 2.4: start_date/end_date would need replacing with durationFromDates() if this context were ever added to a prompt.
     const profileContext = `
 CANDIDATE PROFILE:
 Name: ${effectiveName}
@@ -1807,6 +1841,8 @@ ${sourceResume.parsed_text.slice(0, 5000)}
 }
 `;
 
+    // NOTE: evidenceContext is built for provenance/tracing but is NOT injected into AI prompts.
+    // Guards 2.3 (company) and 2.4 (dates) would apply here if this context were ever added to a prompt.
     const evidenceContext =
       resumeEvidence.length > 0
         ? `
@@ -1971,33 +2007,16 @@ ${formatGenerationPackets(capabilityPackets)}
         evidenceQuality,
       );
 
-    // Block generation if strategy is "do_not_generate"
-    if (strategy === "do_not_generate") {
-      const doNotGenerateUpdate = await supabase
-        .from("jobs")
-        .update({
-          generation_status: "failed",
-          generation_error: "Generation blocked: role too much of a stretch",
-        })
-        .eq("id", job_id)
-        .eq("user_id", userId);
-      logSupabaseWriteError("mark_do_not_generate_blocked", doNotGenerateUpdate.error, {
-        job_id,
-        user_id: userId,
-      });
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Generation blocked: This role is too much of a stretch.",
-          strategy,
-          strategy_reasoning: strategyReasoning,
-          requirement_coverage: generatedEvidenceMap.requirement_coverage,
-          gaps: generatedEvidenceMap.gaps,
-        },
-        { status: 400 },
-      );
-    }
+    const generationRiskWarning =
+      strategy === "stretch_honest" && generatedEvidenceMap.requirement_coverage < 30
+        ? {
+            code: "low_evidence_coverage",
+            message:
+              "HireWire found low evidence coverage for this role and automatically used conservative, evidence-only generation.",
+            requirement_coverage: generatedEvidenceMap.requirement_coverage,
+            gaps: generatedEvidenceMap.gaps,
+          }
+        : null;
 
     // Determine if there are unresolved gaps (gaps detected but not clarified)
     const hasUnresolvedGaps =
@@ -2033,13 +2052,17 @@ ${formatGenerationPackets(capabilityPackets)}
         schemaDescription: RESUME_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
         prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
 
+VERB TIER RULE: Apply identical verb strength regardless of candidate name, school, company, or background. If evidence supports Led, write Led. Never use hedging verbs (helped, assisted, supported) based on inferred demographics.
+
 Candidate identity/contact/education context only:
-Name: ${effectiveName}
+// Bias guard 2.1: name stripped from generation context
+Candidate: The candidate
 Location: ${effectiveLocation}
 Skills for skills section only: ${effectiveSkills.join(", ")}
 Education:
 ${effectiveEducation
-  .map((edu: { degree: string; school: string; year?: string }) => `- ${edu.degree} from ${edu.school}${edu.year ? ` (${edu.year})` : ""}`)
+  // Bias guard 2.2: institution stripped from generation context
+  .map((edu: { degree: string; school: string; year?: string }) => `- ${edu.degree}${edu.year ? ` (${edu.year})` : ""}`)
   .join("\n")}
 
 ${packetContext}
@@ -2174,8 +2197,11 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
         schemaDescription: COVER_LETTER_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
         prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
 
+VERB TIER RULE: Apply identical verb strength regardless of candidate name, school, company, or background. If evidence supports Led, write Led. Never use hedging verbs (helped, assisted, supported) based on inferred demographics.
+
 Candidate identity context:
-Name: ${effectiveName}
+// Bias guard 2.1: name stripped from generation context
+Candidate: The candidate
 Location: ${effectiveLocation}
 
 ${packetContext}
@@ -2754,15 +2780,6 @@ If no issues found, return empty arrays and overall_passed: true.`,
     }
 
     // Update the job with generated materials
-    console.error("[HireWire] Document persistence diagnostic:", {
-      job_id,
-      user_id: userId,
-      formattedResume_length: formattedResume?.length ?? null,
-      formattedResume_preview: formattedResume?.substring(0, 100) ?? null,
-      formattedCoverLetter_length: formattedCoverLetter?.length ?? null,
-      formattedCoverLetter_preview: formattedCoverLetter?.substring(0, 100) ?? null,
-    });
-
     const updatePayload = {
       status: qualityPassed ? "ready" : "needs_review",
       generated_resume: formattedResume,
@@ -2779,6 +2796,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
         gaps: generatedEvidenceMap.gaps,
         strategy,
         strategy_reasoning: strategyReasoning,
+        generation_warning: generationRiskWarning,
         requirement_coverage: generatedEvidenceMap.requirement_coverage,
       },
       score_strengths: generatedEvidenceMap.matched_skills,
@@ -2856,15 +2874,11 @@ If no issues found, return empty arrays and overall_passed: true.`,
       .eq("user_id", userId)
       .select("id, generated_resume, generated_cover_letter");
 
-    const { error: updateError, data: updateData } = updateResult;
+    const { error: updateError } = updateResult;
 
-    console.error("[HireWire] Document update result:", {
-      updateError: updateError ? { message: updateError.message, code: updateError.code, status: (updateError as any).status } : null,
-      updateData_isArray: Array.isArray(updateData),
-      updateData_length: Array.isArray(updateData) ? updateData.length : null,
-      firstRecord: Array.isArray(updateData) ? (updateData[0] as any) : (updateData as any),
-      firstRecord_resumeLength: Array.isArray(updateData) ? (updateData[0] as any)?.generated_resume?.length : (updateData as any)?.generated_resume?.length,
-    });
+    if (updateError) {
+      console.error("[HireWire] Document update failed:", { message: updateError.message, code: updateError.code })
+    }
 
     // Optional provenance/voice columns — swallow errors in envs where they aren't yet migrated
     void supabase
@@ -3187,6 +3201,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
       retry_count: _retry_count,
       strategy,
       strategy_reasoning: strategyReasoning,
+      generation_warning: generationRiskWarning,
       resume_format: resumeFormatRecommendation.format,
       resume_font: resumeFormatRecommendation.font,
       format_recommendation_reason: resumeFormatRecommendation.reason,
@@ -3288,14 +3303,11 @@ If no issues found, return empty arrays and overall_passed: true.`,
     try {
       failedJobId = parsedJobId
       if (failedJobId) {
-        const supabase = await createClient();
-        failedSupabase = supabase
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          failedUserId = user.id
-          const failedGenerationUpdate = await supabase
+        const auth = await requireUser();
+        if (auth.ok) {
+          failedSupabase = auth.supabase
+          failedUserId = auth.userId
+          const failedGenerationUpdate = await auth.supabase
             .from("jobs")
             .update({
               generation_status: "failed",
@@ -3303,10 +3315,10 @@ If no issues found, return empty arrays and overall_passed: true.`,
                 error instanceof Error ? error.message : "Generation failed",
             })
             .eq("id", failedJobId)
-            .eq("user_id", user.id);
+            .eq("user_id", auth.userId);
           logSupabaseWriteError("mark_generation_failed", failedGenerationUpdate.error, {
             job_id: failedJobId,
-            user_id: user.id,
+            user_id: auth.userId,
           });
         }
       }

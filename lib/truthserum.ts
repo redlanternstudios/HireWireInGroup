@@ -21,7 +21,7 @@ export type GenerationStrategy =
   | "direct_match"      // Strong fit - can be assertive
   | "adjacent_transition" // Related experience - lean on nearby evidence
   | "stretch_honest"    // Weak fit - surface gaps, avoid overclaiming
-  | "do_not_generate"   // Too risky - block export
+  | "do_not_generate"   // Reserved for direct fabrication/safety risk
 
 export type EvidenceUsageRule = 
   | "active"           // Can use anywhere
@@ -494,12 +494,12 @@ export function determineGenerationStrategy(
     }
   }
 
-  // Do not generate: Too risky
+  // Very low coverage is not a qualification veto. Generate conservatively from evidence only.
   return {
-    strategy: "do_not_generate",
+    strategy: "stretch_honest",
     reasoning: fitScore === null
-      ? `Score not available with only ${requiredCoverage}% coverage. Generating materials would require invention. Not recommended.`
-      : `Poor fit (${fitScore}/100) with only ${requiredCoverage}% coverage. Generating materials would require invention. Not recommended.`
+      ? `Score not available with only ${requiredCoverage}% coverage. Generate conservatively from evidence only and omit unsupported requirements.`
+      : `Low fit signal (${fitScore}/100) with only ${requiredCoverage}% coverage. Generate conservatively from evidence only and omit unsupported requirements.`
   }
 }
 
