@@ -10,7 +10,8 @@
 
 The generation strategy is resolved by `lib/coach/generation-strategy.ts`
 immediately after the evidence map is built. It is the primary control surface
-that determines how the AI writes — and whether it writes at all.
+that determines how the AI writes. Low coverage changes the framing; it does
+not decide whether the candidate is allowed to generate materials.
 
 The strategy is derived from two inputs:
 
@@ -24,7 +25,10 @@ The strategy is derived from two inputs:
 
 ```
 requirementCoverage < 25%
-    └── strategy = do_not_generate (HARD BLOCK)
+    └── strategy = honest_stretch
+        - Automated conservative generation
+        - Evidence-only claims
+        - Unsupported requirements are omitted, not satisfied
 
 requirementCoverage 25–39%
     └── strategy = honest_stretch
@@ -67,7 +71,7 @@ requirementCoverage ≥80% AND evidenceQuality ≥70%
 
 1. Job analysis must exist and be valid.
 2. Requirement graph must exist or be created.
-3. Evidence match must meet minimum threshold or require user approval.
+3. Evidence match controls confidence/framing; low coverage uses conservative generation.
 4. Generation intent is required for all regeneration.
 5. All claims must pass constitution and quality gates before rendering.
 6. Artifacts are rendered from structured claims, not freeform text.
@@ -90,7 +94,11 @@ The fragments:
 
 ## do_not_generate Triggers
 
-Beyond coverage thresholds, `do_not_generate` is also triggered when:
+`do_not_generate` must not be triggered by coverage, fit score, career path,
+or credential mismatch alone. Those are candidate-context questions, not safety
+questions.
+
+`do_not_generate` is reserved for:
 
 1. **Direct fabrication risk detected** — if the pre-flight evidence check
    determines that the required qualifications cannot be covered without
