@@ -8,11 +8,15 @@ function read(path: string) {
 
 test("Match Interview chat uses the canonical coach tool route", () => {
   const coachChat = read("components/coach-chat.tsx")
-  const modal = read("components/coach/GapCoachDrawer.tsx")
+  const modal = read("components/match-interview/MatchInterviewModal.tsx")
 
   assert.match(coachChat, /api:\s*"\/api\/coach"/)
   assert.match(modal, /fetch\("\/api\/coach\/sessions"/)
-  assert.doesNotMatch(modal, /\/api\/coach\/sessions\/\$\{[^}]+}\]\/messages/)
+  assert.match(modal, /fetch\(`\/api\/coach\/sessions\/\$\{sessionId}\/messages`/)
+  assert.match(modal, /fetch\(`\/api\/jobs\/\$\{jobId}\/coach-step`/)
+  assert.match(modal, /fetch\(`\/api\/coach\/evidence-drafts\/\$\{draftId}\/confirm`/)
+  assert.doesNotMatch(modal, /\/api\/match-interview/)
+  assert.doesNotMatch(modal, /stubStartSession|stubSendMessage/)
 })
 
 test("coach-step compatibility route delegates confirm and skip through routeToolCall", () => {

@@ -3,7 +3,7 @@
  * Fetch a session with all messages and drafts. Used on page load.
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/supabase/require-user"
 
 function logCoachSessionReadError(
   action: string,
@@ -22,20 +22,20 @@ export async function GET(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     const { sessionId } = await params
     const { data: session, error: sessionError } = await supabase
       .from("coach_sessions")
       .select("id,job_id,gap_requirement,gap_requirement_id,status,created_at,updated_at")
-      .eq("id", sessionId).eq("user_id", user.id).maybeSingle()
+      .eq("id", sessionId).eq("user_id", userId).maybeSingle()
 
     if (sessionError) {
       logCoachSessionReadError("load_session", sessionError, {
         session_id: sessionId,
-        user_id: user.id,
+        user_id: userId,
       })
       return NextResponse.json(
         { success: false, error: "session_lookup_failed", user_message: "Could not load that session." },
@@ -61,7 +61,7 @@ export async function GET(
     if (msgs.error || drafts.error) {
       logCoachSessionReadError("load_session_payload", msgs.error ?? drafts.error, {
         session_id: sessionId,
-        user_id: user.id,
+        user_id: userId,
       })
       return NextResponse.json(
         { success: false, error: "session_payload_failed", user_message: "Could not load session messages." },

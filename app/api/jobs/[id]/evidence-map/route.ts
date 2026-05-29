@@ -1,18 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-
-    const userId = user.id
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
     const { id: jobId } = await params
     const body = await request.json()
     const requirementId = String(body.requirementId ?? "").trim()

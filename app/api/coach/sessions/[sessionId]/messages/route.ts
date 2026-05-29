@@ -7,8 +7,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { generateText } from "@/lib/ai/gateway"
 import { CLAUDE_MODELS } from "@/lib/ai/gateway"
-import { createClient } from "@/lib/supabase/server"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { requireUser } from "@/lib/supabase/require-user"
 import {
   buildCoachSystemPrompt,
   parseEvidenceDraft,
@@ -35,10 +35,9 @@ export async function POST(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const userId = user.id
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
     const { sessionId } = await params
 
     const body = await request.json()

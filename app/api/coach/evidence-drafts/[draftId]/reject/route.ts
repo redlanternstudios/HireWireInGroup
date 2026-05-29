@@ -3,7 +3,7 @@
  * Rejects a pending draft. Does not write to evidence_library.
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/supabase/require-user"
 
 function logCoachDraftRejectError(
   action: string,
@@ -22,19 +22,19 @@ export async function POST(
   { params }: { params: Promise<{ draftId: string }> }
 ) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
     const { draftId } = await params
 
     const { error } = await supabase.from("coach_evidence_drafts")
       .update({ status: "rejected", updated_at: new Date().toISOString() })
-      .eq("id", draftId).eq("user_id", user.id).eq("status", "pending")
+      .eq("id", draftId).eq("user_id", userId).eq("status", "pending")
 
     if (error) {
       logCoachDraftRejectError("reject_draft", error, {
         draft_id: draftId,
-        user_id: user.id,
+        user_id: userId,
       })
       return NextResponse.json(
         { success: false, error: "update_failed", user_message: "Failed to reject draft." },

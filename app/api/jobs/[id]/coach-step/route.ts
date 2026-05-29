@@ -5,6 +5,7 @@ import { validateCoachAnswer } from "@/lib/coach/claim-validator"
 import { buildConflictResponse, emitCoachEvent, guardedCoachStepUpdate } from "@/lib/coach/coach-step-helpers"
 import { routeToolCall } from "@/lib/coach/tool-router"
 import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/supabase/require-user"
 
 type CoachStepBody =
   | { action: "answer"; gap: string; requirementId?: string; answer: string; force_save?: boolean }
@@ -16,21 +17,16 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-  }
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   const body = (await request.json()) as CoachStepBody
   const { data: job, error } = await supabase
     .from("jobs")
     .select("id,evidence_map,evidence_map_version,score,score_gaps,gap_clarifications,gaps_addressed")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle()
 
@@ -41,7 +37,7 @@ export async function POST(
   if (body.action === "complete") {
     const update = await guardedCoachStepUpdate({
       supabase,
-      userId: user.id,
+      userId,
       jobId: id,
       currentVersion: job.evidence_map_version ?? null,
       values: {
@@ -56,10 +52,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: "update_failed" }, { status: 500 })
     }
     if (update.conflict) {
-      return buildConflictResponse(supabase, user.id, id)
+      return buildConflictResponse(supabase, userId, id)
     }
 
-    await emitCoachEvent(supabase, user.id, id, "completed", {
+    await emitCoachEvent(supabase, userId, id, "completed", {
       compatibility_route: "coach-step",
     })
 
@@ -102,7 +98,7 @@ export async function POST(
       )
     }
 
-    const snapshot = await loadCoachStepSnapshot(supabase, user.id, id)
+    const snapshot = await loadCoachStepSnapshot(supabase, userId, id)
     return NextResponse.json({
       success: true,
       coachStep: snapshot.coachStep,
@@ -169,7 +165,7 @@ export async function POST(
     )
   }
 
-  const snapshot = await loadCoachStepSnapshot(supabase, user.id, id)
+  const snapshot = await loadCoachStepSnapshot(supabase, userId, id)
   const data =
     output.result.data && typeof output.result.data === "object" && !Array.isArray(output.result.data)
       ? output.result.data as Record<string, unknown>

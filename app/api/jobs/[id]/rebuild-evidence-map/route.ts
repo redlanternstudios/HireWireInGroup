@@ -1,28 +1,22 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-  }
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   const { data: job, error: jobError } = await supabase
     .from("jobs")
     .select("id, user_id")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle()
 
@@ -33,7 +27,7 @@ export async function POST(
   try {
     const evidenceMap = await buildEvidenceMapForJob({
       supabase,
-      userId: user.id,
+      userId,
       jobId: id,
     })
 
@@ -50,14 +44,14 @@ export async function POST(
         .from("jobs")
         .update({ evidence_map: cleanedMap })
         .eq("id", id)
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
     }
 
     await handleDomainEvent({
       supabase,
       event_type: "evidence_mapped",
       job_id: id,
-      user_id: user.id,
+      user_id: userId,
       source: "system",
       payload: {
         action: "rebuild",

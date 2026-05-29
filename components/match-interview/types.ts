@@ -66,6 +66,7 @@ export interface InterviewMessage {
     text: string
     confidence: ConfidenceLevel
     gapNotes?: string
+    draftId?: string
   }
   timestamp: Date
 }
