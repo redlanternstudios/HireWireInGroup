@@ -2,7 +2,6 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
-import { headers } from "next/headers"
 import type { Job, JobStatus } from "@/lib/types"
 import { normalizeJobStatus } from "@/lib/job-lifecycle"
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
@@ -35,36 +34,6 @@ export type AnalyzeJobResult =
       correlationId?: string
     }
   | { success: false; error: string; correlationId?: string }
-
-export type GenerateDocumentsResult =
-  | {
-      success: true
-      job_id: string
-      evidence_map: {
-        fit_score: number
-        matched_skills: string[]
-        matched_tools: string[]
-        matched_experiences: Array<{
-          experience_title: string
-          company: string
-          relevance: string
-          key_achievements: string[]
-        }>
-        gaps: string[]
-      }
-      generated_resume: string
-      generated_cover_letter: string
-      quality_check: {
-        passed: boolean
-        issues: {
-          invented_claims: string[]
-          vague_bullets: string[]
-          ai_filler: string[]
-        }
-        suggestions: string[]
-      }
-    }
-  | { success: false; error: string }
 
 // Legacy type for backwards compatibility
 export type CreateJobResult = AnalyzeJobResult
@@ -111,13 +80,7 @@ export async function analyzeJobFromUrl(url: string): Promise<AnalyzeJobResult> 
       logErr(err, { action: "analyzeJobFromUrl" })
       return toAction(err) as AnalyzeJobResult
     }
-    const requestHeaders = await headers()
-    const requestLike = {
-      headers: {
-        get: (name: string) => requestHeaders.get(name),
-      },
-    }
-    const result = await analyzeJobCore(normalizedUrl, supabase, user, requestLike)
+    const result = await analyzeJobCore(normalizedUrl, supabase, user)
     if (!result.success) {
       const err = validationError({ code: "ANALYZE_JOB_FAILED", message: result.error, correlationId })
       logErr(err, { action: "analyzeJobFromUrl" })
@@ -159,52 +122,6 @@ export async function analyzeJobFromUrl(url: string): Promise<AnalyzeJobResult> 
 }
 
 /**
- * Generates tailored resume and cover letter for a job.
- * Uses grounded evidence from profile and evidence library.
- */
-export async function generateDocumentsForJob(jobId: string): Promise<GenerateDocumentsResult> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
-      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000"
-
-    const response = await fetch(`${baseUrl}/api/generate-documents`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ job_id: jobId }),
-    })
-
-    const result = await response.json()
-
-    if (!result.success) {
-      return { success: false, error: result.error || "Generation failed" }
-    }
-
-    revalidatePath("/")
-    revalidatePath("/jobs")
-    revalidatePath(`/jobs/${jobId}`)
-    revalidatePath("/ready-to-apply")
-    revalidatePath("/ready-queue")
-
-    return {
-      success: true,
-      job_id: result.job_id,
-      evidence_map: result.evidence_map,
-      generated_resume: result.generated_resume,
-      generated_cover_letter: result.generated_cover_letter,
-      quality_check: result.quality_check,
-    }
-  } catch (err) {
-    console.error("Error generating documents:", err)
-    return { success: false, error: "Failed to generate documents" }
-  }
-}
-
-/**
  * Analyzes a job URL and returns analysis + job record.
  * Generation is explicit and separate — call generate-documents after readiness.
  */
@@ -235,14 +152,7 @@ export async function analyzeAndGenerateForJob(url: string): Promise<
       return { success: false, error: "Not authenticated" }
     }
 
-    const requestHeaders = await headers()
-    const requestLike = {
-      headers: {
-        get: (name: string) => requestHeaders.get(name),
-      },
-    }
-
-    const result = await analyzeJobCore(normalizedUrl, supabase, user, requestLike)
+    const result = await analyzeJobCore(normalizedUrl, supabase, user)
 
     if (!result.success) {
       return { success: false, error: result.error }
@@ -781,52 +691,4 @@ export async function restoreJob(
   revalidatePath("/companies")
 
   return { success: true }
-}
-
-/**
- * Regenerate a specific section of generated content
- */
-export async function regenerateSection(
-  jobId: string, 
-  section: "resume" | "cover_letter",
-  feedback: string
-): Promise<{ success: boolean; content?: string; error?: string }> {
-  try {
-    const supabase = await createClient()
-    
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return { success: false, error: "Not authenticated" }
-    }
-    
-    // Get current job data - ensure user owns the job
-    const { data: job, error } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("id", jobId)
-      .eq("user_id", user.id)
-      .is("deleted_at", null)
-      .single()
-
-    if (error || !job) {
-      return { success: false, error: "Job not found" }
-    }
-
-    // Re-generate the full documents but note the feedback
-    const result = await generateDocumentsForJob(jobId)
-    
-    if (!result.success) {
-      return { success: false, error: result.error }
-    }
-
-    const content = section === "resume" 
-      ? result.generated_resume 
-      : result.generated_cover_letter
-
-    return { success: true, content }
-  } catch (err) {
-    console.error("Error regenerating section:", err)
-    return { success: false, error: "Failed to regenerate" }
-  }
 }

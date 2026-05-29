@@ -45,7 +45,6 @@ export async function POST(request: NextRequest) {
       job_url ?? null,
       supabase,
       user,
-      request,
       job_description ?? null,
     );
 

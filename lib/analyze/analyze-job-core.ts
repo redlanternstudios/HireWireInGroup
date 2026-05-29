@@ -400,13 +400,11 @@ function fallbackAnalyzeJob(
  * @param job_url   - The validated job posting URL to analyze
  * @param supabase  - Server-side Supabase client (from createClient() in server.ts)
  * @param user      - Verified user from supabase.auth.getUser() — caller's responsibility
- * @param requestLike - Object satisfying RequestLike for cookie/origin forwarding in runJobFlow
  */
 export async function analyzeJobCore(
   job_url: string | null,
   supabase: ServerSupabase,
   user: User,
-  requestLike: { headers: { get(name: string): string | null } },
   job_description?: string | null,
 ): Promise<AnalyzeCoreOutput> {
   const source = job_url ? detectSource(job_url) : "OTHER";
@@ -885,10 +883,8 @@ Extract the job details following the schema.`,
   // Run orchestration flow
   const orchestration = await runJobFlow({
     supabase,
-    request: requestLike,
     userId: user.id,
     jobId: job.id,
-    triggerInterviewPrep: false,
   });
 
   // Fetch updated job with generated materials

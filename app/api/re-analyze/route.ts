@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     // with the duplicate response, so we bypass that by deleting first then calling
     // the core function differently. Instead, we call the HTTP analyze endpoint
     // logic directly, bypassing duplicate detection for re-analysis.
-    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId, request)
+    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId)
 
     if (!result.success) {
       // Restore the previous status on failure
@@ -217,8 +217,7 @@ async function reAnalyzeExistingJob(
   jobUrl: string,
   jobId: string,
   supabase: ServerSupabase,
-  userId: string,
-  requestLike: { headers: { get(name: string): string | null } }
+  userId: string
 ): Promise<{ success: true; job: unknown } | { success: false; error: string }> {
   // Fetch page
   let pageContent: string
@@ -404,10 +403,8 @@ async function reAnalyzeExistingJob(
   // Run orchestration (coaching, matching, etc.)
   await runJobFlow({
     supabase,
-    request: requestLike,
     userId,
     jobId,
-    triggerInterviewPrep: false,
   })
 
   const { data: updatedJob } = await supabase

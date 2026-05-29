@@ -41,10 +41,13 @@ export async function POST(request: Request) {
         .eq("id", userId)
     }
 
-    const origin =
-      request.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "http://localhost:3000"
+    const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL
+    if (!origin) {
+      return NextResponse.json(
+        { error: "Missing application URL configuration" },
+        { status: 500 }
+      )
+    }
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,

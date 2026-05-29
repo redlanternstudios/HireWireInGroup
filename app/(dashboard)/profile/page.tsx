@@ -49,11 +49,17 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push("/login"); return }
 
-    const { data } = await supabase
+    const { data, error: profileError } = await supabase
       .from("user_profile")
       .select("full_name, email, phone, location, summary, skills, website_url, github_url")
       .eq("user_id", user.id)
-      .single()
+      .maybeSingle()
+
+    if (profileError) {
+      setError(profileError.message)
+      setLoading(false)
+      return
+    }
 
     if (data) {
       setProfile({
