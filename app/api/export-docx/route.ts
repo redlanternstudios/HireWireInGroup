@@ -6,24 +6,21 @@ import {
   normalizeResumeFont,
   normalizeResumeFormat,
 } from '@/lib/resume-formats'
-import { createClient } from '@/lib/supabase/server'
 import { handleDomainEvent } from '@/lib/domain-events'
 import { validationError, documentGenerationError } from '@/lib/errors/factory'
 import { logError as logErr } from '@/lib/errors/logger'
 import { toApiErrorResponse } from '@/lib/errors/response'
 import { createCorrelationId } from '@/lib/errors/correlation'
+import { requireUser } from '@/lib/supabase/require-user'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   const correlationId = createCorrelationId()
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-  const userId = user.id
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   let body: { text?: unknown; filename?: unknown; resumeFormat?: unknown; resumeFont?: unknown; job_id?: unknown }
   try {

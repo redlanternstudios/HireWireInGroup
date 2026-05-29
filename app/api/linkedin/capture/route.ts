@@ -21,7 +21,6 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { cleanProfileText } from "@/lib/linkedin/cleanProfileText"
 import {
   extractLinkedInProfile,
@@ -30,6 +29,7 @@ import {
 import { mapLinkedInToEvidence } from "@/lib/linkedin/mapLinkedInToEvidence"
 import { dedupeKey } from "@/lib/mapResumeToEvidence"
 import { detectEvidenceDuplicates } from "@/lib/evidence/duplicates"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export const maxDuration = 60
 
@@ -53,19 +53,9 @@ const TEAM_VOICE_FLAG =
 export async function POST(request: NextRequest) {
   try {
     // ── 1. Auth check ────────────────────────────────────────────────────────
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      )
-    }
-
-    const userId = user.id
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     // ── 2. Validate input ────────────────────────────────────────────────────
     let body: unknown

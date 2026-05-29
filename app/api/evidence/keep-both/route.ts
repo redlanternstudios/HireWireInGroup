@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 
-import { createClient } from "@/lib/supabase/server"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   const body = await request.json() as { evidence_ids?: string[]; reason?: string }
   const evidenceIds = Array.from(new Set(body.evidence_ids ?? [])).filter(Boolean)
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   const { data: rows, error } = await supabase
     .from("evidence_library")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .in("id", evidenceIds)
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     supabase,
     event_type: "coach_action_taken",
     job_id: null,
-    user_id: user.id,
+    user_id: userId,
     source: "evidence_action",
     payload: {
       action: "keep_duplicate_evidence_distinct",

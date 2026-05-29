@@ -1,14 +1,14 @@
-import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { parse } from 'csv-parse/sync'
 import { detectEvidenceDuplicates, type EvidenceDuplicateRow } from '@/lib/evidence/duplicates'
+import { requireUser } from '@/lib/supabase/require-user'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   const formData = await req.formData()
   const file = formData.get('file') as File
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   const { data: existing } = await supabase
     .from('evidence_library')
     .select('id, source_type, source_title, company_name, role_name, date_range, responsibilities, tools_used, outcomes, proof_snippet')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('is_active', true)
 
   const duplicateCandidates = detectEvidenceDuplicates(candidateRows, existing ?? [])
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   if (rowsToInsert.length > 0) {
     const { data: inserted, error } = await supabase
       .from('evidence_library')
-      .insert(rowsToInsert.map((row) => ({ ...row, user_id: user.id })))
+      .insert(rowsToInsert.map((row) => ({ ...row, user_id: userId })))
       .select('id')
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

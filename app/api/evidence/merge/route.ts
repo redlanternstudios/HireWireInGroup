@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 
-import { createClient } from "@/lib/supabase/server"
 import { mergeStringArrays } from "@/lib/evidence/duplicates"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { requireUser } from "@/lib/supabase/require-user"
 
 type MergeBody = {
   target_id?: string
@@ -22,9 +22,9 @@ type MergeBody = {
 }
 
 export async function PATCH(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   const body = await request.json() as MergeBody
   const targetId = body.target_id
@@ -41,7 +41,7 @@ export async function PATCH(request: Request) {
   const { data: rows, error: loadError } = await supabase
     .from("evidence_library")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .in("id", allIds)
 
   if (loadError) {
@@ -73,7 +73,7 @@ export async function PATCH(request: Request) {
     .from("evidence_library")
     .update(updatePayload)
     .eq("id", targetId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .select("*")
     .single()
 
@@ -84,7 +84,7 @@ export async function PATCH(request: Request) {
   const { error: archiveError } = await supabase
     .from("evidence_library")
     .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .in("id", duplicateIds)
 
   if (archiveError) {
@@ -95,7 +95,7 @@ export async function PATCH(request: Request) {
     supabase,
     event_type: "evidence_updated",
     job_id: null,
-    user_id: user.id,
+    user_id: userId,
     source: "evidence_action",
     payload: {
       action: "merge_duplicates",

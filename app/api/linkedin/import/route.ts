@@ -10,23 +10,19 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { parseResumeText } from "@/lib/resumeParser"
 import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
 import { extractEducationFromResumeText, buildEducationEvidenceRows } from "@/lib/resume/extractEducation"
 import { detectEvidenceDuplicates } from "@/lib/evidence/duplicates"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-    }
-    const userId = user.id
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     const body = await request.json()
     const rawText: string = typeof body.rawText === "string" ? body.rawText.trim() : ""

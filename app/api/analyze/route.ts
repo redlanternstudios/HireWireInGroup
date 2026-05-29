@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { AnalyzeJobInputSchema } from "@/lib/schemas/job-intake";
 import { analyzeJobCore } from "@/lib/analyze/analyze-job-core";
+import {
+  AI_GATEWAY_UNCONFIGURED_MESSAGE,
+  AiGatewayConfigurationError,
+  isAnthropicConfigured,
+} from "@/lib/ai/gateway";
+import { requireUser } from "@/lib/supabase/require-user";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,16 +25,18 @@ export async function POST(request: NextRequest) {
 
     const { job_url, job_description } = parseResult.data;
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+    const { supabase, user } = auth;
 
-    if (authError || !user) {
+    if (!isAnthropicConfigured()) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 },
+        {
+          success: false,
+          error: "ai_gateway_not_configured",
+          user_message: AI_GATEWAY_UNCONFIGURED_MESSAGE,
+        },
+        { status: 503 },
       );
     }
 
@@ -55,6 +62,21 @@ export async function POST(request: NextRequest) {
     console.error("Error in analyze-job:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Analysis failed";
+    const isAiGatewayAuthError =
+      error instanceof AiGatewayConfigurationError ||
+      errorMessage.includes("Unauthenticated request to AI Gateway") ||
+      errorMessage.includes("AI_GATEWAY_API_KEY") ||
+      errorMessage.includes("OPENAI_API_KEY");
+    if (isAiGatewayAuthError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "ai_gateway_not_configured",
+          user_message: AI_GATEWAY_UNCONFIGURED_MESSAGE,
+        },
+        { status: 503 },
+      );
+    }
     const isRateLimit =
       errorMessage.includes("rate_limit") ||
       errorMessage.includes("Rate limit");

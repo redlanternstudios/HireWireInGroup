@@ -28,6 +28,7 @@ import {
   isContextEngineEnabled,
   mirrorProfileContext,
 } from "@/lib/context-engine";
+import { requireUser } from "@/lib/supabase/require-user";
 
 export const maxDuration = 60;
 
@@ -47,15 +48,9 @@ async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = user.id;
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+    const { supabase, userId } = auth;
 
     // ── 1. Extract text ──────────────────────────────────────────────────────
     let rawText = "";
@@ -495,18 +490,14 @@ export async function POST(request: NextRequest) {
 // GET - Retrieve user's source resumes
 export async function GET() {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+    const { supabase, userId } = auth;
 
     const { data: resumes, error } = await supabase
       .from("source_resumes")
       .select("id, file_name, parsed_text, parsed_data, created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -529,13 +520,9 @@ export async function GET() {
 // DELETE - Remove a source resume
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+    const { supabase, userId } = auth;
 
     const { searchParams } = new URL(request.url);
     const resumeId = searchParams.get("id");
@@ -551,7 +538,7 @@ export async function DELETE(request: NextRequest) {
       .from("source_resumes")
       .delete()
       .eq("id", resumeId)
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     if (error) {
       return NextResponse.json(

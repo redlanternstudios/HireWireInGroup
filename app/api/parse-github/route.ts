@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/supabase/require-user'
 import {
   extractGithubUsername,
   fetchGithubProfile,
@@ -11,11 +12,9 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
 
   let body: { link_id?: unknown; github_url?: unknown }
   try {
@@ -34,7 +33,7 @@ export async function POST(req: NextRequest) {
       .from('user_profile_links')
       .select('id, url, link_type')
       .eq('id', linkId)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
     if (linkErr || !link) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 })
@@ -70,7 +69,7 @@ export async function POST(req: NextRequest) {
   const { error: delErr } = await supabase
     .from('evidence_library')
     .delete()
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('source_type', 'github')
   if (delErr) {
     return NextResponse.json({ error: `Dedup failed: ${delErr.message}` }, { status: 500 })
@@ -80,7 +79,7 @@ export async function POST(req: NextRequest) {
   // Note: evidence_library uses `proof_snippet` for text content (not `source_content`)
   const rows = [
     {
-      user_id: user.id,
+      user_id: userId,
       source_type: 'github',
       source_title: `GitHub Profile: @${profile.username}`,
       source_url: profile.profile_url,
@@ -89,7 +88,7 @@ export async function POST(req: NextRequest) {
       is_active: true,
     },
     ...repos.map(r => ({
-      user_id: user.id,
+      user_id: userId,
       source_type: 'github',
       source_title: `Repo: ${r.name}`,
       source_url: r.html_url,
@@ -118,7 +117,7 @@ export async function POST(req: NextRequest) {
         last_parsed_at: new Date().toISOString(),
       })
       .eq('id', linkId)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
   }
 
   return NextResponse.json({
