@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
+import { ReadinessReview } from "@/components/readiness-review"
+import type { DetectedGap } from "@/lib/gap-detection"
+import type { FitStrength } from "@/lib/canonical-evidence"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -163,7 +166,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, qualifications_required, responsibilities, title, company, location")
+      .select("matched_skills, known_gaps, qualifications_required, responsibilities, title, company, location, strengths_json, gaps_json")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -205,6 +208,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
+  const strengths: FitStrength[] = Array.isArray(analysis?.strengths_json) ? (analysis.strengths_json as FitStrength[]) : []
+  const detectedGaps: DetectedGap[] = Array.isArray(analysis?.gaps_json) ? (analysis.gaps_json as DetectedGap[]) : []
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const isAnalyzed = !!(
@@ -386,36 +391,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          {(matchedSkills.length > 0 || knownGaps.length > 0) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {matchedSkills.length > 0 && (
-                <div className="hw-card px-5 py-4">
-                  <h2 className="hw-section-label mb-3">What you bring</h2>
-                  <ul className="space-y-2">
-                    {matchedSkills.map((skill, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                        <span>{skill}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {knownGaps.length > 0 && (
-                <div className="hw-card px-5 py-4">
-                  <h2 className="hw-section-label mb-3">Gaps to address</h2>
-                  <ul className="space-y-2">
-                    {knownGaps.map((gap, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                        <span>{gap.replace(/^Gap:\s*/i, "")}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+          <ReadinessReview
+            strengths={strengths}
+            detectedGaps={detectedGaps}
+            fitLabel={job.fit ?? null}
+            overallScore={overallScore !== null ? Number(overallScore) : null}
+            fallbackMatchedSkills={matchedSkills}
+            fallbackKnownGaps={knownGaps}
+          />
 
           {!hasDocs && (
             <div className="hw-card px-6 py-5">

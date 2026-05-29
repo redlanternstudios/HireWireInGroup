@@ -37,7 +37,8 @@ import {
   type CanonicalEvidence,
   type ExplainableFitScore,
   type FitBand,
-} from "@/lib/canonical-evidence";
+} from "@/lib/canonical-evidence"
+import { detectGaps } from "@/lib/gap-detection";
 import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway";
 import { parseJobPage, detectSource } from "@/lib/parsers";
 import { findJobByUrl } from "@/lib/queries/jobs";
@@ -678,6 +679,22 @@ Extract the job details following the schema.`,
     ],
   };
 
+  const gapAnalysis = detectGaps(
+    {
+      qualifications_required: validatedAnalysis.qualifications_required,
+      qualifications_preferred: validatedAnalysis.qualifications_preferred,
+      tech_stack: validatedAnalysis.tech_stack,
+      keywords: validatedAnalysis.keywords,
+      responsibilities: validatedAnalysis.responsibilities,
+      seniority_level: normalizedSeniority,
+      industry_guess: validatedAnalysis.industry_guess || undefined,
+    },
+    evidenceResult.data || [],
+    profileResult.data,
+    fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r))
+      .map((r: string) => r.replace(/^Gap:\s*/i, "")),
+  )
+
   // Insert job record
   const { data: job, error: insertError } = await supabase
     .from("jobs")
@@ -731,6 +748,8 @@ Extract the job details following the schema.`,
       (r: string) => !/^Gap:/i.test(r),
     ),
     known_gaps: fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r)),
+    strengths_json: explainableFit.strengths,
+    gaps_json: gapAnalysis.gaps,
     analysis_version: "3.0-explainable",
     analysis_model: "llama-3.3-70b-versatile",
   });
