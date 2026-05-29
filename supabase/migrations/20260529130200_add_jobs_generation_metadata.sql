@@ -1,0 +1,2 @@
+-- Generation metadata audit trail and version control. Safe to re-run.
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS base_resume_id uuid REFERENCES public.jobs(id), ADD COLUMN IF NOT EXISTS generation_metadata jsonb DEFAULT '{}'::jsonb;
