@@ -22,6 +22,8 @@
     "agent:receipts": "node scripts/agent/receipt-gate.mjs",
     "agent:proof-pass": "node scripts/agent/proof-pass.mjs",
     "agent:handoff": "node scripts/agent/handoff.mjs",
+    "agent:v0-sync": "node scripts/agent/v0-sync.mjs",
+    "agent:v0-sync:watch": "node scripts/agent/v0-sync.mjs --watch",
     "agent:new-task": "node scripts/agent/new-task.mjs",
     "agent:verify": "npm run typecheck && npm run lint && npm run build"
   },
