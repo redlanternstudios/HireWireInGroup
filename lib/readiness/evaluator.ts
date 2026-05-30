@@ -60,6 +60,14 @@ export type ReadinessJob = {
   id?: string | null;
   status?: string | null;
   applied_at?: string | null;
+  /**
+   * Explicit "a real analysis record exists" signal from callers that have
+   * queried job_analyses/job_scores. When set, this is authoritative and
+   * overrides the denormalized-score heuristic below. Prevents the journey
+   * loop where a stale jobs.score makes readiness say "Prove Fit" while the
+   * Prove Fit page finds no analysis and bounces back to "analyze".
+   */
+  analysis_present?: boolean | null;
   generated_resume?: string | null;
   generated_cover_letter?: string | null;
   evidence_map?: unknown;
@@ -303,6 +311,12 @@ function getReadinessStage(
 }
 
 function hasJobAnalysis(job: ReadinessJob): boolean {
+  // When a caller has confirmed against real analysis artifacts, trust it.
+  // A bare jobs.score is NOT proof of analysis — it can persist after a failed
+  // extraction, which is what created the Prove Fit -> analyze loop.
+  if (job.analysis_present === true) return true;
+  if (job.analysis_present === false) return false;
+
   const status = job.status ?? "";
   return (
     ["analyzed", "generating", "ready", "needs_review"].includes(status) ||

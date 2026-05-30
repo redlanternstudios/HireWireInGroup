@@ -6,6 +6,7 @@ import { ChevronLeft, ArrowRight, AlertCircle, Lightbulb, Target } from "lucide-
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
+import { AnalyzeJobButton } from "../AnalyzeJobButton"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
@@ -106,7 +107,7 @@ export default async function EvidenceMatchPage({
 
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed, generated_resume, generated_cover_letter, quality_passed, applied_at")
+    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed, generated_resume, generated_cover_letter, quality_passed, applied_at, job_url")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -146,7 +147,10 @@ export default async function EvidenceMatchPage({
       : null
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
-  const readiness = evaluateReadiness(job)
+  const analysisPresent = requirements.length > 0 || matchedSkills.length > 0 || requirementMatches.length > 0
+  const readiness = evaluateReadiness({ ...job, analysis_present: analysisPresent })
+  const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
+  const matchScore = typeof job.score === "number" ? job.score : null
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
   const usableRequirementIds = usablePacketRequirementIds(evidenceMap)
@@ -184,6 +188,10 @@ export default async function EvidenceMatchPage({
 
       {/* Status strip */}
       <div className="hw-metrics">
+        <div className="hw-stat">
+          <span className="hw-stat-value text-primary">{matchScore !== null ? `${matchScore}/100` : "—"}</span>
+          <span className="hw-stat-label">Match Score</span>
+        </div>
         <div className="hw-stat">
           <span className="hw-stat-value text-primary">{requiredTotal}</span>
           <span className="hw-stat-label">Role Signals</span>
@@ -358,14 +366,10 @@ export default async function EvidenceMatchPage({
               <div>
                 <p className="text-sm font-semibold">Analysis required first</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  Run job analysis before proving fit. Return to the job detail page and trigger analysis.
+                  HireWire needs to extract this role&apos;s requirements before you can prove fit. Run it right here — no need to leave this page.
                 </p>
               </div>
-              <Link href={`/jobs/${id}`}>
-                <Button size="sm" className="hw-btn-primary gap-1.5">
-                  Go back and analyze <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
+              <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Analyze this job" size="sm" />
             </div>
           )}
         </div>
