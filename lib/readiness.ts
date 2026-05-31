@@ -91,7 +91,11 @@ export async function evaluateJobReadiness(
   }
   
   // Fetch evidence count
-  const [{ count: evidenceCount }, { data: contextGapMatches }] = await Promise.all([
+  const [
+    { count: evidenceCount },
+    { data: contextGapMatches },
+    { data: proveFitDecisions },
+  ] = await Promise.all([
     supabase
     .from("evidence_library")
     .select("*", { count: "exact", head: true })
@@ -106,6 +110,11 @@ export async function evaluateJobReadiness(
         (result) => result,
         () => ({ data: null, error: null }),
       ),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", jobId)
+      .eq("user_id", userId),
   ])
   
   // Extract artifact states
@@ -117,14 +126,17 @@ export async function evaluateJobReadiness(
   
   const has_job_analysis = analyses.length > 0
   const has_evidence_mapping = evidenceMap !== null && Object.keys(evidenceMap).length > 0
-  const matching_complete = has_evidence_mapping && evidenceMap?.matching_complete === true
+  const canonicalReadiness = evaluateReadiness({
+    ...job,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  })
+  const matching_complete = has_evidence_mapping && canonicalReadiness.checklist.evidence
   const has_score = scores.length > 0 || job.score !== null
   const has_resume = !!job.generated_resume
   const has_cover_letter = !!job.generated_cover_letter
   const quality_passed = job.quality_passed === true
   const is_applied = job.applied_at !== null || job.status === "applied"
   const is_archived = job.status === "archived"
-  const canonicalReadiness = evaluateReadiness(job)
   const coachStep = getCoachStepState(job)
   const contextCriticalGaps = Array.isArray(contextGapMatches)
     ? contextGapMatches.filter((match: { match_type?: string; risk_level?: string }) =>
@@ -218,7 +230,9 @@ export async function evaluateJobReadiness(
   } else if (!matching_complete && requirementCount > 0) {
     next_action = {
       label: "Prove Fit",
-      href: `/jobs/${jobId}/evidence-match`,
+      href: canonicalReadiness.nextAction?.label === "Prove Fit"
+        ? canonicalReadiness.nextAction.href
+        : `/jobs/${jobId}/evidence-match`,
       description: "Answer only what HireWire cannot verify yet",
     }
   } else if (coachStep.required && !coachStep.complete) {

@@ -60,6 +60,14 @@ export type ReadinessJob = {
   id?: string | null;
   status?: string | null;
   applied_at?: string | null;
+  /**
+   * Explicit "a real analysis record exists" signal from callers that have
+   * queried job_analyses/job_scores. When set, this is authoritative and
+   * overrides the denormalized-score heuristic below. Prevents the journey
+   * loop where a stale jobs.score makes readiness say "Prove Fit" while the
+   * Prove Fit page finds no analysis and bounces back to "analyze".
+   */
+  analysis_present?: boolean | null;
   generated_resume?: string | null;
   generated_cover_letter?: string | null;
   evidence_map?: unknown;
@@ -68,6 +76,8 @@ export type ReadinessJob = {
   score_gaps?: string[] | null;
   gap_clarifications?: unknown;
   gaps_addressed?: string[] | null;
+  prove_fit_decision_requirement_ids?: string[] | null;
+  prove_fit_decisions?: Array<{ requirement_id?: unknown; decision?: unknown }> | null;
 };
 
 export const READINESS_DISPLAY_LABEL: Record<ReadinessDisplayState, string> = {
@@ -103,52 +113,26 @@ import {
   isVoiceIntegrityPassed,
   getVoiceBlockedReason,
 } from "./voice-readiness";
+import {
+  buildEvidenceFixHref,
+  listUnresolvedRequirements,
+  type UnresolvedRequirement,
+} from "@/lib/evidence/unresolved-requirements";
 
 
-import type {
-  CanonicalJobEvidenceMap,
-  EvidenceIntelligencePacket,
-  RequirementEvidenceMatch,
-} from "@/lib/evidence/types";
-
-function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntelligencePacket[] {
-  return packets.filter(packet =>
-    packet.matchStrength !== "weak" &&
-    packet.matchedEvidenceIds.length > 0 &&
-    (packet.allowedUsage === "resume_allowed" || packet.allowedUsage === "resume_allowed_with_reframe")
-  );
-}
-
-function isSkippedRequirement(match: RequirementEvidenceMatch): boolean {
-  return match.proof_decision === "skipped";
-}
+import type { CanonicalJobEvidenceMap } from "@/lib/evidence/types";
 
 function hasRequiredEvidenceCoverage(job: ReadinessJob): boolean {
   const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
   if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) return false;
-  const usablePacketRequirementIds = new Set(
-    packetsForResume(Array.isArray(evidenceMap.capability_packets) ? evidenceMap.capability_packets : [])
-      .map(packet => String(packet.packet_id).replace(/^pkt_/, ""))
-  );
-  const requiredMatches = evidenceMap.requirement_matches.filter(
-    (m: RequirementEvidenceMatch) => m.priority === "required"
-  );
+  const requiredMatches = evidenceMap.requirement_matches.filter((match) => match.priority === "required");
+  const unresolved = listUnresolvedRequirements(job);
+
   if (requiredMatches.length === 0) {
-    return evidenceMap.requirement_matches.some(
-      (m: RequirementEvidenceMatch) =>
-        isSkippedRequirement(m) ||
-        ((m.status === "met" || m.status === "partial") &&
-          m.matched_evidence_ids.length > 0 &&
-          usablePacketRequirementIds.has(m.requirement_id))
-    );
+    return evidenceMap.requirement_matches.length > 0 && unresolved.length === 0;
   }
-  return requiredMatches.every(
-    (m: RequirementEvidenceMatch) =>
-      isSkippedRequirement(m) ||
-      ((m.status === "met" || m.status === "partial") &&
-        m.matched_evidence_ids.length > 0 &&
-        usablePacketRequirementIds.has(m.requirement_id))
-  );
+
+  return !unresolved.some((match) => match.priority === "required");
 }
 
 function getEvidenceBlockedReasons(job: ReadinessJob): string[] {
@@ -156,77 +140,17 @@ function getEvidenceBlockedReasons(job: ReadinessJob): string[] {
   if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) {
     return ["Evidence has not been mapped to this job yet"];
   }
-  return evidenceMap.requirement_matches
-    .filter(
-      (m: RequirementEvidenceMatch) =>
-        m.priority === "required" &&
-        !isSkippedRequirement(m) &&
-        ((m.status === "gap" || m.status === "unknown") ||
-          !packetsForResume(Array.isArray(evidenceMap.capability_packets) ? evidenceMap.capability_packets : [])
-            .some(packet => String(packet.packet_id).replace(/^pkt_/, "") === m.requirement_id))
-    )
-    .map((m: RequirementEvidenceMatch) =>
-      (m.status === "gap" || m.status === "unknown")
-        ? `Missing evidence for ${m.requirement_text}`
-        : `Missing usable evidence packet for ${m.requirement_text}`
+  return listUnresolvedRequirements(job)
+    .filter((match: UnresolvedRequirement) => match.priority === "required")
+    .map((match: UnresolvedRequirement) =>
+      (match.status === "gap" || match.status === "unknown")
+        ? `Missing evidence for ${match.text}`
+        : `Missing usable evidence packet for ${match.text}`
     );
-}
-
-function requirementAnchorId(requirementId: string): string {
-  const safeId = requirementId
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return `req-${safeId || "unknown"}`;
-}
-
-function getFirstUnresolvedRequirementId(job: ReadinessJob): string | null {
-  const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
-  if (!evidenceMap || !Array.isArray(evidenceMap.requirement_matches)) return null;
-
-  const matches = evidenceMap.requirement_matches;
-  const usablePacketRequirementIds = new Set(
-    packetsForResume(
-      Array.isArray(evidenceMap.capability_packets)
-        ? evidenceMap.capability_packets
-        : [],
-    ).map((packet) => String(packet.packet_id).replace(/^pkt_/, "")),
-  );
-
-  const isBlocking = (match: RequirementEvidenceMatch) =>
-    !isSkippedRequirement(match) &&
-    (match.status === "gap" ||
-      match.status === "unknown" ||
-      match.status === "partial" ||
-      !usablePacketRequirementIds.has(match.requirement_id)) &&
-    typeof match.requirement_id === "string" &&
-    match.requirement_id.trim().length > 0;
-
-  const pick = (priority: "required" | "preferred") =>
-    matches.find(
-      (match) => match.priority === priority && isBlocking(match),
-    );
-
-  const required = pick("required");
-  if (required?.requirement_id) return required.requirement_id;
-
-  const preferred = pick("preferred");
-  if (preferred?.requirement_id) return preferred.requirement_id;
-
-  const any = matches.find(isBlocking);
-
-  return any?.requirement_id ?? null;
 }
 
 function evidenceFixHref(job: ReadinessJob): string {
-  if (!job.id) return "/evidence";
-
-  const requirementId = getFirstUnresolvedRequirementId(job);
-  if (!requirementId) return `/jobs/${job.id}/evidence-match`;
-
-  const anchor = requirementAnchorId(requirementId);
-  return `/jobs/${job.id}/evidence-match?req=${encodeURIComponent(requirementId)}#${anchor}`;
+  return buildEvidenceFixHref(job.id, listUnresolvedRequirements(job)[0]?.id ?? null);
 }
 
 export function evaluateReadiness(
@@ -303,6 +227,12 @@ function getReadinessStage(
 }
 
 function hasJobAnalysis(job: ReadinessJob): boolean {
+  // When a caller has confirmed against real analysis artifacts, trust it.
+  // A bare jobs.score is NOT proof of analysis — it can persist after a failed
+  // extraction, which is what created the Prove Fit -> analyze loop.
+  if (job.analysis_present === true) return true;
+  if (job.analysis_present === false) return false;
+
   const status = job.status ?? "";
   return (
     ["analyzed", "generating", "ready", "needs_review"].includes(status) ||

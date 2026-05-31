@@ -54,6 +54,11 @@ import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
+import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage";
+import {
+  buildEvidenceFixHref,
+  listUnresolvedRequirements,
+} from "@/lib/evidence/unresolved-requirements";
 import {
   buildEvidenceLibraryContext,
   isContextEngineEnabled,
@@ -293,57 +298,38 @@ function getCapabilityPackets(evidenceMap: unknown): EvidenceIntelligencePacket[
   return Array.isArray(packets) ? packets as EvidenceIntelligencePacket[] : [];
 }
 
-function getBlockedRequiredRequirements(evidenceMap: unknown) {
-  const map = asRecord(evidenceMap);
-  const packets = getCapabilityPackets(evidenceMap);
-  const usablePacketIds = new Set(
-    packetsForResume(packets).map((packet) =>
-      String(packet.packet_id).replace(/^pkt_/, ""),
-    ),
+function applyCoverageToEvidenceMap(
+  evidenceMap: unknown,
+  coverage: Awaited<ReturnType<typeof deriveMatchingComplete>>
+) {
+  const map = asRecord(evidenceMap) ?? {};
+  const decisionByRequirement = new Map(
+    coverage.requirementMatches.map((match) => [match.requirement_id, match.proof_decision])
   );
-  const requirementMatches = Array.isArray(map?.requirement_matches)
-    ? (map.requirement_matches as Array<Record<string, unknown>>)
+  const packets = Array.isArray(map.capability_packets)
+    ? (map.capability_packets as EvidenceIntelligencePacket[]).map((packet) => {
+        const requirementId = String(packet.packet_id ?? "").replace(/^pkt_/, "");
+        const proofDecision = decisionByRequirement.get(requirementId);
+        return proofDecision ? { ...packet, proofDecision } : packet;
+      })
     : [];
 
-  return requirementMatches
-    .filter((match) => String(match.priority ?? "") === "required")
-    .filter((match) => {
-      if (String(match.proof_decision ?? "") === "skipped") return false;
-      const status = String(match.status ?? "unknown");
-      const ids = Array.isArray(match.matched_evidence_ids)
-        ? (match.matched_evidence_ids as string[])
-        : [];
-      const requirementId = String(match.requirement_id ?? "");
-      return (
-        ids.length === 0 ||
-        status === "gap" ||
-        status === "unknown" ||
-        !usablePacketIds.has(requirementId)
-      );
-    })
-    .map((match) => ({
-      requirement_id: String(match.requirement_id ?? ""),
-      requirement_text: String(match.requirement_text ?? ""),
-      status: String(match.status ?? "unknown"),
-      matched_evidence_ids: Array.isArray(match.matched_evidence_ids)
-        ? (match.matched_evidence_ids as string[])
-        : [],
-      proof_needed: Array.isArray(match.proof_needed)
-        ? (match.proof_needed as string[])
-        : [],
-      evidence_questions: Array.isArray(match.evidence_questions)
-        ? (match.evidence_questions as string[])
-        : [],
-    }));
+  return {
+    ...map,
+    requirement_matches: coverage.requirementMatches,
+    capability_packets: packets,
+    matching_complete: coverage.matchingComplete,
+  };
 }
 
-function requirementAnchorId(requirementId: string) {
-  const safeId = requirementId
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return `req-${safeId || "unknown"}`;
+function getBlockedRequiredRequirements(
+  evidenceMap: unknown,
+  confirmedDecisionRequirementIds: string[],
+) {
+  return listUnresolvedRequirements({
+    evidence_map: evidenceMap,
+    prove_fit_decision_requirement_ids: confirmedDecisionRequirementIds,
+  }).filter((match) => match.priority === "required");
 }
 
 function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntelligencePacket[] {
@@ -858,7 +844,6 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
     Math.min(92, 70 + Math.round(skills.length / 2)),
   );
   const evidenceMap = {
-    matching_complete: true,
     selected_evidence_ids: roleEvidence.map((item) => item.id),
     matched_skills: skills.filter((skill) =>
       /AI|LLM|API|cloud|SQL|KPI|Agile|SAP|Salesforce|Python|OpenAI/i.test(
@@ -1056,9 +1041,10 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
   ];
   const fallbackBulletProvenance: BulletProvenance[] = bulletClaimInputs.map((claim) => {
     const sourceEvidence = allEvidence.find((item) => item.id === claim.cited_evidence_id);
+    const sourceProof = sourceEvidence?.coached_version || sourceEvidence?.proof_snippet;
     const audit = truthSerumAuditBullet(claim.text, {
       sourceEvidenceId: claim.cited_evidence_id,
-      proofSnippets: sourceEvidence?.proof_snippet ? [sourceEvidence.proof_snippet] : [],
+      proofSnippets: sourceProof ? [sourceProof] : [],
       systems: Array.isArray(sourceEvidence?.tools_used) ? sourceEvidence.tools_used : [],
       outcomes: Array.isArray(sourceEvidence?.outcomes) ? sourceEvidence.outcomes : [],
       riskFlags: sourceEvidence?.what_not_to_overstate ? ["overstatement_constraint"] : [],
@@ -1631,8 +1617,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let blockedRequirements = getBlockedRequiredRequirements(effectiveEvidenceMap);
-    if (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0) {
+    const coverage = await deriveMatchingComplete({
+      supabase,
+      userId,
+      jobId: job_id,
+      evidenceMap: effectiveEvidenceMap,
+    });
+    effectiveEvidenceMap = applyCoverageToEvidenceMap(effectiveEvidenceMap, coverage);
+    capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
+    usablePackets = packetsForResume(capabilityPackets);
+
+    const effectiveMapRecord = asRecord(effectiveEvidenceMap);
+    const evidenceMapUpdate: Record<string, unknown> = {
+      evidence_map: effectiveEvidenceMap,
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof effectiveMapRecord?.version === "string") {
+      evidenceMapUpdate.evidence_map_version = effectiveMapRecord.version;
+    }
+
+    await supabase
+      .from("jobs")
+      .update(evidenceMapUpdate)
+      .eq("id", job_id)
+      .eq("user_id", userId);
+
+    let blockedRequirements = getBlockedRequiredRequirements(
+      effectiveEvidenceMap,
+      coverage.confirmedDecisionRequirementIds,
+    );
+    if (!coverage.matchingComplete && (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0)) {
       const map = asRecord(effectiveEvidenceMap);
       const mapBuildError = asRecord(map?.map_build_error);
       await supabase
@@ -1654,9 +1668,7 @@ export async function POST(request: NextRequest) {
           map_build_error: mapBuildError,
           next_action: {
             label: "Prove Fit",
-            href: blockedRequirements[0]?.requirement_id
-              ? `/jobs/${job_id}/evidence-match?req=${encodeURIComponent(blockedRequirements[0].requirement_id)}#${requirementAnchorId(blockedRequirements[0].requirement_id)}`
-              : `/jobs/${job_id}/evidence-match`,
+            href: buildEvidenceFixHref(job_id, blockedRequirements[0]?.requirement_id ?? null),
             description:
               "Review the unmatched requirements and confirm or add evidence before generating again.",
           },
@@ -1665,7 +1677,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const canonicalMap = asRecord(jobData.evidence_map);
+    const canonicalMap = asRecord(effectiveEvidenceMap);
     const canonicalRequirements = Array.isArray(canonicalMap?.requirement_matches)
       ? canonicalMap.requirement_matches as Array<Record<string, any>>
       : [];
@@ -1693,7 +1705,7 @@ export async function POST(request: NextRequest) {
         }
       : storedJobAnalysis;
 
-    if (canonicalRequirements.some((match) => match.proof_decision !== "skipped") && canonicalMap?.matching_complete !== true) {
+    if (canonicalRequirements.length > 0 && !coverage.matchingComplete) {
       return NextResponse.json(
         {
           success: false,
@@ -2803,10 +2815,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
       score_gaps: generatedEvidenceMap.gaps,
       resume_strategy: strategy,
       evidence_map: {
-        ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
-          ? jobData.evidence_map as Record<string, unknown>
-          : {}),
-        matching_complete: true,
+        ...(asRecord(effectiveEvidenceMap) ?? {}),
         generation_trace: {
           generation_id: generationId,
           created_at: new Date().toISOString(),

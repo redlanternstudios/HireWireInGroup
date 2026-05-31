@@ -1,39 +1,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage"
-import type { RequirementProofDecision } from "@/lib/evidence/types"
+import {
+  listUnresolvedRequirements,
+  type UnresolvedRequirement,
+} from "@/lib/evidence/unresolved-requirements"
 
 /**
  * Clarity drawer read shape.
  *
- * This is the stable contract the Phase 3 UI consumes. The fields here are a
- * deliberate subset of RequirementEvidenceMatch — enough to render the drawer
- * header and to start/resume a coach session for the requirement.
+ * Build Day 25 reconciliation: the canonical unresolved-requirements helper now
+ * lives in lib/evidence/unresolved-requirements.ts and is the single source of
+ * truth (also consumed by GET /api/jobs/[id]/evidence-map). The Phase 3 UI
+ * consumes that exact type, re-exported here under its original name so the
+ * launcher/drawer imports do not need to change.
  */
-export interface ClarityRequirement {
-  requirement_id: string
-  requirement_text: string
-  priority?: string
-  status?: string
-  proof_needed?: string[]
-}
-
-/** A decision is "resolved" once it is auto-mapped, confirmed, or skipped. */
-function isUnresolved(decision: RequirementProofDecision | undefined): boolean {
-  return decision == null || decision === "needs_judgment"
-}
+export type ClarityRequirement = UnresolvedRequirement
 
 /**
- * THIN ADAPTER — Phase 3 boundary.
+ * Server-side derivation of unresolved requirements for the /jobs/[id] page.
  *
- * Derives the list of still-unresolved requirements for a job from the
- * CANONICAL source of truth: prove_fit_decisions (read inside
- * deriveMatchingComplete). jobs.evidence_map is used as a cache for the
- * requirement set only; coverage truth always comes from prove_fit_decisions.
- *
- * When Codex publishes the canonical shared "unresolved requirements" helper,
- * swap the body of this function to delegate to it. The ClarityRequirement
- * return shape is the stable contract the UI depends on, so callers/components
- * do NOT need to change.
+ * Mirrors the GET /api/jobs/[id]/evidence-map read contract exactly, but runs
+ * in-process inside the server component (no client fetch, no new API route,
+ * the protected POST evidence-map route is untouched):
+ *   1. deriveMatchingComplete() reads the CANONICAL prove_fit_decisions source
+ *      and returns fresh requirement matches + confirmed decision authority.
+ *   2. listUnresolvedRequirements() applies the canonical resolution logic
+ *      (skip / auto-map / confirmed+authority / usable packet) and ordering.
+ * jobs.evidence_map is only the requirement-set cache; coverage truth always
+ * comes from prove_fit_decisions.
  */
 export async function getUnresolvedRequirements({
   supabase,
@@ -48,21 +42,24 @@ export async function getUnresolvedRequirements({
   evidenceMap: unknown
   evidenceRows?: Record<string, unknown>[]
 }): Promise<ClarityRequirement[]> {
-  const { requirementMatches } = await deriveMatchingComplete({
-    supabase,
-    userId,
-    jobId,
-    evidenceMap,
-    evidenceRows,
-  })
+  const { requirementMatches, confirmedDecisionRequirementIds } =
+    await deriveMatchingComplete({
+      supabase,
+      userId,
+      jobId,
+      evidenceMap,
+      evidenceRows,
+    })
 
-  return requirementMatches
-    .filter((match) => isUnresolved(match.proof_decision))
-    .map((match) => ({
-      requirement_id: match.requirement_id,
-      requirement_text: match.requirement_text,
-      priority: match.priority,
-      status: match.status,
-      proof_needed: match.proof_needed,
-    }))
+  const carrier = {
+    ...(evidenceMap && typeof evidenceMap === "object" && !Array.isArray(evidenceMap)
+      ? (evidenceMap as Record<string, unknown>)
+      : {}),
+    requirement_matches: requirementMatches,
+  }
+
+  return listUnresolvedRequirements({
+    evidence_map: carrier,
+    prove_fit_decision_requirement_ids: confirmedDecisionRequirementIds,
+  })
 }

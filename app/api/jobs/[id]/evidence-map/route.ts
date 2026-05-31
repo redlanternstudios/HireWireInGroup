@@ -1,7 +1,82 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { handleDomainEvent } from "@/lib/domain-events"
+import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage"
+import {
+  buildEvidenceFixHref,
+  listUnresolvedRequirements,
+} from "@/lib/evidence/unresolved-requirements"
 import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
 import { requireUser } from "@/lib/supabase/require-user"
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { supabase, userId } = auth
+  const { id: jobId } = await params
+
+  const { data: job, error } = await supabase
+    .from("jobs")
+    .select("id, evidence_map")
+    .eq("id", jobId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json(
+      { success: false, error: "evidence_map_read_failed" },
+      { status: 500 },
+    )
+  }
+
+  if (!job) {
+    return NextResponse.json(
+      { success: false, error: "job_not_found" },
+      { status: 404 },
+    )
+  }
+
+  const coverage = await deriveMatchingComplete({
+    supabase,
+    userId,
+    jobId,
+    evidenceMap: job.evidence_map,
+  })
+  const evidenceMap = {
+    ...(job.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
+      ? job.evidence_map as Record<string, unknown>
+      : {}),
+    requirement_matches: coverage.requirementMatches,
+    matching_complete: coverage.matchingComplete,
+  }
+  const blockedRequirements = listUnresolvedRequirements({
+    evidence_map: evidenceMap,
+    prove_fit_decision_requirement_ids: coverage.confirmedDecisionRequirementIds,
+  }).map((requirement) => ({
+    id: requirement.id,
+    text: requirement.text,
+    status: requirement.status,
+    priority: requirement.priority,
+  }))
+  const firstUnresolvedRequirementId = blockedRequirements[0]?.id ?? null
+
+  return NextResponse.json({
+    success: true,
+    matching_complete: coverage.matchingComplete && blockedRequirements.length === 0,
+    blocked_requirements: blockedRequirements,
+    first_unresolved_requirement_id: firstUnresolvedRequirementId,
+    next_action: firstUnresolvedRequirementId
+      ? {
+          label: "Prove Fit",
+          href: buildEvidenceFixHref(jobId, firstUnresolvedRequirementId),
+          description: "Confirm or skip the claims HireWire cannot verify yet.",
+        }
+      : null,
+  })
+}
 
 export async function POST(
   request: NextRequest,

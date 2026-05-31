@@ -165,7 +165,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   if (jobError || !job) notFound()
 
-  const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
+  const [{ data: analysis }, { data: scores }, { data: userData }, { data: proveFitDecisions }] = await Promise.all([
     supabase
       .from("job_analyses")
       .select("matched_skills, known_gaps, qualifications_required, responsibilities, title, company, location, strengths_json, gaps_json")
@@ -182,6 +182,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .select("plan_type")
       .eq("id", user.id)
       .maybeSingle(),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", id)
+      .eq("user_id", user.id),
   ])
 
   // Merge analysis fields into job so workflow functions can read them.
@@ -204,8 +209,21 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     score: scores?.overall_score ?? job.score ?? null,
   }
 
+  // Authoritative "analysis really exists" signal — based on real artifacts
+  // (job_analyses / job_scores / extracted requirements), NOT a bare jobs.score.
+  const analysisPresent = !!(
+    analysis ||
+    scores ||
+    (jobWithAnalysis.qualifications_required?.length ?? 0) > 0 ||
+    (jobWithAnalysis.responsibilities?.length ?? 0) > 0
+  )
+
   const workflow = getWorkflowState(jobWithAnalysis, id)
-  const readiness = evaluateReadiness(job)
+  const readiness = evaluateReadiness({
+    ...job,
+    analysis_present: analysisPresent,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  })
   const coachStep = getCoachStepState(job)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
@@ -214,21 +232,22 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const detectedGaps: DetectedGap[] = Array.isArray(analysis?.gaps_json) ? (analysis.gaps_json as DetectedGap[]) : []
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
-  const isAnalyzed = !!(
-    analysis ||
-    scores ||
-    (jobWithAnalysis.qualifications_required?.length ?? 0) > 0 ||
-    (jobWithAnalysis.responsibilities?.length ?? 0) > 0
-  )
+  const isAnalyzed = analysisPresent
   const overallScore = scores?.overall_score ?? job.score ?? null
   const scoreGaps: string[] = Array.isArray(job.score_gaps)
     ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
     : []
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
+  // One action at a time: while the journey's primary step is still Analyze or
+  // Prove Fit, don't surface the header "Re-analyze" as a competing action.
+  const inEarlyStageAction =
+    readiness.nextAction?.label === "Analyze job" ||
+    readiness.nextAction?.label === "Prove Fit"
 
-  // Phase 3 clarity surface — unresolved requirements come from the canonical
-  // prove_fit_decisions source (via the thin adapter), not the evidence_map cache.
+  // Phase 3 clarity surface — unresolved requirements derived via the canonical
+  // unresolved-requirements helper (same logic as GET /api/jobs/[id]/evidence-map),
+  // run server-side. Source of truth is prove_fit_decisions; evidence_map is cache.
   const unresolvedRequirements =
     isAnalyzed && readiness.outcome === "active"
       ? await getUnresolvedRequirements({
@@ -286,7 +305,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 {job.fit} fit
               </Badge>
             )}
-            {isAnalyzed && hasUrl && (
+            {isAnalyzed && hasUrl && !inEarlyStageAction && (
               <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Re-analyze" size="sm" />
             )}
           </div>

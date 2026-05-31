@@ -6,7 +6,9 @@ import { ChevronLeft, ArrowRight, AlertCircle, Lightbulb, Target } from "lucide-
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
+import { AnalyzeJobButton } from "../AnalyzeJobButton"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requirements"
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
@@ -27,42 +29,11 @@ function uiStatus(match: RequirementEvidenceMatch) {
   return { label: "Needs an example", className: "bg-rose-50 text-rose-700 border-rose-200" }
 }
 
-function usablePacketRequirementIds(evidenceMap: CanonicalJobEvidenceMap | null) {
-  const packets = Array.isArray(evidenceMap?.capability_packets)
-    ? evidenceMap.capability_packets
-    : []
-
-  return new Set(
-    packets
-      .filter(
-        (packet) =>
-          packet.matchStrength !== "weak" &&
-          packet.matchedEvidenceIds.length > 0 &&
-          (packet.allowedUsage === "resume_allowed" ||
-            packet.allowedUsage === "resume_allowed_with_reframe"),
-      )
-      .map((packet) => String(packet.packet_id).replace(/^pkt_/, "")),
-  )
-}
-
-function needsEvidenceFix(
-  match: RequirementEvidenceMatch,
-  usableRequirementIds: Set<string>,
-) {
-  return (
-    match.priority === "required" &&
-    (match.status === "gap" ||
-      match.status === "unknown" ||
-      match.status === "partial" ||
-      !usableRequirementIds.has(match.requirement_id))
-  )
-}
-
 function normalizeFixableMatch(
   match: RequirementEvidenceMatch,
-  usableRequirementIds: Set<string>,
+  unresolvedRequirementIds: Set<string>,
 ): RequirementEvidenceMatch {
-  if (!needsEvidenceFix(match, usableRequirementIds)) return match
+  if (!unresolvedRequirementIds.has(match.requirement_id)) return match
 
   return {
     ...match,
@@ -106,7 +77,7 @@ export default async function EvidenceMatchPage({
 
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed, generated_resume, generated_cover_letter, quality_passed, applied_at")
+    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed, generated_resume, generated_cover_letter, quality_passed, applied_at, job_url")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -114,7 +85,7 @@ export default async function EvidenceMatchPage({
 
   if (error || !job) notFound()
 
-  const [{ data: evidenceItems }, { data: analysis }] = await Promise.all([
+  const [{ data: evidenceItems }, { data: analysis }, { data: proveFitDecisions }] = await Promise.all([
     supabase
       .from("evidence_library")
       .select("id, source_title, source_type, confidence_level, outcomes")
@@ -127,6 +98,11 @@ export default async function EvidenceMatchPage({
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", id)
+      .eq("user_id", user.id),
   ])
 
   const requirements: string[] = [
@@ -146,19 +122,24 @@ export default async function EvidenceMatchPage({
       : null
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
-  const readiness = evaluateReadiness(job)
+  const analysisPresent = requirements.length > 0 || matchedSkills.length > 0 || requirementMatches.length > 0
+  const jobWithDecisionAuthority = {
+    ...job,
+    analysis_present: analysisPresent,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  }
+  const readiness = evaluateReadiness(jobWithDecisionAuthority)
+  const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
+  const matchScore = typeof job.score === "number" ? job.score : null
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
-  const usableRequirementIds = usablePacketRequirementIds(evidenceMap)
+  const unresolvedRequirements = listUnresolvedRequirements(jobWithDecisionAuthority)
+  const unresolvedRequirementIds = new Set(unresolvedRequirements.map((match) => match.id))
   const normalizedRequirementMatches = requirementMatches.map((match) =>
-    normalizeFixableMatch(match, usableRequirementIds),
+    normalizeFixableMatch(match, unresolvedRequirementIds),
   )
-  const proofGaps = normalizedRequirementMatches.filter((match) =>
-    needsEvidenceFix(match, usableRequirementIds),
-  )
-  const requiredGaps = requirementMatches.filter(
-    (match) => needsEvidenceFix(match, usableRequirementIds),
-  )
+  const proofGaps = unresolvedRequirements
+  const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
 
   return (
     <div className="hw-page">
@@ -184,6 +165,10 @@ export default async function EvidenceMatchPage({
 
       {/* Status strip */}
       <div className="hw-metrics">
+        <div className="hw-stat">
+          <span className="hw-stat-value text-primary">{matchScore !== null ? `${matchScore}/100` : "—"}</span>
+          <span className="hw-stat-label">Match Score</span>
+        </div>
         <div className="hw-stat">
           <span className="hw-stat-value text-primary">{requiredTotal}</span>
           <span className="hw-stat-label">Role Signals</span>
@@ -358,14 +343,10 @@ export default async function EvidenceMatchPage({
               <div>
                 <p className="text-sm font-semibold">Analysis required first</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  Run job analysis before proving fit. Return to the job detail page and trigger analysis.
+                  HireWire needs to extract this role&apos;s requirements before you can prove fit. Run it right here — no need to leave this page.
                 </p>
               </div>
-              <Link href={`/jobs/${id}`}>
-                <Button size="sm" className="hw-btn-primary gap-1.5">
-                  Go back and analyze <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
+              <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Analyze this job" size="sm" />
             </div>
           )}
         </div>

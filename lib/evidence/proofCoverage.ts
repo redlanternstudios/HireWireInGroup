@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { RequirementEvidenceMatch, RequirementProofDecision } from "./types"
+import { listUnresolvedRequirements } from "./unresolved-requirements"
 
 const RESOLVED_DECISIONS = new Set<RequirementProofDecision>([
   "auto_mapped",
@@ -48,18 +49,36 @@ export function applyAutoMappedProofDecisions(
   return matches.map((match) => {
     const decision = normalizeDecision(match.proof_decision)
     if (decision === "auto_mapped") return match
+    if (decision === "skipped") return match
+    if (decision === "confirmed") return { ...match, proof_decision: "needs_judgment" }
 
     return match.matched_evidence_ids.length > 0
       ? { ...match, proof_decision: "auto_mapped" }
-      : { ...match, proof_decision: decision ?? "needs_judgment" }
+      : { ...match, proof_decision: "needs_judgment" }
   })
 }
 
 export function isMatchingComplete(matches: RequirementEvidenceMatch[]): boolean {
-  return matches.length > 0 && matches.every((match) => {
-    const decision = normalizeDecision(match.proof_decision)
-    return Boolean(decision && RESOLVED_DECISIONS.has(decision))
-  })
+  return matches.length > 0 && listUnresolvedRequirements({
+    requirement_matches: matches,
+    capability_packets: [],
+    matching_complete: false,
+    completed_at: "",
+    coverage_summary: {
+      required_total: 0,
+      required_met: 0,
+      required_partial: 0,
+      required_gaps: 0,
+      preferred_total: 0,
+      preferred_met: 0,
+      keyword_total: 0,
+      keyword_met: 0,
+    },
+    gap_summary: [],
+    prove_fit_decision_requirement_ids: matches
+      .filter((match) => match.proof_decision === "confirmed")
+      .map((match) => match.requirement_id),
+  }).length === 0
 }
 
 function getEvidenceTitle(evidence: Record<string, unknown> | undefined): string | null {
@@ -148,11 +167,19 @@ export async function deriveMatchingComplete({
   jobId: string
   evidenceMap: unknown
   evidenceRows?: Record<string, unknown>[]
-}): Promise<{ matchingComplete: boolean; requirementMatches: RequirementEvidenceMatch[] }> {
+}): Promise<{
+  matchingComplete: boolean
+  requirementMatches: RequirementEvidenceMatch[]
+  confirmedDecisionRequirementIds: string[]
+}> {
   const matches = applyAutoMappedProofDecisions(getRequirementMatches(evidenceMap))
 
   if (matches.length === 0) {
-    return { matchingComplete: false, requirementMatches: matches }
+    return {
+      matchingComplete: false,
+      requirementMatches: matches,
+      confirmedDecisionRequirementIds: [],
+    }
   }
 
   const { data: decisions, error } = await supabase
@@ -175,9 +202,13 @@ export async function deriveMatchingComplete({
     (decisions ?? []) as CoverageDecision[],
     evidenceRows
   )
+  const confirmedDecisionRequirementIds = ((decisions ?? []) as CoverageDecision[])
+    .filter((decision) => decision.decision === "confirmed")
+    .map((decision) => decision.requirement_id)
 
   return {
     matchingComplete: isMatchingComplete(mergedMatches),
     requirementMatches: mergedMatches,
+    confirmedDecisionRequirementIds,
   }
 }
