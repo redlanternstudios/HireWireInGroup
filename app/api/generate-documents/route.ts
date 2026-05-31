@@ -56,6 +56,10 @@ import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage";
 import {
+  buildEvidenceFixHref,
+  listUnresolvedRequirements,
+} from "@/lib/evidence/unresolved-requirements";
+import {
   buildEvidenceLibraryContext,
   isContextEngineEnabled,
   mirrorClaimVerdicts,
@@ -318,58 +322,14 @@ function applyCoverageToEvidenceMap(
   };
 }
 
-function getBlockedRequiredRequirements(evidenceMap: unknown) {
-  const map = asRecord(evidenceMap);
-  const packets = getCapabilityPackets(evidenceMap);
-  const usablePacketIds = new Set(
-    packetsForResume(packets).map((packet) =>
-      String(packet.packet_id).replace(/^pkt_/, ""),
-    ),
-  );
-  const requirementMatches = Array.isArray(map?.requirement_matches)
-    ? (map.requirement_matches as Array<Record<string, unknown>>)
-    : [];
-
-  return requirementMatches
-    .filter((match) => String(match.priority ?? "") === "required")
-    .filter((match) => {
-      const proofDecision = String(match.proof_decision ?? "");
-      if (proofDecision === "confirmed" || proofDecision === "auto_mapped" || proofDecision === "skipped") return false;
-      const status = String(match.status ?? "unknown");
-      const ids = Array.isArray(match.matched_evidence_ids)
-        ? (match.matched_evidence_ids as string[])
-        : [];
-      const requirementId = String(match.requirement_id ?? "");
-      return (
-        ids.length === 0 ||
-        status === "gap" ||
-        status === "unknown" ||
-        !usablePacketIds.has(requirementId)
-      );
-    })
-    .map((match) => ({
-      requirement_id: String(match.requirement_id ?? ""),
-      requirement_text: String(match.requirement_text ?? ""),
-      status: String(match.status ?? "unknown"),
-      matched_evidence_ids: Array.isArray(match.matched_evidence_ids)
-        ? (match.matched_evidence_ids as string[])
-        : [],
-      proof_needed: Array.isArray(match.proof_needed)
-        ? (match.proof_needed as string[])
-        : [],
-      evidence_questions: Array.isArray(match.evidence_questions)
-        ? (match.evidence_questions as string[])
-        : [],
-    }));
-}
-
-function requirementAnchorId(requirementId: string) {
-  const safeId = requirementId
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return `req-${safeId || "unknown"}`;
+function getBlockedRequiredRequirements(
+  evidenceMap: unknown,
+  confirmedDecisionRequirementIds: string[],
+) {
+  return listUnresolvedRequirements({
+    evidence_map: evidenceMap,
+    prove_fit_decision_requirement_ids: confirmedDecisionRequirementIds,
+  }).filter((match) => match.priority === "required");
 }
 
 function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntelligencePacket[] {
@@ -1682,7 +1642,10 @@ export async function POST(request: NextRequest) {
       .eq("id", job_id)
       .eq("user_id", userId);
 
-    let blockedRequirements = getBlockedRequiredRequirements(effectiveEvidenceMap);
+    let blockedRequirements = getBlockedRequiredRequirements(
+      effectiveEvidenceMap,
+      coverage.confirmedDecisionRequirementIds,
+    );
     if (!coverage.matchingComplete && (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0)) {
       const map = asRecord(effectiveEvidenceMap);
       const mapBuildError = asRecord(map?.map_build_error);
@@ -1705,9 +1668,7 @@ export async function POST(request: NextRequest) {
           map_build_error: mapBuildError,
           next_action: {
             label: "Prove Fit",
-            href: blockedRequirements[0]?.requirement_id
-              ? `/jobs/${job_id}/evidence-match?req=${encodeURIComponent(blockedRequirements[0].requirement_id)}#${requirementAnchorId(blockedRequirements[0].requirement_id)}`
-              : `/jobs/${job_id}/evidence-match`,
+            href: buildEvidenceFixHref(job_id, blockedRequirements[0]?.requirement_id ?? null),
             description:
               "Review the unmatched requirements and confirm or add evidence before generating again.",
           },

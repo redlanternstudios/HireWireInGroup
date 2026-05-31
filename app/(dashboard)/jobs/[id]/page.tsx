@@ -163,7 +163,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   if (jobError || !job) notFound()
 
-  const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
+  const [{ data: analysis }, { data: scores }, { data: userData }, { data: proveFitDecisions }] = await Promise.all([
     supabase
       .from("job_analyses")
       .select("matched_skills, known_gaps, qualifications_required, responsibilities, title, company, location, strengths_json, gaps_json")
@@ -180,6 +180,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .select("plan_type")
       .eq("id", user.id)
       .maybeSingle(),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", id)
+      .eq("user_id", user.id),
   ])
 
   // Merge analysis fields into job so workflow functions can read them.
@@ -212,7 +217,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   )
 
   const workflow = getWorkflowState(jobWithAnalysis, id)
-  const readiness = evaluateReadiness({ ...job, analysis_present: analysisPresent })
+  const readiness = evaluateReadiness({
+    ...job,
+    analysis_present: analysisPresent,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  })
   const coachStep = getCoachStepState(job)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []

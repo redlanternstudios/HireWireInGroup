@@ -9,10 +9,10 @@ new environments unless a maintainer explicitly promotes one. Many of those
 files are historical bootstrap or one-off repair scripts from earlier product
 iterations.
 
-The linked remote Supabase project has been pushed through:
+The linked remote Supabase project should be pushed through:
 
 ```
-20260518120000_harden_generation_governance_persistence
+20260531121000_add_prove_fit_decision_session_id
 ```
 
 ## Apply Migrations
@@ -46,6 +46,7 @@ Core tables expected by the app:
 | `context_evidence_items` | ContextEngine evidence graph items |
 | `context_gap_matches` | Requirement/evidence gap matching |
 | `context_claim_verdicts` | ContextEngine generated claim verdicts |
+| `prove_fit_decisions` | User decisions for Prove Fit requirements; authority for manual confirmed/skipped states |
 | `domain_events` | Workflow/domain event log |
 | `run_ledger` | Legacy per-step observability log |
 | `job_resume_versions` | Generated package version snapshots |
@@ -77,6 +78,31 @@ User-scoped tables must enforce `auth.uid() = user_id` for reads and writes.
 Server-side writes still include `user_id` explicitly so RLS and application
 logic agree.
 
+## Prove Fit Decision Authority
+
+Build Day 25 makes `prove_fit_decisions` the authority for manual Prove Fit
+confirmations. A cached `jobs.evidence_map.requirement_matches[].proof_decision`
+value of `confirmed` is not enough to resolve a requirement unless there is a
+matching `prove_fit_decisions` row for the authenticated `user_id` and `job_id`.
+
+Resolution semantics:
+
+- `auto_mapped` resolves from the canonical evidence map.
+- `skipped` resolves from the canonical evidence map.
+- `confirmed` resolves only with `prove_fit_decisions` authority.
+- `gap`, `unknown`, `partial`, missing usable packet, and stale cached
+  `confirmed` remain unresolved.
+
+Drawer/sheet UI should read Prove Fit unresolved state from:
+
+```txt
+GET /api/jobs/[id]/evidence-map
+```
+
+That route uses `requireUser()`, scopes `jobs` by `id`, `user_id`, and
+`deleted_at is null`, and derives confirmation authority from
+`prove_fit_decisions` scoped by authenticated `userId` and `jobId`.
+
 ```sql
 CREATE POLICY "users_select_own" ON table_name
   FOR SELECT USING (auth.uid() = user_id);
@@ -97,7 +123,7 @@ npx tsc --noEmit --pretty false
 ```
 
 Expected migration state: local and remote should both include
-`20260518120000`.
+`20260531121000`.
 
 ## Troubleshooting
 

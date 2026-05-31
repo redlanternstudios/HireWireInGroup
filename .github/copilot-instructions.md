@@ -95,6 +95,19 @@ readiness. It must delegate readiness truth to `evaluateReadiness()`.
 `lib/job-workflow.ts` may be used for visual progress only. It must never gate
 generate/apply actions or override readiness.
 
+Prove Fit unresolved-requirement logic must stay centralized in
+`lib/evidence/unresolved-requirements.ts`. Do not duplicate packet/status
+resolution rules in pages, components, API routes, or v0-generated UI.
+
+Manual `confirmed` requirements are resolved only when backed by
+`prove_fit_decisions` authority for the authenticated user and job. Cached
+`evidence_map` values are not enough by themselves. `auto_mapped` and `skipped`
+resolve; `gap`, `unknown`, `partial`, missing usable packet, and stale cached
+`confirmed` remain unresolved.
+
+Drawer/sheet UI should consume `GET /api/jobs/[id]/evidence-map` and use its
+`next_action.href` rather than rebuilding Prove Fit links locally.
+
 ### What makes each stage true
 
 | Stage | Gate condition (all must be true) |
