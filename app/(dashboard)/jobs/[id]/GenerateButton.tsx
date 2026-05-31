@@ -62,11 +62,6 @@ export function GenerateButton({
             data.user_message ??
               "No evidence found in your library. Upload a resume or add evidence manually before generating."
           )
-        } else if (data.error === "matching_incomplete") {
-          setError(
-            data.user_message ??
-              "Run Prove Fit before generating documents."
-          )
         } else if (data.error === "coach_step_required") {
           setError(
             data.user_message ??

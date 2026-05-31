@@ -352,8 +352,6 @@ function GenerateTrigger({ jobId, hasDocuments }: { jobId: string; hasDocuments:
             data.user_message ??
               "No evidence found in your library. Upload a resume or add evidence manually before generating."
           )
-        } else if (data.error === "matching_incomplete") {
-          setError(data.user_message ?? "Run Prove Fit before generating documents.")
         } else if (data.error === "coach_step_required") {
           setError(
             data.user_message ??
@@ -386,6 +384,8 @@ function GenerateTrigger({ jobId, hasDocuments }: { jobId: string; hasDocuments:
             data.user_message ??
               "You've reached your monthly limit of 5 document generations. Upgrade to Pro for unlimited generations."
           )
+        } else if (data.error === "governance_blocked") {
+          setError(message)
         } else {
           setError(message)
         }
