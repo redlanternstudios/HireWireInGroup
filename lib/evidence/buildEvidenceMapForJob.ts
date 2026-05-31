@@ -9,6 +9,7 @@ import type {
 } from "./types"
 import { matchRequirementToEvidence } from "./matchRequirementToEvidence"
 import { normalizeRequirement } from "./normalizeRequirement"
+import { deriveMatchingComplete } from "./proofCoverage"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
 import { buildJobContext } from "@/lib/context-engine"
 
@@ -121,6 +122,7 @@ function uniqueStrings(values: unknown[]): string[] {
 
 function evidenceSpecificityScore(evidence: Record<string, unknown>[]): number {
   const signals = evidence.flatMap(item => [
+    item.coached_version,
     item.proof_snippet,
     item.company_name,
     item.role_name,
@@ -199,9 +201,7 @@ function mergeExistingMatch(
       ...(nextMatch.riskFlags ?? []),
       ...(existingMatch.riskFlags ?? []),
     ])),
-    proof_decision: existingMatch.proof_decision ?? (
-      status === "met" && matched_evidence_ids.length > 0 ? "auto_mapped" : nextMatch.proof_decision
-    ),
+    proof_decision: nextMatch.proof_decision,
     user_claim: existingMatch.user_claim,
     skip_reason: existingMatch.skip_reason,
     confirmed_at: existingMatch.confirmed_at,
@@ -235,7 +235,7 @@ export function buildCapabilityPacket(
     priority: match.priority,
     matchedEvidenceIds: match.matched_evidence_ids,
     matchedEvidenceTitles: match.matched_evidence_titles,
-    proofSnippets: uniqueStrings(matchedEvidence.map(item => item.proof_snippet)),
+    proofSnippets: uniqueStrings(matchedEvidence.map(item => item.coached_version ?? item.proof_snippet)),
     systems: uniqueStrings([
       ...matchedEvidence.flatMap(item => item.systems_used ?? []),
       ...matchedEvidence.flatMap(item => item.workflows_created ?? []),
@@ -357,7 +357,7 @@ export async function buildEvidenceMapForJob({
     supabase
       .from("evidence_library")
       .select(
-        "id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate"
+        "id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate"
       )
       .eq("user_id", userId)
       .eq("is_active", true),
@@ -396,14 +396,14 @@ export async function buildEvidenceMapForJob({
       evidenceCandidates: evidenceCandidates ?? [],
     }), existingById.get(requirement.id ?? ""))
   )
-  const requirementMatchesWithDecisions = requirement_matches.map((match) => ({
-    ...match,
-    proof_decision: match.proof_decision ?? (
-      match.status === "met" && match.matched_evidence_ids.length > 0
-        ? "auto_mapped"
-        : "needs_judgment"
-    ),
-  }))
+  const coverage = await deriveMatchingComplete({
+    supabase,
+    userId,
+    jobId,
+    evidenceMap: { requirement_matches },
+    evidenceRows: (evidenceCandidates ?? []) as Record<string, unknown>[],
+  })
+  const requirementMatchesWithDecisions = coverage.requirementMatches
   const coverage_summary = buildCoverageSummary(requirementMatchesWithDecisions)
   const capability_packets = requirementMatchesWithDecisions.map(match =>
     buildCapabilityPacket(match, (evidenceCandidates ?? []) as Record<string, unknown>[])
@@ -413,7 +413,7 @@ export async function buildEvidenceMapForJob({
     .map(match => match.requirement_text)
   const evidenceMap = {
     ...existingMap,
-    matching_complete: true,
+    matching_complete: coverage.matchingComplete,
     completed_at: new Date().toISOString(),
     version: crypto.randomUUID(),
     requirement_matches: requirementMatchesWithDecisions,
