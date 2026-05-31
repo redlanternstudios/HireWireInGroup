@@ -202,17 +202,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     score: scores?.overall_score ?? job.score ?? null,
   }
 
-  // Authoritative "analysis really exists" signal — based on real artifacts
-  // (job_analyses / job_scores / extracted requirements), NOT a bare jobs.score.
-  const analysisPresent = !!(
-    analysis ||
-    scores ||
-    (jobWithAnalysis.qualifications_required?.length ?? 0) > 0 ||
-    (jobWithAnalysis.responsibilities?.length ?? 0) > 0
-  )
-
   const workflow = getWorkflowState(jobWithAnalysis, id)
-  const readiness = evaluateReadiness({ ...job, analysis_present: analysisPresent })
+  const readiness = evaluateReadiness(job)
   const coachStep = getCoachStepState(job)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
@@ -221,18 +212,18 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const detectedGaps: DetectedGap[] = Array.isArray(analysis?.gaps_json) ? (analysis.gaps_json as DetectedGap[]) : []
   const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
-  const isAnalyzed = analysisPresent
+  const isAnalyzed = !!(
+    analysis ||
+    scores ||
+    (jobWithAnalysis.qualifications_required?.length ?? 0) > 0 ||
+    (jobWithAnalysis.responsibilities?.length ?? 0) > 0
+  )
   const overallScore = scores?.overall_score ?? job.score ?? null
   const scoreGaps: string[] = Array.isArray(job.score_gaps)
     ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
     : []
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
-  // One action at a time: while the journey's primary step is still Analyze or
-  // Prove Fit, don't surface the header "Re-analyze" as a competing action.
-  const inEarlyStageAction =
-    readiness.nextAction?.label === "Analyze job" ||
-    readiness.nextAction?.label === "Prove Fit"
 
   return (
     <div className="hw-page">
@@ -281,7 +272,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 {job.fit} fit
               </Badge>
             )}
-            {isAnalyzed && hasUrl && !inEarlyStageAction && (
+            {isAnalyzed && hasUrl && (
               <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Re-analyze" size="sm" />
             )}
           </div>

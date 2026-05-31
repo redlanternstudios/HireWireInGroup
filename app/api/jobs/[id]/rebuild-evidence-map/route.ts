@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob"
-import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { requireUser } from "@/lib/supabase/require-user"
 
@@ -26,34 +25,11 @@ export async function POST(
   }
 
   try {
-    let evidenceMap = await buildEvidenceMapForJob({
+    const evidenceMap = await buildEvidenceMapForJob({
       supabase,
       userId,
       jobId: id,
     })
-
-    const coverage = await deriveMatchingComplete({
-      supabase,
-      userId,
-      jobId: id,
-      evidenceMap,
-    })
-
-    evidenceMap = {
-      ...evidenceMap,
-      requirement_matches: coverage.requirementMatches,
-      matching_complete: coverage.matchingComplete,
-    }
-
-    await supabase
-      .from("jobs")
-      .update({
-        evidence_map: evidenceMap,
-        evidence_map_version: evidenceMap.version,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .eq("user_id", userId)
 
     // Clear previous map build failure marker after a successful rebuild.
     if (
@@ -79,7 +55,7 @@ export async function POST(
       source: "system",
       payload: {
         action: "rebuild",
-        matching_complete: coverage.matchingComplete,
+        matching_complete: true,
       },
     })
 

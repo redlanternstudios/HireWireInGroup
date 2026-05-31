@@ -374,7 +374,6 @@ export async function POST(request: NextRequest) {
             ...row,
             user_id: userId,
             source_resume_id: sourceResumeId,
-            provenance: "resume_import",
           })),
           {
             // ignoreDuplicates: true → ON CONFLICT DO NOTHING

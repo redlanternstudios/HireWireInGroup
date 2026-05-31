@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type {
   CanonicalJobEvidenceMap,
+  EvidenceCoverageSummary,
   RequirementEvidenceMatch,
 } from "./types"
-import { buildEvidenceMapForJob } from "./buildEvidenceMapForJob"
+import { buildCapabilityPacket } from "./buildEvidenceMapForJob"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
 
 type MapConfirmedEvidenceParams = {
@@ -30,9 +31,21 @@ function asEvidenceMap(value: unknown): CanonicalJobEvidenceMap | null {
   return Array.isArray(map.requirement_matches) ? map : null
 }
 
+function buildCoverageSummary(matches: RequirementEvidenceMatch[]): EvidenceCoverageSummary {
+  return {
+    required_total: matches.filter(m => m.priority === "required").length,
+    required_met: matches.filter(m => m.priority === "required" && m.status === "met").length,
+    required_partial: matches.filter(m => m.priority === "required" && m.status === "partial").length,
+    required_gaps: matches.filter(m => m.priority === "required" && (m.status === "gap" || m.status === "unknown")).length,
+    preferred_total: matches.filter(m => m.priority === "preferred").length,
+    preferred_met: matches.filter(m => m.priority === "preferred" && m.status === "met").length,
+    keyword_total: matches.filter(m => m.priority === "keyword").length,
+    keyword_met: matches.filter(m => m.priority === "keyword" && m.status === "met").length,
+  }
+}
+
 function isUsableConfirmedEvidence(evidence: Record<string, unknown> | undefined): boolean {
   if (!evidence) return false
-  const coached = typeof evidence.coached_version === "string" ? evidence.coached_version.trim() : ""
   const snippet = typeof evidence.proof_snippet === "string" ? evidence.proof_snippet.trim() : ""
   const confidence = typeof evidence.confidence_level === "string" ? evidence.confidence_level.toLowerCase() : ""
   const active = evidence.is_active !== false
@@ -40,7 +53,7 @@ function isUsableConfirmedEvidence(evidence: Record<string, unknown> | undefined
 
   return (
     active &&
-    (coached || snippet).length >= 40 &&
+    snippet.length >= 40 &&
     confidence !== "low" &&
     usage !== "blocked" &&
     usage !== "interview_only"
@@ -87,67 +100,13 @@ function mergeEvidence(
         : flag !== "missing_evidence" && flag !== "no_packet_evidence"
     ),
     proof_decision: "confirmed",
-    user_claim: typeof evidence?.coached_version === "string"
-      ? evidence.coached_version
-      : typeof evidence?.proof_snippet === "string"
-        ? evidence.proof_snippet
-        : match.user_claim ?? null,
+    user_claim: typeof evidence?.proof_snippet === "string" ? evidence.proof_snippet : match.user_claim ?? null,
     skip_reason: null,
     confirmed_at: new Date().toISOString(),
     skipped_at: null,
     mapped_by_session_ids,
     updated_at: new Date().toISOString(),
   }
-}
-
-async function recordConfirmedDecision({
-  supabase,
-  userId,
-  jobId,
-  sessionId,
-  requirementId,
-  requirementText,
-  evidenceId,
-  claimText,
-}: {
-  supabase: SupabaseClient
-  userId: string
-  jobId: string
-  sessionId: string
-  requirementId: string
-  requirementText: string
-  evidenceId: string
-  claimText?: string | null
-}) {
-  const { error } = await supabase
-    .from("prove_fit_decisions")
-    .upsert({
-      user_id: userId,
-      job_id: jobId,
-      requirement_id: requirementId,
-      requirement_text: requirementText,
-      decision: "confirmed",
-      evidence_id: evidenceId,
-      claim_text: claimText ?? null,
-      session_id: sessionId,
-      source: "match_interview",
-      input_summary: claimText ? claimText.slice(0, 500) : null,
-      system_summary: "User-confirmed evidence was mapped to this requirement.",
-      impact: {
-        readiness: "recomputed",
-        generation_eligibility: "re-evaluated",
-        output_rule: "claim may be used within confirmed scope",
-      },
-      after_state: {
-        decision: "confirmed",
-        evidence_id: evidenceId,
-      },
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: "user_id,job_id,requirement_id,decision",
-    })
-
-  if (error) throw error
 }
 
 export async function mapConfirmedEvidenceToRequirement({
@@ -178,7 +137,7 @@ export async function mapConfirmedEvidenceToRequirement({
 
   const evidenceCandidates = await supabase
     .from("evidence_library")
-    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
+    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
     .eq("user_id", userId)
     .eq("is_active", true)
 
@@ -194,41 +153,36 @@ export async function mapConfirmedEvidenceToRequirement({
   )
   const updatedMatch = requirement_matches.find(match => match.requirement_id === requirementId)
   if (!updatedMatch) throw new Error("requirement_not_found")
+  const nextMap: CanonicalJobEvidenceMap = {
+    ...currentMap,
+    version: crypto.randomUUID(),
+    completed_at: new Date().toISOString(),
+    matching_complete: true,
+    requirement_matches,
+    capability_packets: requirement_matches.map(match => buildCapabilityPacket(match, evidenceRows)),
+    coverage_summary: buildCoverageSummary(requirement_matches),
+    gap_summary: requirement_matches
+      .filter(match => match.status === "gap" || match.status === "unknown")
+      .map(match => match.requirement_text),
+  }
 
-  const userClaim = updatedMatch.user_claim ?? null
-  const { error: evidenceUpdateError } = await supabase
-    .from("evidence_library")
+  const write = supabase
+    .from("jobs")
     .update({
-      coached_version: userClaim,
-      is_user_approved: true,
-      provenance: "coach_session",
-      first_confirmed_job_id: typeof confirmedEvidence?.first_confirmed_job_id === "string"
-        ? confirmedEvidence.first_confirmed_job_id
-        : jobId,
-      coach_tags: updatedMatch.related_skills ?? [],
+      evidence_map: nextMap,
+      evidence_map_version: nextMap.version,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", evidenceId)
+    .eq("id", jobId)
     .eq("user_id", userId)
 
-  if (evidenceUpdateError) throw evidenceUpdateError
+  const guardedWrite = job.evidence_map_version
+    ? write.eq("evidence_map_version", job.evidence_map_version)
+    : write.is("evidence_map_version", null)
 
-  await recordConfirmedDecision({
-    supabase,
-    userId,
-    jobId,
-    sessionId,
-    requirementId,
-    requirementText: updatedMatch.requirement_text,
-    evidenceId,
-    claimText: userClaim,
-  })
-
-  const nextMap = await buildEvidenceMapForJob({
-    supabase,
-    userId,
-    jobId,
-  })
+  const { data: writtenRows, error: writeError } = await guardedWrite.select("id")
+  if (writeError) throw writeError
+  if (!writtenRows || writtenRows.length === 0) throw new Error("evidence_map_conflict")
 
   return {
     evidenceMap: nextMap,

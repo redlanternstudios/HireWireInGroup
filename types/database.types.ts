@@ -1160,8 +1160,6 @@ export type Database = {
           approved_achievement_bullets: string[] | null
           approved_keywords: string[] | null
           business_goal: string | null
-          coach_tags: string[] | null
-          coached_version: string | null
           company_name: string | null
           confidence_level: string | null
           confidence_score: number | null
@@ -1169,7 +1167,6 @@ export type Database = {
           credential_type: string | null
           date_range: string | null
           evidence_weight: string | null
-          first_confirmed_job_id: string | null
           id: string
           industries: string[] | null
           is_active: boolean | null
@@ -1178,7 +1175,6 @@ export type Database = {
           outcomes: string[] | null
           priority_rank: number | null
           project_name: string | null
-          provenance: string | null
           proof_snippet: string | null
           raw_resume_section: string | null
           responsibilities: string[] | null
@@ -1203,8 +1199,6 @@ export type Database = {
           approved_achievement_bullets?: string[] | null
           approved_keywords?: string[] | null
           business_goal?: string | null
-          coach_tags?: string[] | null
-          coached_version?: string | null
           company_name?: string | null
           confidence_level?: string | null
           confidence_score?: number | null
@@ -1212,7 +1206,6 @@ export type Database = {
           credential_type?: string | null
           date_range?: string | null
           evidence_weight?: string | null
-          first_confirmed_job_id?: string | null
           id?: string
           industries?: string[] | null
           is_active?: boolean | null
@@ -1221,7 +1214,6 @@ export type Database = {
           outcomes?: string[] | null
           priority_rank?: number | null
           project_name?: string | null
-          provenance?: string | null
           proof_snippet?: string | null
           raw_resume_section?: string | null
           responsibilities?: string[] | null
@@ -1246,8 +1238,6 @@ export type Database = {
           approved_achievement_bullets?: string[] | null
           approved_keywords?: string[] | null
           business_goal?: string | null
-          coach_tags?: string[] | null
-          coached_version?: string | null
           company_name?: string | null
           confidence_level?: string | null
           confidence_score?: number | null
@@ -1255,7 +1245,6 @@ export type Database = {
           credential_type?: string | null
           date_range?: string | null
           evidence_weight?: string | null
-          first_confirmed_job_id?: string | null
           id?: string
           industries?: string[] | null
           is_active?: boolean | null
@@ -1264,7 +1253,6 @@ export type Database = {
           outcomes?: string[] | null
           priority_rank?: number | null
           project_name?: string | null
-          provenance?: string | null
           proof_snippet?: string | null
           raw_resume_section?: string | null
           responsibilities?: string[] | null
@@ -1286,13 +1274,6 @@ export type Database = {
           workflows_created?: string[] | null
         }
         Relationships: [
-          {
-            foreignKeyName: "evidence_library_first_confirmed_job_id_fkey"
-            columns: ["first_confirmed_job_id"]
-            isOneToOne: false
-            referencedRelation: "jobs"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "evidence_library_source_resume_id_fkey"
             columns: ["source_resume_id"]

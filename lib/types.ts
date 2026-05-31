@@ -315,7 +315,6 @@ export interface EvidenceRecord {
   workflows_created?: string[] | null
   outcomes?: string[] | null
   proof_snippet?: string | null
-  coached_version?: string | null
   
   // Pre-approved content for generation
   approved_keywords?: string[] | null
@@ -336,9 +335,6 @@ export interface EvidenceRecord {
   
   // Provenance
   source_resume_id?: string | null
-  provenance?: "resume_import" | "linkedin_import" | "coach_session" | "user_manual" | null
-  first_confirmed_job_id?: string | null
-  coach_tags?: string[] | null
 
   // Metadata
   is_active: boolean

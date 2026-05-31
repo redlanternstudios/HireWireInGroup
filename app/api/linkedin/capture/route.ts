@@ -207,7 +207,6 @@ export async function POST(request: NextRequest) {
           rowsToInsert.map((row) => ({
             ...row,
             user_id: userId,
-            provenance: "linkedin_import",
           })),
           {
             onConflict: "user_id,source_title,source_type",

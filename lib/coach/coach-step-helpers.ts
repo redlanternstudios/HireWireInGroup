@@ -3,7 +3,6 @@ import type { createClient } from "@/lib/supabase/server"
 import { logAuditEvent } from "@/lib/audit"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { buildCapabilityPacket } from "@/lib/evidence/buildEvidenceMapForJob"
-import { isMatchingComplete } from "@/lib/evidence/proofCoverage"
 import type {
   CanonicalJobEvidenceMap,
   EvidenceCoverageSummary,
@@ -73,7 +72,7 @@ export function withUpdatedRequirementMatches(
 
   return {
     ...existingMap,
-    matching_complete: isMatchingComplete(requirementMatches),
+    matching_complete: true,
     completed_at: new Date().toISOString(),
     version: crypto.randomUUID(),
     requirement_matches: requirementMatches,
@@ -136,7 +135,7 @@ export async function loadEvidenceRows(
 ): Promise<Record<string, unknown>[]> {
   const { data } = await supabase
     .from("evidence_library")
-    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, systems_used, workflows_created, outcomes, industries, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
+    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, systems_used, workflows_created, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
     .eq("user_id", userId)
     .eq("is_active", true)
 
@@ -165,7 +164,6 @@ export async function upsertProveFitDecision(
     requirementText: string
     decision: "confirmed" | "skipped"
     evidenceId?: string | null
-    sessionId?: string | null
     claimText?: string | null
     skipReason?: string | null
   },
@@ -180,7 +178,6 @@ export async function upsertProveFitDecision(
       requirement_text: input.requirementText,
       decision: input.decision,
       evidence_id: input.evidenceId ?? null,
-      session_id: input.sessionId ?? null,
       claim_text: input.claimText ?? null,
       skip_reason: input.skipReason ?? null,
       source: "match_interview",
@@ -198,7 +195,6 @@ export async function upsertProveFitDecision(
       after_state: {
         decision: input.decision,
         evidence_id: input.evidenceId ?? null,
-        session_id: input.sessionId ?? null,
       },
       updated_at: new Date().toISOString(),
     }, {

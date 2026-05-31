@@ -68,7 +68,6 @@ export function buildEvidenceLibraryContext(input: {
   const evidenceItems: ContextEvidenceItem[] = input.records.flatMap((record) => {
     const rawText = evidenceRecordText(record)
     const confidence = record.confidence_level === "high" ? "high" as const : record.confidence_level === "low" ? "low" as const : "medium" as const
-    const metadata = evidenceRecordMetadata(record)
     const base = {
       user_id: input.userId,
       source_id: source.id,
@@ -84,7 +83,7 @@ export function buildEvidenceLibraryContext(input: {
         evidence_type: "raw_snippet" as const,
         raw_text: rawText || String(record.source_title ?? ""),
         normalized_value: rawText || String(record.source_title ?? ""),
-        metadata,
+        metadata: { evidence_library_id: record.id, source_type: record.source_type },
         ...base,
       },
       ...(Array.isArray(record.tools_used) ? record.tools_used.map((tool: string) => ({
@@ -92,7 +91,7 @@ export function buildEvidenceLibraryContext(input: {
         evidence_type: "tool" as const,
         raw_text: tool,
         normalized_value: tool,
-        metadata,
+        metadata: { evidence_library_id: record.id },
         ...base,
       })) : []),
       ...(Array.isArray(record.outcomes) ? record.outcomes.map((outcome: string) => ({
@@ -100,7 +99,7 @@ export function buildEvidenceLibraryContext(input: {
         evidence_type: "achievement" as const,
         raw_text: outcome,
         normalized_value: outcome,
-        metadata,
+        metadata: { evidence_library_id: record.id },
         ...base,
       })) : []),
     ].filter((item) => item.raw_text && item.normalized_value)
@@ -302,9 +301,7 @@ async function ignoreMissingTable(query: PromiseLike<{ error: { code?: string; m
 }
 
 function evidenceRecordText(record: Record<string, any>) {
-  const coachedVersion = typeof record.coached_version === "string" ? record.coached_version.trim() : ""
   return [
-    coachedVersion,
     record.source_title,
     record.role_name,
     record.company_name,
@@ -315,15 +312,4 @@ function evidenceRecordText(record: Record<string, any>) {
     ...(Array.isArray(record.outcomes) ? record.outcomes : []),
     ...(Array.isArray(record.tools_used) ? record.tools_used : []),
   ].filter(Boolean).join(". ")
-}
-
-function evidenceRecordMetadata(record: Record<string, any>) {
-  return {
-    evidence_library_id: record.id,
-    source_type: record.source_type,
-    coached_version: typeof record.coached_version === "string" ? record.coached_version : null,
-    provenance: typeof record.provenance === "string" ? record.provenance : null,
-    first_confirmed_job_id: typeof record.first_confirmed_job_id === "string" ? record.first_confirmed_job_id : null,
-    coach_tags: Array.isArray(record.coach_tags) ? record.coach_tags.filter((tag: unknown) => typeof tag === "string") : [],
-  }
 }
