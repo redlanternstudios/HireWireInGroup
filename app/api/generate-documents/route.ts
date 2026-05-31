@@ -2855,7 +2855,6 @@ If no issues found, return empty arrays and overall_passed: true.`,
       resume_strategy: strategy,
       evidence_map: {
         ...(asRecord(effectiveEvidenceMap) ?? {}),
-        matching_complete: coverage.matchingComplete,
         generation_trace: {
           generation_id: generationId,
           created_at: new Date().toISOString(),

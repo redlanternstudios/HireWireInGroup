@@ -1,10 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type {
   CanonicalJobEvidenceMap,
-  EvidenceCoverageSummary,
   RequirementEvidenceMatch,
 } from "./types"
-import { buildCapabilityPacket } from "./buildEvidenceMapForJob"
+import { buildEvidenceMapForJob } from "./buildEvidenceMapForJob"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
 
 type MapConfirmedEvidenceParams = {
@@ -29,19 +28,6 @@ function asEvidenceMap(value: unknown): CanonicalJobEvidenceMap | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const map = value as CanonicalJobEvidenceMap
   return Array.isArray(map.requirement_matches) ? map : null
-}
-
-function buildCoverageSummary(matches: RequirementEvidenceMatch[]): EvidenceCoverageSummary {
-  return {
-    required_total: matches.filter(m => m.priority === "required").length,
-    required_met: matches.filter(m => m.priority === "required" && m.status === "met").length,
-    required_partial: matches.filter(m => m.priority === "required" && m.status === "partial").length,
-    required_gaps: matches.filter(m => m.priority === "required" && (m.status === "gap" || m.status === "unknown")).length,
-    preferred_total: matches.filter(m => m.priority === "preferred").length,
-    preferred_met: matches.filter(m => m.priority === "preferred" && m.status === "met").length,
-    keyword_total: matches.filter(m => m.priority === "keyword").length,
-    keyword_met: matches.filter(m => m.priority === "keyword" && m.status === "met").length,
-  }
 }
 
 function isUsableConfirmedEvidence(evidence: Record<string, unknown> | undefined): boolean {
@@ -114,6 +100,56 @@ function mergeEvidence(
   }
 }
 
+async function recordConfirmedDecision({
+  supabase,
+  userId,
+  jobId,
+  sessionId,
+  requirementId,
+  requirementText,
+  evidenceId,
+  claimText,
+}: {
+  supabase: SupabaseClient
+  userId: string
+  jobId: string
+  sessionId: string
+  requirementId: string
+  requirementText: string
+  evidenceId: string
+  claimText?: string | null
+}) {
+  const { error } = await supabase
+    .from("prove_fit_decisions")
+    .upsert({
+      user_id: userId,
+      job_id: jobId,
+      requirement_id: requirementId,
+      requirement_text: requirementText,
+      decision: "confirmed",
+      evidence_id: evidenceId,
+      claim_text: claimText ?? null,
+      session_id: sessionId,
+      source: "match_interview",
+      input_summary: claimText ? claimText.slice(0, 500) : null,
+      system_summary: "User-confirmed evidence was mapped to this requirement.",
+      impact: {
+        readiness: "recomputed",
+        generation_eligibility: "re-evaluated",
+        output_rule: "claim may be used within confirmed scope",
+      },
+      after_state: {
+        decision: "confirmed",
+        evidence_id: evidenceId,
+      },
+      updated_at: new Date().toISOString(),
+    }, {
+      onConflict: "user_id,job_id,requirement_id,decision",
+    })
+
+  if (error) throw error
+}
+
 export async function mapConfirmedEvidenceToRequirement({
   supabase,
   userId,
@@ -158,36 +194,41 @@ export async function mapConfirmedEvidenceToRequirement({
   )
   const updatedMatch = requirement_matches.find(match => match.requirement_id === requirementId)
   if (!updatedMatch) throw new Error("requirement_not_found")
-  const nextMap: CanonicalJobEvidenceMap = {
-    ...currentMap,
-    version: crypto.randomUUID(),
-    completed_at: new Date().toISOString(),
-    matching_complete: true,
-    requirement_matches,
-    capability_packets: requirement_matches.map(match => buildCapabilityPacket(match, evidenceRows)),
-    coverage_summary: buildCoverageSummary(requirement_matches),
-    gap_summary: requirement_matches
-      .filter(match => match.status === "gap" || match.status === "unknown")
-      .map(match => match.requirement_text),
-  }
 
-  const write = supabase
-    .from("jobs")
+  const userClaim = updatedMatch.user_claim ?? null
+  const { error: evidenceUpdateError } = await supabase
+    .from("evidence_library")
     .update({
-      evidence_map: nextMap,
-      evidence_map_version: nextMap.version,
+      coached_version: userClaim,
+      is_user_approved: true,
+      provenance: "coach_session",
+      first_confirmed_job_id: typeof confirmedEvidence?.first_confirmed_job_id === "string"
+        ? confirmedEvidence.first_confirmed_job_id
+        : jobId,
+      coach_tags: updatedMatch.related_skills ?? [],
       updated_at: new Date().toISOString(),
     })
-    .eq("id", jobId)
+    .eq("id", evidenceId)
     .eq("user_id", userId)
 
-  const guardedWrite = job.evidence_map_version
-    ? write.eq("evidence_map_version", job.evidence_map_version)
-    : write.is("evidence_map_version", null)
+  if (evidenceUpdateError) throw evidenceUpdateError
 
-  const { data: writtenRows, error: writeError } = await guardedWrite.select("id")
-  if (writeError) throw writeError
-  if (!writtenRows || writtenRows.length === 0) throw new Error("evidence_map_conflict")
+  await recordConfirmedDecision({
+    supabase,
+    userId,
+    jobId,
+    sessionId,
+    requirementId,
+    requirementText: updatedMatch.requirement_text,
+    evidenceId,
+    claimText: userClaim,
+  })
+
+  const nextMap = await buildEvidenceMapForJob({
+    supabase,
+    userId,
+    jobId,
+  })
 
   return {
     evidenceMap: nextMap,

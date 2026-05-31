@@ -17,16 +17,14 @@
 import { requireUser } from "@/lib/supabase/require-user"
 import { handleDomainEvent } from "@/lib/domain-events/handle-event"
 import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
+import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob"
 import { validateCoachAnswer } from "@/lib/coach/claim-validator"
 import type { ToolCallResult, ToolExecutionContext } from "./tools"
 import { revalidatePath } from "next/cache"
 import {
   asCanonicalEvidenceMap,
   emitCoachEvent,
-  guardedCoachStepUpdate,
-  loadEvidenceRows,
   upsertProveFitDecision,
-  withUpdatedRequirementMatches,
 } from "./coach-step-helpers"
 
 // ─── Evidence CRUD ──────────────────────────────────────────────────────────
@@ -1083,46 +1081,6 @@ export async function executeConfirmProof(
     }
 
     const insertedEvidenceId = evidenceRow.id
-    const evidenceRows = await loadEvidenceRows(supabase, userId)
-
-    const nextEvidenceMap = withUpdatedRequirementMatches(
-      job.evidence_map,
-      canonicalMap.requirement_matches.map((match) =>
-        match.requirement_id === params.requirement_id
-          ? {
-              ...match,
-              status: match.status === "met" ? "met" : "partial",
-              matched_evidence_ids: Array.from(new Set([...match.matched_evidence_ids, insertedEvidenceId])),
-              matched_evidence_titles: Array.from(new Set([...match.matched_evidence_titles, evidenceTitle])),
-              evidence_types: Array.from(new Set([...match.evidence_types, "user_input"])),
-              confidence: match.confidence === "high" ? "high" : "medium",
-              match_method: "manual",
-              reasoning: "User confirmed this claim in the Match Interview. Use exactly what was confirmed; do not overstate it.",
-              riskFlags: (match.riskFlags ?? []).filter((f) => !["missing_evidence", "no_packet_evidence"].includes(f)),
-              proof_decision: "confirmed",
-              user_claim: params.claim_text,
-              skip_reason: null,
-              confirmed_at: new Date().toISOString(),
-              skipped_at: null,
-              updated_at: new Date().toISOString(),
-            }
-          : match,
-      ),
-      evidenceRows,
-    )
-
-    const update = await guardedCoachStepUpdate({
-      supabase,
-      userId,
-      jobId: params.job_id,
-      currentVersion: job.evidence_map_version ?? null,
-      values: { evidence_map: nextEvidenceMap },
-    })
-
-    if (!update.ok) {
-      await supabase.from("evidence_library").delete().eq("id", insertedEvidenceId).eq("user_id", userId)
-      return { success: false, error: update.conflict ? "Conflict — reload and retry" : "Update failed" }
-    }
 
     await upsertProveFitDecision(supabase, {
       userId,
@@ -1131,7 +1089,14 @@ export async function executeConfirmProof(
       requirementText: requirement.requirement_text,
       decision: "confirmed",
       evidenceId: insertedEvidenceId,
+      sessionId: context.sessionId,
       claimText: params.claim_text,
+    })
+
+    await buildEvidenceMapForJob({
+      supabase,
+      userId,
+      jobId: params.job_id,
     })
 
     await emitCoachEvent(supabase, userId, params.job_id, "confirm_proof", {
@@ -1180,37 +1145,6 @@ export async function executeSkipRequirement(
     if (!requirement) return { success: false, error: "Requirement not found" }
 
     const skipReason = params.skip_reason ?? "User chose to skip this claim."
-    const evidenceRows = await loadEvidenceRows(supabase, userId)
-
-    const nextEvidenceMap = withUpdatedRequirementMatches(
-      job.evidence_map,
-      canonicalMap.requirement_matches.map((match) =>
-        match.requirement_id === params.requirement_id
-          ? {
-              ...match,
-              proof_decision: "skipped",
-              skip_reason: skipReason,
-              skipped_at: new Date().toISOString(),
-              reasoning: "User explicitly skipped this requirement; generated materials must not claim it.",
-              riskFlags: Array.from(new Set([...(match.riskFlags ?? []), "user_skipped"])),
-              updated_at: new Date().toISOString(),
-            }
-          : match,
-      ),
-      evidenceRows,
-    )
-
-    const update = await guardedCoachStepUpdate({
-      supabase,
-      userId,
-      jobId: params.job_id,
-      currentVersion: job.evidence_map_version ?? null,
-      values: { evidence_map: nextEvidenceMap },
-    })
-
-    if (!update.ok) {
-      return { success: false, error: update.conflict ? "Conflict — reload and retry" : "Update failed" }
-    }
 
     await upsertProveFitDecision(supabase, {
       userId,
@@ -1218,7 +1152,14 @@ export async function executeSkipRequirement(
       requirementId: params.requirement_id,
       requirementText: requirement.requirement_text,
       decision: "skipped",
+      sessionId: context.sessionId,
       skipReason,
+    })
+
+    await buildEvidenceMapForJob({
+      supabase,
+      userId,
+      jobId: params.job_id,
     })
 
     await emitCoachEvent(supabase, userId, params.job_id, "skip_requirement", {

@@ -9,7 +9,7 @@ import type {
 } from "./types"
 import { matchRequirementToEvidence } from "./matchRequirementToEvidence"
 import { normalizeRequirement } from "./normalizeRequirement"
-import { applyAutoMappedProofDecisions, isMatchingComplete } from "./proofCoverage"
+import { deriveMatchingComplete } from "./proofCoverage"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
 import { buildJobContext } from "@/lib/context-engine"
 
@@ -201,9 +201,7 @@ function mergeExistingMatch(
       ...(nextMatch.riskFlags ?? []),
       ...(existingMatch.riskFlags ?? []),
     ])),
-    proof_decision: existingMatch.proof_decision ?? (
-      status === "met" && matched_evidence_ids.length > 0 ? "auto_mapped" : nextMatch.proof_decision
-    ),
+    proof_decision: nextMatch.proof_decision,
     user_claim: existingMatch.user_claim,
     skip_reason: existingMatch.skip_reason,
     confirmed_at: existingMatch.confirmed_at,
@@ -398,7 +396,14 @@ export async function buildEvidenceMapForJob({
       evidenceCandidates: evidenceCandidates ?? [],
     }), existingById.get(requirement.id ?? ""))
   )
-  const requirementMatchesWithDecisions = applyAutoMappedProofDecisions(requirement_matches)
+  const coverage = await deriveMatchingComplete({
+    supabase,
+    userId,
+    jobId,
+    evidenceMap: { requirement_matches },
+    evidenceRows: (evidenceCandidates ?? []) as Record<string, unknown>[],
+  })
+  const requirementMatchesWithDecisions = coverage.requirementMatches
   const coverage_summary = buildCoverageSummary(requirementMatchesWithDecisions)
   const capability_packets = requirementMatchesWithDecisions.map(match =>
     buildCapabilityPacket(match, (evidenceCandidates ?? []) as Record<string, unknown>[])
@@ -408,7 +413,7 @@ export async function buildEvidenceMapForJob({
     .map(match => match.requirement_text)
   const evidenceMap = {
     ...existingMap,
-    matching_complete: isMatchingComplete(requirementMatchesWithDecisions),
+    matching_complete: coverage.matchingComplete,
     completed_at: new Date().toISOString(),
     version: crypto.randomUUID(),
     requirement_matches: requirementMatchesWithDecisions,
