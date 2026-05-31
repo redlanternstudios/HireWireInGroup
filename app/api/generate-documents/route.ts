@@ -54,6 +54,7 @@ import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
+import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage";
 import {
   buildEvidenceLibraryContext,
   isContextEngineEnabled,
@@ -293,6 +294,30 @@ function getCapabilityPackets(evidenceMap: unknown): EvidenceIntelligencePacket[
   return Array.isArray(packets) ? packets as EvidenceIntelligencePacket[] : [];
 }
 
+function applyCoverageToEvidenceMap(
+  evidenceMap: unknown,
+  coverage: Awaited<ReturnType<typeof deriveMatchingComplete>>
+) {
+  const map = asRecord(evidenceMap) ?? {};
+  const decisionByRequirement = new Map(
+    coverage.requirementMatches.map((match) => [match.requirement_id, match.proof_decision])
+  );
+  const packets = Array.isArray(map.capability_packets)
+    ? (map.capability_packets as EvidenceIntelligencePacket[]).map((packet) => {
+        const requirementId = String(packet.packet_id ?? "").replace(/^pkt_/, "");
+        const proofDecision = decisionByRequirement.get(requirementId);
+        return proofDecision ? { ...packet, proofDecision } : packet;
+      })
+    : [];
+
+  return {
+    ...map,
+    requirement_matches: coverage.requirementMatches,
+    capability_packets: packets,
+    matching_complete: coverage.matchingComplete,
+  };
+}
+
 function getBlockedRequiredRequirements(evidenceMap: unknown) {
   const map = asRecord(evidenceMap);
   const packets = getCapabilityPackets(evidenceMap);
@@ -308,7 +333,8 @@ function getBlockedRequiredRequirements(evidenceMap: unknown) {
   return requirementMatches
     .filter((match) => String(match.priority ?? "") === "required")
     .filter((match) => {
-      if (String(match.proof_decision ?? "") === "skipped") return false;
+      const proofDecision = String(match.proof_decision ?? "");
+      if (proofDecision === "confirmed" || proofDecision === "auto_mapped" || proofDecision === "skipped") return false;
       const status = String(match.status ?? "unknown");
       const ids = Array.isArray(match.matched_evidence_ids)
         ? (match.matched_evidence_ids as string[])
@@ -858,7 +884,6 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
     Math.min(92, 70 + Math.round(skills.length / 2)),
   );
   const evidenceMap = {
-    matching_complete: true,
     selected_evidence_ids: roleEvidence.map((item) => item.id),
     matched_skills: skills.filter((skill) =>
       /AI|LLM|API|cloud|SQL|KPI|Agile|SAP|Salesforce|Python|OpenAI/i.test(
@@ -1631,8 +1656,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const coverage = await deriveMatchingComplete({
+      supabase,
+      userId,
+      jobId: job_id,
+      evidenceMap: effectiveEvidenceMap,
+    });
+    effectiveEvidenceMap = applyCoverageToEvidenceMap(effectiveEvidenceMap, coverage);
+    capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
+    usablePackets = packetsForResume(capabilityPackets);
+
+    const effectiveMapRecord = asRecord(effectiveEvidenceMap);
+    const evidenceMapUpdate: Record<string, unknown> = {
+      evidence_map: effectiveEvidenceMap,
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof effectiveMapRecord?.version === "string") {
+      evidenceMapUpdate.evidence_map_version = effectiveMapRecord.version;
+    }
+
+    await supabase
+      .from("jobs")
+      .update(evidenceMapUpdate)
+      .eq("id", job_id)
+      .eq("user_id", userId);
+
     let blockedRequirements = getBlockedRequiredRequirements(effectiveEvidenceMap);
-    if (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0) {
+    if (!coverage.matchingComplete && (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0)) {
       const map = asRecord(effectiveEvidenceMap);
       const mapBuildError = asRecord(map?.map_build_error);
       await supabase
@@ -1665,7 +1715,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const canonicalMap = asRecord(jobData.evidence_map);
+    const canonicalMap = asRecord(effectiveEvidenceMap);
     const canonicalRequirements = Array.isArray(canonicalMap?.requirement_matches)
       ? canonicalMap.requirement_matches as Array<Record<string, any>>
       : [];
@@ -1693,7 +1743,7 @@ export async function POST(request: NextRequest) {
         }
       : storedJobAnalysis;
 
-    if (canonicalRequirements.some((match) => match.proof_decision !== "skipped") && canonicalMap?.matching_complete !== true) {
+    if (canonicalRequirements.length > 0 && !coverage.matchingComplete) {
       return NextResponse.json(
         {
           success: false,
@@ -2803,10 +2853,8 @@ If no issues found, return empty arrays and overall_passed: true.`,
       score_gaps: generatedEvidenceMap.gaps,
       resume_strategy: strategy,
       evidence_map: {
-        ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
-          ? jobData.evidence_map as Record<string, unknown>
-          : {}),
-        matching_complete: true,
+        ...(asRecord(effectiveEvidenceMap) ?? {}),
+        matching_complete: coverage.matchingComplete,
         generation_trace: {
           generation_id: generationId,
           created_at: new Date().toISOString(),

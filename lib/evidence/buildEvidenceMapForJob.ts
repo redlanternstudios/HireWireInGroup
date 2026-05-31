@@ -9,6 +9,7 @@ import type {
 } from "./types"
 import { matchRequirementToEvidence } from "./matchRequirementToEvidence"
 import { normalizeRequirement } from "./normalizeRequirement"
+import { applyAutoMappedProofDecisions, isMatchingComplete } from "./proofCoverage"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
 import { buildJobContext } from "@/lib/context-engine"
 
@@ -396,14 +397,7 @@ export async function buildEvidenceMapForJob({
       evidenceCandidates: evidenceCandidates ?? [],
     }), existingById.get(requirement.id ?? ""))
   )
-  const requirementMatchesWithDecisions = requirement_matches.map((match) => ({
-    ...match,
-    proof_decision: match.proof_decision ?? (
-      match.status === "met" && match.matched_evidence_ids.length > 0
-        ? "auto_mapped"
-        : "needs_judgment"
-    ),
-  }))
+  const requirementMatchesWithDecisions = applyAutoMappedProofDecisions(requirement_matches)
   const coverage_summary = buildCoverageSummary(requirementMatchesWithDecisions)
   const capability_packets = requirementMatchesWithDecisions.map(match =>
     buildCapabilityPacket(match, (evidenceCandidates ?? []) as Record<string, unknown>[])
@@ -413,7 +407,7 @@ export async function buildEvidenceMapForJob({
     .map(match => match.requirement_text)
   const evidenceMap = {
     ...existingMap,
-    matching_complete: true,
+    matching_complete: isMatchingComplete(requirementMatchesWithDecisions),
     completed_at: new Date().toISOString(),
     version: crypto.randomUUID(),
     requirement_matches: requirementMatchesWithDecisions,
