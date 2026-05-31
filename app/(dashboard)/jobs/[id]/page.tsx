@@ -28,6 +28,8 @@ import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
+import { getUnresolvedRequirements } from "@/lib/clarity/getUnresolvedRequirements"
+import { ClarityDrawerLauncher } from "./ClarityDrawerLauncher"
 
 export const dynamic = "force-dynamic"
 
@@ -243,6 +245,19 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     readiness.nextAction?.label === "Analyze job" ||
     readiness.nextAction?.label === "Prove Fit"
 
+  // Phase 3 clarity surface — unresolved requirements derived via the canonical
+  // unresolved-requirements helper (same logic as GET /api/jobs/[id]/evidence-map),
+  // run server-side. Source of truth is prove_fit_decisions; evidence_map is cache.
+  const unresolvedRequirements =
+    isAnalyzed && readiness.outcome === "active"
+      ? await getUnresolvedRequirements({
+          supabase,
+          userId: user.id,
+          jobId: id,
+          evidenceMap: (job as Record<string, unknown>).evidence_map,
+        })
+      : []
+
   return (
     <div className="hw-page">
       {/* Breadcrumb */}
@@ -309,6 +324,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {!stillProcessing && (
         <>
           <ReadinessNextStepCard readiness={readiness} jobId={id} hasUrl={hasUrl} />
+          {unresolvedRequirements.length > 0 && (
+            <ClarityDrawerLauncher
+              jobId={id}
+              jobTitle={jobWithAnalysis.title ?? "this role"}
+              company={jobWithAnalysis.company ?? ""}
+              requirements={unresolvedRequirements}
+            />
+          )}
           <ReadinessChecklist
             checklist={readiness.checklist}
             jobId={id}

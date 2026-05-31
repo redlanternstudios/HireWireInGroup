@@ -47,14 +47,12 @@ export function buildEducationProofSnippet(entry: EducationEntry): string {
 export function buildEducationEvidenceRows(
   entries: EducationEntry[],
   userId: string,
-  sourceResumeId: string | null,
-  provenance: "resume_import" | "linkedin_import" | "user_manual" = sourceResumeId ? "resume_import" : "user_manual"
+  sourceResumeId: string | null
 ): Record<string, unknown>[] {
   return entries.map((entry) => ({
     user_id: userId,
     source_resume_id: sourceResumeId,
     source_type: "education",
-    provenance,
     source_title: entry.normalized_label,
     source_url: null,
     proof_snippet: buildEducationProofSnippet(entry),

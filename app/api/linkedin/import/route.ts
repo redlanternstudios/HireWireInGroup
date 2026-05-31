@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     let educationInserted = 0
 
     if (educationEntries.length > 0) {
-      const educationRows = buildEducationEvidenceRows(educationEntries, userId, null, "linkedin_import")
+      const educationRows = buildEducationEvidenceRows(educationEntries, userId, null)
       const { error: eduError } = await supabase
         .from("evidence_library")
         .upsert(educationRows, {
@@ -110,7 +110,6 @@ export async function POST(request: NextRequest) {
           rowsToInsert.map((row) => ({
             ...row,
             user_id: userId,
-            provenance: "linkedin_import",
           })),
           {
             onConflict: "user_id,source_title,source_type",

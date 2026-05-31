@@ -137,7 +137,7 @@ export async function POST(request: Request) {
         .single(),
       supabase
         .from("evidence_library")
-        .select("id, source_type, source_title, company_name, role_name, date_range, responsibilities, tools_used, outcomes, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level")
+        .select("id, source_type, source_title, company_name, role_name, date_range, responsibilities, tools_used, outcomes, proof_snippet, confidence_level")
         .eq("user_id", userId)
         .eq("is_active", true)
         .order("updated_at", { ascending: false })
@@ -266,7 +266,7 @@ export async function POST(request: Request) {
     if (evidenceLibrary.length > 0) {
       systemPrompt += `\n\n## Evidence Library Snapshot\nUse this user-owned evidence when answering. Do not invent missing facts.\n` +
         evidenceLibrary.slice(0, 12).map((e) => {
-          const proof = e.coached_version || e.proof_snippet || [...(e.responsibilities ?? []), ...(e.outcomes ?? [])].slice(0, 2).join("; ")
+          const proof = e.proof_snippet || [...(e.responsibilities ?? []), ...(e.outcomes ?? [])].slice(0, 2).join("; ")
           const tools = Array.isArray(e.tools_used) && e.tools_used.length > 0 ? ` Tools: ${e.tools_used.slice(0, 6).join(", ")}.` : ""
           return `- ${e.source_title} (${e.source_type}${e.company_name ? `, ${e.company_name}` : ""}): ${String(proof || "No proof snippet").slice(0, 240)}.${tools}`
         }).join("\n")
