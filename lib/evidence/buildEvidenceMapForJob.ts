@@ -122,6 +122,7 @@ function uniqueStrings(values: unknown[]): string[] {
 
 function evidenceSpecificityScore(evidence: Record<string, unknown>[]): number {
   const signals = evidence.flatMap(item => [
+    item.coached_version,
     item.proof_snippet,
     item.company_name,
     item.role_name,
@@ -236,7 +237,7 @@ export function buildCapabilityPacket(
     priority: match.priority,
     matchedEvidenceIds: match.matched_evidence_ids,
     matchedEvidenceTitles: match.matched_evidence_titles,
-    proofSnippets: uniqueStrings(matchedEvidence.map(item => item.proof_snippet)),
+    proofSnippets: uniqueStrings(matchedEvidence.map(item => item.coached_version ?? item.proof_snippet)),
     systems: uniqueStrings([
       ...matchedEvidence.flatMap(item => item.systems_used ?? []),
       ...matchedEvidence.flatMap(item => item.workflows_created ?? []),
@@ -358,7 +359,7 @@ export async function buildEvidenceMapForJob({
     supabase
       .from("evidence_library")
       .select(
-        "id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate"
+        "id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate"
       )
       .eq("user_id", userId)
       .eq("is_active", true),

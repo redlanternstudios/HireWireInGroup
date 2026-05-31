@@ -135,7 +135,7 @@ export async function loadEvidenceRows(
 ): Promise<Record<string, unknown>[]> {
   const { data } = await supabase
     .from("evidence_library")
-    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, systems_used, workflows_created, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
+    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, systems_used, workflows_created, outcomes, industries, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
     .eq("user_id", userId)
     .eq("is_active", true)
 

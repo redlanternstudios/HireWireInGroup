@@ -88,6 +88,7 @@ export async function importGithubEvidence(
     {
       user_id: userId,
       source_type: "github",
+      provenance: "user_manual",
       source_title: `GitHub Profile: @${profile.username}`,
       source_url: profile.profile_url,
       proof_snippet: buildProfileEvidenceContent(profile),
@@ -97,6 +98,7 @@ export async function importGithubEvidence(
     ...repos.map(repo => ({
       user_id: userId,
       source_type: "github",
+      provenance: "user_manual",
       source_title: `Repo: ${repo.name}`,
       source_url: repo.html_url,
       proof_snippet: buildRepoEvidenceContent(repo),

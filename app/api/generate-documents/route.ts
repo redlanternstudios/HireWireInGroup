@@ -1081,9 +1081,10 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
   ];
   const fallbackBulletProvenance: BulletProvenance[] = bulletClaimInputs.map((claim) => {
     const sourceEvidence = allEvidence.find((item) => item.id === claim.cited_evidence_id);
+    const sourceProof = sourceEvidence?.coached_version || sourceEvidence?.proof_snippet;
     const audit = truthSerumAuditBullet(claim.text, {
       sourceEvidenceId: claim.cited_evidence_id,
-      proofSnippets: sourceEvidence?.proof_snippet ? [sourceEvidence.proof_snippet] : [],
+      proofSnippets: sourceProof ? [sourceProof] : [],
       systems: Array.isArray(sourceEvidence?.tools_used) ? sourceEvidence.tools_used : [],
       outcomes: Array.isArray(sourceEvidence?.outcomes) ? sourceEvidence.outcomes : [],
       riskFlags: sourceEvidence?.what_not_to_overstate ? ["overstatement_constraint"] : [],

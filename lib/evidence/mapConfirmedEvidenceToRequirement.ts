@@ -46,6 +46,7 @@ function buildCoverageSummary(matches: RequirementEvidenceMatch[]): EvidenceCove
 
 function isUsableConfirmedEvidence(evidence: Record<string, unknown> | undefined): boolean {
   if (!evidence) return false
+  const coached = typeof evidence.coached_version === "string" ? evidence.coached_version.trim() : ""
   const snippet = typeof evidence.proof_snippet === "string" ? evidence.proof_snippet.trim() : ""
   const confidence = typeof evidence.confidence_level === "string" ? evidence.confidence_level.toLowerCase() : ""
   const active = evidence.is_active !== false
@@ -53,7 +54,7 @@ function isUsableConfirmedEvidence(evidence: Record<string, unknown> | undefined
 
   return (
     active &&
-    snippet.length >= 40 &&
+    (coached || snippet).length >= 40 &&
     confidence !== "low" &&
     usage !== "blocked" &&
     usage !== "interview_only"
@@ -100,7 +101,11 @@ function mergeEvidence(
         : flag !== "missing_evidence" && flag !== "no_packet_evidence"
     ),
     proof_decision: "confirmed",
-    user_claim: typeof evidence?.proof_snippet === "string" ? evidence.proof_snippet : match.user_claim ?? null,
+    user_claim: typeof evidence?.coached_version === "string"
+      ? evidence.coached_version
+      : typeof evidence?.proof_snippet === "string"
+        ? evidence.proof_snippet
+        : match.user_claim ?? null,
     skip_reason: null,
     confirmed_at: new Date().toISOString(),
     skipped_at: null,
@@ -137,7 +142,7 @@ export async function mapConfirmedEvidenceToRequirement({
 
   const evidenceCandidates = await supabase
     .from("evidence_library")
-    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
+    .select("id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, coached_version, provenance, first_confirmed_job_id, coach_tags, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate")
     .eq("user_id", userId)
     .eq("is_active", true)
 

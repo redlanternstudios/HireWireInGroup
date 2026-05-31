@@ -428,15 +428,15 @@ export function normalizeProfileExperience(
 export function normalizeEvidenceRecord(
   record: EvidenceRecord
 ): CanonicalEvidence {
-  // Combine all text fields for main text
-  const textParts = [
+  const coachedVersion = typeof record.coached_version === "string" ? record.coached_version.trim() : ""
+  const fallbackTextParts = [
     record.what_shipped,
     record.what_visible,
     record.proof_snippet,
     ...(record.outcomes || []),
   ].filter(Boolean)
   
-  const mainText = textParts.join(". ") || record.source_title
+  const mainText = coachedVersion || fallbackTextParts.join(". ") || record.source_title
   const safety = classifyQuantificationSafety(mainText)
   
   return {
@@ -451,7 +451,7 @@ export function normalizeEvidenceRecord(
     date_range: record.date_range || undefined,
     confidence: record.confidence_level,
     is_verified: record.is_user_approved,
-    tags: [...(record.industries || []), ...(record.role_family_tags || [])],
+    tags: [...(record.industries || []), ...(record.role_family_tags || []), ...(record.coach_tags || [])],
     skills: record.tools_used || [],
     industries: record.industries || [],
     approved_for_resume: record.is_user_approved && safety !== "unsupported_blocked",

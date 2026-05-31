@@ -20,6 +20,7 @@ type EvidenceCandidate = {
   outcomes?: string[] | null
   industries?: string[] | null
   proof_snippet?: string | null
+  coached_version?: string | null
   confidence_level?: "high" | "medium" | "low" | null
   is_user_approved?: boolean | null
 }
@@ -30,6 +31,7 @@ function buildEvidenceText(evidence: EvidenceCandidate): string {
     evidence.source_type,
     evidence.role_name,
     evidence.company_name,
+    evidence.coached_version,
     evidence.proof_snippet,
     ...(evidence.responsibilities ?? []),
     ...(evidence.tools_used ?? []),
