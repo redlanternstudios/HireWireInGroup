@@ -139,6 +139,14 @@ import {
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
+// job_scores dimension/overall columns are INTEGER in the DB — raw float scores
+// (e.g. 95.62841530054644) are rejected with 22P02. Round to match the same
+// contract used by analyzeJobCore's toDbScore. confidence_score is decimal, so
+// it is intentionally NOT routed through this helper.
+function toDbScore(value: number | null | undefined): number {
+  return Math.round(Number.isFinite(value ?? NaN) ? (value as number) : 0)
+}
+
 const ROLE_FAMILIES = [
   "AI Technical Product Manager", "Technical Product Manager", "AI Product Manager",
   "Product Manager", "Senior Product Manager", "Systems Product Manager",
@@ -389,13 +397,13 @@ async function reAnalyzeExistingJob(
   // Insert fresh scores record
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: jobId,
-    overall_score: explainableFit.score,
+    overall_score: toDbScore(explainableFit.score),
     confidence_score: explainableFit.confidence === "high" ? 0.9 : explainableFit.confidence === "medium" ? 0.7 : 0.5,
-    skills_match: dimensionScores.skills,
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats,
+    skills_match: toDbScore(dimensionScores.skills),
+    experience_relevance: toDbScore(dimensionScores.experience),
+    evidence_quality: toDbScore(dimensionScores.evidence),
+    seniority_alignment: toDbScore(dimensionScores.seniority),
+    ats_keywords: toDbScore(dimensionScores.ats),
     scoring_version: "3.0-explainable",
   })
   if (scoresError) console.error("Scores insert error:", scoresError)
