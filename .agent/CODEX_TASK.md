@@ -1,3 +1,31 @@
+# Codex Phase 2 Completion — 2026-06-01
+
+### Status: COMPLETE
+
+### Tasks Completed
+- P2-T1: Updated `getCoachStepState()` so canonical unresolved required `requirement_matches` participate in required/complete/remaining-gap math while preserving original `score_gaps` for existing display pills.
+- P2-T2: Replaced the job detail legacy workflow progress strip with a readiness-driven 5-step strip mapped from `readiness.displayState`.
+- P2-T3: Added confirmed `prove_fit_decisions` claim text to the generation prompt as grounded candidate proof, ignoring blank proof rows and preserving the existing gap-clarification block.
+
+### Tests Run
+- tsc: PASS (`npx tsc --noEmit`)
+- lint: PASS (`npm run lint`)
+- build: PASS (`npm run build`)
+
+### Acceptance Criteria
+- P2-T1: PASS by code change and verification; manual score-75/unresolved-required fixture check not run because no authenticated test job was provided.
+- P2-T2: PASS by code change and verification; manual browser step-state checks not run because no authenticated test session was provided.
+- P2-T3: PASS by code change and verification; manual resume-generation proof-overlap check not run because no authenticated test job was provided.
+
+### Blockers or Risks Not Fixed
+- Manual DB-backed/browser verification still needs authenticated test credentials or a known test job.
+- The previously stashed v0/agent work remains parked at `stash@{0}: pre-phase1-v0-agent-dirty-tree`.
+
+### Reviewer Notes
+Phase 2 intentionally keeps readiness authority in `evaluateReadiness()` and uses the coach change only to align the legacy coach-step surface with canonical unresolved required requirements. Generation prompt context is additive and does not loosen the existing evidence packet guardrails.
+
+---
+
 # Codex Phase 1 Completion — 2026-06-01
 
 ### Status: COMPLETE

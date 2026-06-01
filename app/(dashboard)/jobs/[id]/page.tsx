@@ -13,17 +13,10 @@ import {
   ChevronLeft,
   ExternalLink,
   RefreshCw,
-  CheckCircle2,
   AlertTriangle,
   Lock,
   ArrowRight,
 } from "lucide-react"
-import {
-  getWorkflowState,
-  STAGE_LABELS,
-  WORKFLOW_STAGES,
-  type WorkflowStage,
-} from "@/lib/job-workflow"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
@@ -48,20 +41,34 @@ function ScoreBar({ label, value, note }: { label: string; value: number; note?:
   )
 }
 
-/** Horizontal stage progress strip */
-function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
-  const currentIndex = WORKFLOW_STAGES.indexOf(stage)
-  const visibleStages: WorkflowStage[] = [
-    "job_ingested", "job_parsed", "evidence_mapped", "fit_scored", "materials_generated", "ready",
-  ]
+const READINESS_STEP: Record<string, number> = {
+  analyze_needed: 1,
+  evidence_needed: 2,
+  coach_needed: 2,
+  ready_to_generate: 3,
+  package_review: 4,
+  ready_to_apply: 5,
+  applied: 5,
+  interviewing: 5,
+  offered: 5,
+  rejected: 5,
+  archived: 5,
+}
+
+const STEP_LABELS = ["Analyze", "Prove Fit", "Generate", "Review", "Apply"]
+
+function ReadinessProgressStrip({ displayState }: { displayState: string }) {
+  const currentStep = READINESS_STEP[displayState] ?? 1
+
   return (
     <div className="flex items-center gap-0">
-      {visibleStages.map((s, i) => {
-        const idx = WORKFLOW_STAGES.indexOf(s)
-        const done = idx < currentIndex
-        const active = s === stage
+      {STEP_LABELS.map((label, i) => {
+        const step = i + 1
+        const done = step < currentStep
+        const active = step === currentStep
+
         return (
-          <div key={s} className="flex items-center flex-1 min-w-0">
+          <div key={label} className="flex min-w-0 flex-1 items-center">
             <div className="flex flex-col items-center gap-1 flex-1">
               <div
                 className={[
@@ -73,10 +80,10 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
                 "text-[9px] font-medium uppercase tracking-wide text-center leading-tight hidden sm:block",
                 done ? "text-emerald-600" : active ? "text-primary" : "text-muted-foreground/50",
               ].join(" ")}>
-                {STAGE_LABELS[s]}
+                {label}
               </span>
             </div>
-            {i < visibleStages.length - 1 && (
+            {i < STEP_LABELS.length - 1 && (
               <div className="w-2 h-1.5 shrink-0" />
             )}
           </div>
@@ -218,7 +225,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     (jobWithAnalysis.responsibilities?.length ?? 0) > 0
   )
 
-  const workflow = getWorkflowState(jobWithAnalysis, id)
   const readiness = evaluateReadiness({
     ...job,
     analysis_present: analysisPresent,
@@ -311,9 +317,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
 
-        {/* Workflow progress strip */}
+        {/* Readiness progress strip */}
         <div className="mt-4 pt-4 border-t border-border">
-          <WorkflowProgress stage={workflow.stage} />
+          <ReadinessProgressStrip displayState={readiness.displayState} />
         </div>
       </div>
 

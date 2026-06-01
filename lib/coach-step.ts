@@ -58,6 +58,19 @@ export function getCoachStepState(job: CoachStepJob): CoachStepState {
     : []
 
   const evidenceMap = asRecord(job.evidence_map) ?? {}
+  const requirementMatches = Array.isArray(evidenceMap.requirement_matches)
+    ? (evidenceMap.requirement_matches as Array<Record<string, unknown>>)
+    : []
+  const unresolvedRequiredFromMap = requirementMatches
+    .filter(
+      (match) =>
+        match.priority === "required" &&
+        match.proof_decision === "needs_judgment" &&
+        match.status !== "met",
+    )
+    .map((match) => cleanGapLabel(String(match.requirement_text ?? "")))
+    .filter(Boolean)
+  const mergedGaps = Array.from(new Set([...gaps, ...unresolvedRequiredFromMap]))
   const meta = asRecord(evidenceMap[COACH_STEP_META_KEY])
   const persistedStatus =
     meta?.status === "completed" || meta?.status === "skipped" || meta?.status === "required"
@@ -72,7 +85,7 @@ export function getCoachStepState(job: CoachStepJob): CoachStepState {
         .map((item) => (asRecord(item)?.gap_requirement ? String(asRecord(item)?.gap_requirement) : ""))
         .map(cleanGapLabel)
     : []
-  const addressedFromMap = gaps.filter((gap) => {
+  const addressedFromMap = mergedGaps.filter((gap) => {
     const entry = asRecord(evidenceMap[gap]) ?? asRecord(evidenceMap[`Gap: ${gap}`])
     return !!entry?.coach_answer || !!entry?.answered_at
   })
@@ -82,9 +95,9 @@ export function getCoachStepState(job: CoachStepJob): CoachStepState {
     ...addressedFromMap,
   ].filter(Boolean)))
 
-  const required = lowFit || gaps.length > 0
-  const remainingGaps = gaps.filter((gap) => !addressedGaps.includes(gap))
-  const answeredAllCriticalGaps = gaps.length > 0 && remainingGaps.length === 0
+  const required = lowFit || mergedGaps.length > 0
+  const remainingGaps = mergedGaps.filter((gap) => !addressedGaps.includes(gap))
+  const answeredAllCriticalGaps = mergedGaps.length > 0 && remainingGaps.length === 0
   const skipped = persistedStatus === "skipped"
   const complete = !required || skipped || persistedStatus === "completed" || answeredAllCriticalGaps
   const status: CoachStepStatus = !required
@@ -107,7 +120,7 @@ export function getCoachStepState(job: CoachStepJob): CoachStepState {
     gaps,
     addressedGaps,
     remainingGaps,
-    nextGap: remainingGaps[0] ?? gaps[0] ?? null,
+    nextGap: remainingGaps[0] ?? mergedGaps[0] ?? null,
     warning: skipped && remainingGaps.length > 0
       ? "Coach was skipped while gaps remain, so generated materials must stay conservative."
       : null,

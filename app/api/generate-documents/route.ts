@@ -1728,6 +1728,34 @@ export async function POST(request: NextRequest) {
       answer: string;
       routing: string;
     }> = Array.isArray(rawGapClarifications) ? rawGapClarifications : [];
+    const { data: proveFitDecisions, error: proveFitDecisionError } = await supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision, claim_text, requirement_text")
+      .eq("job_id", job_id)
+      .eq("user_id", userId)
+      .eq("decision", "confirmed");
+
+    if (proveFitDecisionError) {
+      console.error("[HireWire] confirmed prove fit decision read failed:", proveFitDecisionError);
+    }
+
+    const confirmedProofRows = (proveFitDecisions ?? []).filter((decision) => {
+      const claimText = typeof decision.claim_text === "string" ? decision.claim_text.trim() : "";
+      return claimText.length > 0;
+    });
+    const confirmedProofBlock =
+      confirmedProofRows.length > 0
+        ? `\n\nCONFIRMED PROOF FROM CANDIDATE (inject as grounded bullets — do not fabricate beyond this):\n${confirmedProofRows
+            .map((decision) => {
+              const requirementText =
+                typeof decision.requirement_text === "string" && decision.requirement_text.trim().length > 0
+                  ? decision.requirement_text.trim()
+                  : String(decision.requirement_id ?? "Requirement");
+              const claimText = typeof decision.claim_text === "string" ? decision.claim_text.trim() : "";
+              return `Requirement: ${requirementText}\nProof: ${claimText}`;
+            })
+            .join("\n\n")}`
+        : "";
 
     // TRUTH-LOCK: Filter evidence based on usage rules
     // If user selected specific evidence, use that; otherwise filter automatically
@@ -1991,6 +2019,7 @@ Candidate's response: ${c.answer}
 NOTE: The candidate provided this additional context to address gaps. Use this information when crafting the resume and cover letter, but DO NOT fabricate or exaggerate beyond what they stated.`
     : ""
 }
+${confirmedProofBlock}
 `;
 
     // Step 1: consume the upstream evidence intelligence contract.
