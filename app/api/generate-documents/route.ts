@@ -2019,6 +2019,33 @@ ${formatGenerationPackets(capabilityPackets)}
         evidenceQuality,
       );
 
+    if (strategy === "do_not_generate") {
+      const insufficientEvidenceUpdate = await supabase
+        .from("jobs")
+        .update({
+          generation_status: "failed",
+          generation_error: "insufficient_evidence",
+        })
+        .eq("id", job_id)
+        .eq("user_id", userId);
+
+      logSupabaseWriteError(
+        "mark_insufficient_evidence_generation_failed",
+        insufficientEvidenceUpdate.error,
+        { job_id, user_id: userId },
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: "insufficient_evidence",
+          user_message:
+            "Your evidence library does not cover enough of this role to generate. Add more evidence or close gaps in Prove Fit first.",
+        },
+        { status: 409 },
+      );
+    }
+
     const generationRiskWarning =
       strategy === "stretch_honest" && generatedEvidenceMap.requirement_coverage < 30
         ? {

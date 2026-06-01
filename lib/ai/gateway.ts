@@ -196,6 +196,10 @@ export function getAiGatewayStatus() {
   }
 }
 
+export function getActiveAnalysisModelName() {
+  return getAiGatewayStatus().model
+}
+
 export const AI_MODELS = {
   get PRIMARY() {
     return getModel(getConfiguredModelName())

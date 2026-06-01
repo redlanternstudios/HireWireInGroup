@@ -39,7 +39,11 @@ import {
   type FitBand,
 } from "@/lib/canonical-evidence"
 import { detectGaps } from "@/lib/gap-detection";
-import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway";
+import {
+  CLAUDE_MODELS,
+  getActiveAnalysisModelName,
+  isAnthropicConfigured,
+} from "@/lib/ai/gateway";
 import { parseJobPage, detectSource } from "@/lib/parsers";
 import { findJobByUrl } from "@/lib/queries/jobs";
 import { linkJobToCompany } from "@/lib/company-utils";
@@ -758,7 +762,7 @@ Extract the job details following the schema.`,
     soc_group_name: validatedAnalysis.soc_group_name ?? null,
     soc_category: validatedAnalysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
-    analysis_model: "llama-3.3-70b-versatile",
+    analysis_model: getActiveAnalysisModelName(),
   });
   if (analysisError) console.error("Analysis insert error:", analysisError);
 

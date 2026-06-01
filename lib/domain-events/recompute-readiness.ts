@@ -92,7 +92,16 @@ export async function recomputeReadiness({
 
     if (error || !job) return null
 
-    const result = evaluateReadiness(job)
+    const { data: proveFitDecisions } = await supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision, claim_text")
+      .eq("job_id", jobId)
+      .eq("user_id", userId)
+
+    const result = evaluateReadiness({
+      ...job,
+      prove_fit_decisions: proveFitDecisions ?? [],
+    })
     const snapshot = buildSnapshot(result, triggeredBy)
 
     await emitEvent({
