@@ -54,6 +54,12 @@ export interface PipelineJob {
   intelligence: Record<string, unknown> | null;
   updated_at: string | null;
   created_at: string;
+  analysis_present?: boolean | null;
+  prove_fit_decisions?: Array<{
+    requirement_id?: unknown;
+    decision?: unknown;
+    claim_text?: unknown;
+  }> | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -25,6 +25,13 @@ type JobsRow = {
   job_scores: Array<{ overall_score?: number }> | null
 }
 
+type ProveFitDecisionRow = {
+  job_id: string | null
+  requirement_id?: string | null
+  decision?: string | null
+  claim_text?: string | null
+}
+
 export default async function JobsPage({
   searchParams,
 }: {
@@ -40,32 +47,59 @@ export default async function JobsPage({
   if (!user) redirect("/login")
 
   // Fetch all fields needed by display-stage, staleness, and priority helpers
-  const { data: jobs } = await supabase
-    .from("jobs")
-    .select(`
-      id,
-      role_title,
-      company_name,
-      status,
-      generation_status,
-      generated_resume,
-      generated_cover_letter,
-      quality_passed,
-      applied_at,
-      evidence_map,
-      score,
-      score_gaps,
-      gap_clarifications,
-      gaps_addressed,
-      intelligence,
-      updated_at,
-      created_at,
-      job_scores ( overall_score )
-    `)
-    .eq("user_id", user.id)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .limit(200)
+  const [
+    { data: jobs },
+    { data: proveFitDecisions },
+    { data: analysisPresence },
+  ] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select(`
+        id,
+        role_title,
+        company_name,
+        status,
+        generation_status,
+        generated_resume,
+        generated_cover_letter,
+        quality_passed,
+        applied_at,
+        evidence_map,
+        score,
+        score_gaps,
+        gap_clarifications,
+        gaps_addressed,
+        intelligence,
+        updated_at,
+        created_at,
+        job_scores ( overall_score )
+      `)
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("prove_fit_decisions")
+      .select("job_id, requirement_id, decision, claim_text")
+      .eq("user_id", user.id),
+    supabase
+      .from("job_analyses")
+      .select("job_id")
+      .eq("user_id", user.id),
+  ])
+
+  const decisionsByJobId = new Map<string, ProveFitDecisionRow[]>()
+  for (const decision of (proveFitDecisions ?? []) as ProveFitDecisionRow[]) {
+    if (!decision.job_id) continue
+    const list = decisionsByJobId.get(decision.job_id) ?? []
+    list.push(decision)
+    decisionsByJobId.set(decision.job_id, list)
+  }
+  const analysisJobIds = new Set(
+    ((analysisPresence ?? []) as Array<{ job_id: string | null }>)
+      .map((row) => row.job_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  )
 
   // Normalize score — prefer job_scores.overall_score, fall back to jobs.score
   const pipeline: PipelineJob[] = ((jobs ?? []) as JobsRow[]).map((j) => {
@@ -89,6 +123,8 @@ export default async function JobsPage({
       intelligence:          (j.intelligence as Record<string, unknown> | null) ?? null,
       updated_at:            j.updated_at ?? null,
       created_at:            j.created_at,
+      analysis_present:      analysisJobIds.has(j.id),
+      prove_fit_decisions:   decisionsByJobId.get(j.id) ?? [],
     }
   })
 

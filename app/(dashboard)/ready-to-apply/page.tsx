@@ -12,6 +12,13 @@ import { MarkAsAppliedButton } from "@/app/(dashboard)/jobs/[id]/MarkAsAppliedBu
 
 export const dynamic = "force-dynamic"
 
+type ProveFitDecisionRow = {
+  job_id: string | null
+  requirement_id?: string | null
+  decision?: string | null
+  claim_text?: string | null
+}
+
 function timeAgo(dateStr: string | null | undefined) {
   if (!dateStr) return "Not generated"
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -29,7 +36,11 @@ export default async function ReadyToApplyPage() {
 
   const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
-  const [{ data: jobs }, { data: recentReadyEvents }] = await Promise.all([
+  const [
+    { data: jobs },
+    { data: recentReadyEvents },
+    { data: proveFitDecisions },
+  ] = await Promise.all([
     supabase
       .from("jobs")
       .select("id, role_title, company_name, status, generated_resume, generated_cover_letter, quality_passed, evidence_map, generation_timestamp, created_at, applied_at, score, score_gaps, gap_clarifications, gaps_addressed")
@@ -46,6 +57,10 @@ export default async function ReadyToApplyPage() {
       .gte("created_at", cutoff48h)
       .order("created_at", { ascending: false })
       .limit(20),
+    supabase
+      .from("prove_fit_decisions")
+      .select("job_id, requirement_id, decision, claim_text")
+      .eq("user_id", user.id),
   ])
 
   const recentlyReadyJobIds = new Set(
@@ -54,10 +69,20 @@ export default async function ReadyToApplyPage() {
       .map(e => e.job_id)
       .filter((id): id is string => id !== null)
   )
+  const decisionsByJobId = new Map<string, ProveFitDecisionRow[]>()
+  for (const decision of (proveFitDecisions ?? []) as ProveFitDecisionRow[]) {
+    if (!decision.job_id) continue
+    const list = decisionsByJobId.get(decision.job_id) ?? []
+    list.push(decision)
+    decisionsByJobId.set(decision.job_id, list)
+  }
 
   const evaluatedJobs = (jobs ?? []).map(job => ({
     job,
-    readiness: evaluateReadiness(job),
+    readiness: evaluateReadiness({
+      ...job,
+      prove_fit_decisions: decisionsByJobId.get(job.id) ?? [],
+    }),
   }))
   const readyJobs = evaluatedJobs.filter(({ readiness }) => readiness.isReady)
   const blockedJobs = evaluatedJobs.filter(({ readiness }) => !readiness.isReady)

@@ -19,6 +19,13 @@ import {
   Activity,
 } from "lucide-react";
 
+type ProveFitDecisionRow = {
+  job_id: string | null;
+  requirement_id?: string | null;
+  decision?: string | null;
+  claim_text?: string | null;
+};
+
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const days = Math.floor(diff / 86400000);
@@ -61,7 +68,13 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: jobs }, { data: recentEvents }] =
+  const [
+    { data: profile },
+    { data: jobs },
+    { data: recentEvents },
+    { data: proveFitDecisions },
+    { data: analysisPresence },
+  ] =
     await Promise.all([
       supabase
         .from("user_profile")
@@ -83,14 +96,39 @@ export default async function DashboardPage() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(5),
+      supabase
+        .from("prove_fit_decisions")
+        .select("job_id, requirement_id, decision, claim_text")
+        .eq("user_id", user.id),
+      supabase
+        .from("job_analyses")
+        .select("job_id")
+        .eq("user_id", user.id),
     ]);
 
   const jobList = jobs ?? [];
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
+  const decisionsByJobId = new Map<string, ProveFitDecisionRow[]>();
+  for (const decision of (proveFitDecisions ?? []) as ProveFitDecisionRow[]) {
+    if (!decision.job_id) continue;
+    const list = decisionsByJobId.get(decision.job_id) ?? [];
+    list.push(decision);
+    decisionsByJobId.set(decision.job_id, list);
+  }
+  const analysisJobIds = new Set(
+    ((analysisPresence ?? []) as Array<{ job_id: string | null }>)
+      .map((row) => row.job_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const withReadinessInputs = <T extends { id: string }>(job: T) => ({
+    ...job,
+    analysis_present: analysisJobIds.has(job.id),
+    prove_fit_decisions: decisionsByJobId.get(job.id) ?? [],
+  });
 
   const evaluatedJobs = jobList.map((job) => ({
     job,
-    readiness: evaluateReadiness(job),
+    readiness: evaluateReadiness(withReadinessInputs(job)),
   }));
   const needsActionJobs = evaluatedJobs
     .filter(
@@ -110,7 +148,7 @@ export default async function DashboardPage() {
     .filter(({ readiness }) => readiness.outcome !== "active")
     .map(({ job }) => job);
   const activeJobs = jobList.filter(
-    (j) => evaluateReadiness(j).outcome === "active",
+    (j) => evaluateReadiness(withReadinessInputs(j)).outcome === "active",
   );
   const needAttention = needsActionJobs.length + needsReviewJobs.length;
   const reentryJob =
@@ -120,7 +158,7 @@ export default async function DashboardPage() {
       return readiness.outcome === "active" && readiness.stage !== "ready";
     })?.job ??
     null;
-  const reentryReadiness = reentryJob ? evaluateReadiness(reentryJob) : null;
+  const reentryReadiness = reentryJob ? evaluateReadiness(withReadinessInputs(reentryJob)) : null;
   const recentPipelineJobs = reentryJob
     ? jobList.filter((job) => job.id !== reentryJob.id)
     : jobList;
@@ -374,7 +412,7 @@ export default async function DashboardPage() {
             ) : (
               <div className="rounded-2xl overflow-hidden hw-card">
                 {recentPipelineJobs.slice(0, 5).map((job, i) => {
-                  const readiness = evaluateReadiness(job);
+                  const readiness = evaluateReadiness(withReadinessInputs(job));
                   const gaps = (job.score_gaps as string[] | null) ?? [];
                   return (
                     <div

@@ -1,3 +1,31 @@
+# Codex Phase 1 Completion — 2026-06-01
+
+### Status: COMPLETE
+
+### Tasks Completed
+- P1-T1: Added batched `prove_fit_decisions` reads to dashboard, jobs list, and ready-to-apply. Each readiness evaluation now receives per-job decision authority without N+1 queries.
+- P1-T2: Added batched `job_analyses` presence reads to dashboard and jobs list. Each list-view readiness evaluation now receives `analysis_present` so stale `jobs.score` cannot masquerade as real analysis.
+- P1-T3: Updated the canonical `applyToJob()` server action to fetch `prove_fit_decisions` scoped by authenticated user and job before calling `evaluateReadiness()`. Override, rollback, response shape, and apply mutation semantics were not changed.
+
+### Tests Run
+- tsc: PASS (`npx tsc --noEmit`)
+- lint: PASS (`npm run lint`)
+- build: PASS (`npm run build`)
+
+### Acceptance Criteria
+- P1-T1: PASS by code change and verification; manual browser checks not run because no authenticated test session was provided.
+- P1-T2: PASS by code change and verification; manual stale-score/no-analysis fixture check not run.
+- P1-T3: PASS by code change and verification; manual apply action test not run.
+
+### Blockers or Risks Not Fixed
+- Manual DB-backed/browser verification still needs authenticated test credentials or a known test job.
+- The previously stashed v0/agent work remains parked at `stash@{0}: pre-phase1-v0-agent-dirty-tree`.
+
+### Reviewer Notes
+Phase 1 intentionally used additive, batched queries only. It did not change readiness rules, apply override behavior, rollback behavior, status codes, response shapes, or `/ready-to-apply` apply semantics.
+
+---
+
 # Codex Phase 0 Completion — 2026-06-01
 
 ### Status: COMPLETE

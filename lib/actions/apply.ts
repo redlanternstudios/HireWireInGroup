@@ -72,7 +72,16 @@ export async function applyToJob(
       return toAction(err)
     }
 
-    const readiness = evaluateReadiness(job)
+    const { data: proveFitDecisions } = await supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision, claim_text")
+      .eq("job_id", jobId)
+      .eq("user_id", user.id)
+
+    const readiness = evaluateReadiness({
+      ...job,
+      prove_fit_decisions: proveFitDecisions ?? [],
+    })
 
     if (!readiness.isReady && !shouldOverride) {
       return {
