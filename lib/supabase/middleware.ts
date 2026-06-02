@@ -27,9 +27,35 @@ const AUTH_ROUTES = [
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
 
+  const pathname = request.nextUrl.pathname
+
+  // Check public routes BEFORE creating Supabase client to avoid crashes when
+  // env vars are temporarily unavailable (dev server restarts, preview states)
+  const isPublicRoute = PUBLIC_ROUTES.some(route =>
+    pathname === route || pathname.startsWith(route + '/')
+  )
+  const isApiRoute = pathname.startsWith('/api')
+
+  // Gracefully handle missing env vars — skip auth for public routes, fail
+  // gracefully for protected routes instead of crashing the entire app
+  const supabaseUrl = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const supabaseAnonKey = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    // Public routes and API routes can proceed without auth
+    if (isPublicRoute || isApiRoute) {
+      return response
+    }
+    // Protected routes redirect to login when auth is unavailable
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.search = ''
+    return NextResponse.redirect(url)
+  }
+
   const supabase = createServerClient(
-    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -48,16 +74,9 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const pathname = request.nextUrl.pathname
-
-  const isApiRoute = pathname.startsWith('/api')
   if (isApiRoute) {
     return response
   }
-
-  const isPublicRoute = PUBLIC_ROUTES.some(route =>
-    pathname === route || pathname.startsWith(route + '/')
-  )
 
   const isAuthRoute = AUTH_ROUTES.some(route =>
     pathname === route || pathname.startsWith(route + '/')
