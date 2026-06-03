@@ -344,6 +344,69 @@
     height: 2px;
     background: hsl(var(--primary));
   }
+
+  /* ─── DARK PROOF CONTEXT (coach, requirement screens) ─── */
+  .hw-proof-context {
+    background: #0f0e0d;
+    color: #f5f2ef;
+  }
+  .hw-proof-context .hw-card {
+    background: #1a1714;
+    border-color: rgba(245, 242, 239, 0.08);
+  }
+
+  /* ─── COMPRESSED HEADLINE (PROVE YOUR FIT, PROOF LOCKED IN moments) ─── */
+  .hw-hero-title {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  /* ─── TICKET TAG (requirement card) ─── */
+  .hw-ticket {
+    position: relative;
+    overflow: hidden;
+    background: hsl(var(--card));
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(26, 23, 20, 0.10);
+    border-left: 3px solid hsl(var(--primary));
+  }
+  .hw-ticket-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* ─── PROOF STAMP ─── */
+  .hw-proof-stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 2.5px solid hsl(var(--success));
+    color: hsl(var(--success));
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    transform: rotate(-1.5deg);
+  }
+  .hw-proof-stamp.locked {
+    border-color: hsl(var(--success));
+    background: hsla(145, 50%, 40%, 0.08);
+  }
+
+  /* ─── VERIFICATION BADGES ─── */
+  .hw-badge-verified    { @apply bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded; }
+  .hw-badge-inferred    { @apply bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded; }
+  .hw-badge-unsupported { @apply bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded; }
+  .hw-badge-pending     { @apply bg-stone-100 text-stone-500 border border-stone-200 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded; }
 }
 
 /* ─── PRINT ISOLATION ────────────────────────────────────────────────────────
