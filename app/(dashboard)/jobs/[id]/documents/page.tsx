@@ -147,21 +147,24 @@ export default async function DocumentsPage({
         Back to job
       </Link>
 
-      <div className="hw-card px-6 py-5">
+      <div className="hw-ticket">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           {job.role_title}
           <span className="ml-2 text-muted-foreground">@ {job.company_name}</span>
         </h1>
-        <div className="mt-1 text-xs text-muted-foreground">
+        <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
           {job.generation_timestamp && (
             <span>
               Generated {new Date(job.generation_timestamp).toLocaleString()}
             </span>
           )}
           {job.last_edited_at && (
-            <span className="ml-3">
+            <span>
               · Last edited {new Date(job.last_edited_at).toLocaleString()}
             </span>
+          )}
+          {packageReadiness.isReady && (
+            <span className="hw-proof-stamp">Ready to Apply</span>
           )}
         </div>
       </div>

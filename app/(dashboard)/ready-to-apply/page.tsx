@@ -6,7 +6,6 @@ import { AlertTriangle, CheckSquare, FileText, ShieldCheck, Star } from "lucide-
 import ReadinessChecklist from "@/components/ReadinessChecklist"
 import { ReadinessContextBanner } from "@/components/workflow/ReadinessContextBanner"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { MarkAsAppliedButton } from "@/app/(dashboard)/jobs/[id]/MarkAsAppliedButton"
 
@@ -119,15 +118,15 @@ export default async function ReadyToApplyPage() {
           <div className="hw-workspace-main space-y-8">
 
           {justClearedJobs.length > 0 && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5 flex items-start gap-3">
+            <div className="hw-ticket border-l-4 border-l-emerald-500 flex items-start gap-3">
               <Star className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-emerald-800">
+                <p className="text-sm font-semibold text-foreground">
                   {justClearedJobs.length === 1
                     ? "1 job just cleared all readiness checks"
                     : `${justClearedJobs.length} jobs just cleared all readiness checks`}
                 </p>
-                <p className="text-xs text-emerald-700 mt-0.5">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {justClearedJobs.map(({ job }) => job.role_title ?? "Untitled").join(", ")} — review and apply before momentum fades.
                 </p>
               </div>
@@ -147,14 +146,14 @@ export default async function ReadyToApplyPage() {
             ) : (
               <div className="space-y-3">
                 {readyJobs.map(({ job, readiness }) => (
-                  <div key={job.id} className="hw-card p-5">
+                  <div key={job.id} className="hw-ticket border-l-4 border-l-emerald-500">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold truncate">{job.role_title ?? "Untitled role"}</h3>
-                          <Badge variant="outline" className={`text-[10px] ${readiness.displayClassName}`}>
+                          <span className="hw-proof-stamp text-[10px]">
                             {readiness.displayLabel}
-                          </Badge>
+                          </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
                           {job.company_name ?? "-"} · Generated {timeAgo(job.generation_timestamp ?? job.created_at)}
@@ -193,14 +192,14 @@ export default async function ReadyToApplyPage() {
             ) : (
               <div className="space-y-3">
                 {blockedJobs.map(({ job, readiness }) => (
-                  <div key={job.id} className="hw-card p-5 border-l-4 border-l-rose-500">
+                  <div key={job.id} className="hw-ticket border-l-4 border-l-rose-500">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold truncate">{job.role_title ?? "Untitled role"}</h3>
-                          <Badge variant="outline" className={`text-[10px] ${readiness.displayClassName}`}>
+                          <span className="hw-proof-stamp hw-proof-stamp-pending text-[10px]">
                             {readiness.displayLabel}
-                          </Badge>
+                          </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">{job.company_name ?? "-"}</p>
                         <p className="text-sm text-rose-600 mt-2">{readiness.blockedReasons.join(", ")}</p>

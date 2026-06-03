@@ -515,7 +515,7 @@ export function MatchInterviewModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex flex-col gap-0 overflow-hidden border-border/60 p-0 shadow-2xl"
+        className="hw-proof-context flex flex-col gap-0 overflow-hidden border-white/10 p-0 shadow-2xl"
         style={{
           width: "min(780px, 94vw)",
           maxWidth: "none",

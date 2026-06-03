@@ -142,50 +142,51 @@ export default async function EvidenceMatchPage({
   const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
 
   return (
-    <div className="hw-page">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2">
-        <Link
-          href={`/jobs/${id}`}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          {job.role_title ?? "Job"} at {job.company_name ?? "—"}
-        </Link>
-      </div>
+    <div className="hw-proof-context min-h-screen">
+      <div className="hw-page">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/jobs/${id}`}
+            className="flex items-center gap-1 text-xs text-white/50 hover:text-white/80 transition-colors"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            {job.role_title ?? "Job"} at {job.company_name ?? "—"}
+          </Link>
+        </div>
 
-      {/* Header */}
-      <div className="hw-card px-6 py-5">
-        <p className="hw-section-label mb-1">Prove Fit</p>
-        <h1 className="hw-page-title">Prove Fit</h1>
-        <p className="hw-page-subtitle">
-          HireWire matched what it could. The Match Interview covers only what still needs your judgment.
-        </p>
-      </div>
+        {/* Header */}
+        <div className="hw-ticket hw-ticket-dark px-6 py-5">
+          <p className="hw-section-label mb-1">Prove Fit</p>
+          <h1 className="hw-hero-title text-white">Match Interview</h1>
+          <p className="text-sm text-white/60 mt-2 max-w-lg">
+            HireWire matched what it could. The Match Interview covers only what still needs your judgment.
+          </p>
+        </div>
 
-      {/* Status strip */}
-      <div className="hw-metrics">
-        <div className="hw-stat">
-          <span className="hw-stat-value text-primary">{matchScore !== null ? `${matchScore}/100` : "—"}</span>
-          <span className="hw-stat-label">Match Score</span>
+        {/* Status strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="hw-ticket hw-ticket-dark py-3 px-4">
+            <span className="text-2xl font-bold text-white tabular-nums">{matchScore !== null ? `${matchScore}` : "—"}</span>
+            <span className="block text-[10px] text-white/40 uppercase tracking-wider mt-0.5">Match Score</span>
+          </div>
+          <div className="hw-ticket hw-ticket-dark py-3 px-4">
+            <span className="text-2xl font-bold text-white tabular-nums">{requiredTotal}</span>
+            <span className="block text-[10px] text-white/40 uppercase tracking-wider mt-0.5">Role Signals</span>
+          </div>
+          <div className="hw-ticket hw-ticket-dark py-3 px-4">
+            <span className="text-2xl font-bold text-emerald-400 tabular-nums">{requiredCovered}</span>
+            <span className="block text-[10px] text-white/40 uppercase tracking-wider mt-0.5">Auto-Matched</span>
+          </div>
+          <div className="hw-ticket hw-ticket-dark py-3 px-4">
+            <span className="text-2xl font-bold text-amber-400 tabular-nums">{proofGaps.length || gaps.length}</span>
+            <span className="block text-[10px] text-white/40 uppercase tracking-wider mt-0.5">Need Judgment</span>
+          </div>
+          <div className="hw-ticket hw-ticket-dark py-3 px-4">
+            <span className="text-2xl font-bold text-white/60 tabular-nums">{Math.max(requiredTotal - requiredCovered - (proofGaps.length || gaps.length), 0)}</span>
+            <span className="block text-[10px] text-white/40 uppercase tracking-wider mt-0.5">Clear</span>
+          </div>
         </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value text-primary">{requiredTotal}</span>
-          <span className="hw-stat-label">Role Signals</span>
-        </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value text-emerald-600">{requiredCovered}</span>
-          <span className="hw-stat-label">Auto-Matched</span>
-        </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value text-amber-600">{proofGaps.length || gaps.length}</span>
-          <span className="hw-stat-label">Need Judgment</span>
-        </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value">{Math.max(requiredTotal - requiredCovered - (proofGaps.length || gaps.length), 0)}</span>
-          <span className="hw-stat-label">Clear</span>
-        </div>
-      </div>
 
       {/* Main content */}
       <div className="hw-workspace">
@@ -354,10 +355,10 @@ export default async function EvidenceMatchPage({
         {/* Right rail */}
         <div className="hw-workspace-rail">
           <h2 className="hw-section-label mb-3">How HireWire Decides</h2>
-          <div className="hw-panel p-4">
+          <div className="hw-ticket hw-ticket-dark p-4">
             <div className="flex items-start gap-2">
-              <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground leading-relaxed">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-white/60 leading-relaxed">
                 Strong matches move silently. Unclear, risky, or missing claims come here for one focused question. Skipping keeps the materials honest.
               </p>
             </div>
@@ -372,6 +373,7 @@ export default async function EvidenceMatchPage({
             </Link>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

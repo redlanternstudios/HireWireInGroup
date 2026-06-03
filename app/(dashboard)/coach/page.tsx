@@ -219,19 +219,14 @@ export default async function CoachPage() {
     ctx?.evidenceCount === 0 || (ctx?.approvedEvidence ?? 0) < 2;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2.5rem)]">
-      {/* ── Page Header ── */}
-      <div className="shrink-0 px-6 pt-5 pb-4 border-b border-border/70">
+    <div className="hw-proof-context flex flex-col h-[calc(100vh-2.5rem)]">
+      {/* Page Header */}
+      <div className="shrink-0 px-6 pt-5 pb-4 border-b border-white/8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            {/* Editorial label */}
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary mb-1">
-              AI Coach
-            </p>
-            <h1 className="text-lg font-bold tracking-tight text-foreground leading-none">
-              Career Coach
-            </h1>
-            <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-sm">
+            <p className="hw-section-label mb-1">AI Coach</p>
+            <h1 className="hw-hero-title text-white">Career Coach</h1>
+            <p className="text-xs text-white/50 mt-1 leading-relaxed max-w-sm">
               Strategic guidance grounded in your pipeline, Career Context, and
               application materials.
             </p>
@@ -242,20 +237,20 @@ export default async function CoachPage() {
             className={cn(
               "shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border",
               evidenceLow
-                ? "bg-amber-50 border-amber-200/60"
-                : "bg-primary/6 border-primary/15",
+                ? "bg-amber-500/10 border-amber-500/20"
+                : "bg-emerald-500/10 border-emerald-500/20",
             )}
           >
             <div
               className={cn(
                 "h-1.5 w-1.5 rounded-full",
-                evidenceLow ? "bg-amber-400" : "bg-primary animate-pulse",
+                evidenceLow ? "bg-amber-400" : "bg-emerald-400 animate-pulse",
               )}
             />
             <span
               className={cn(
                 "text-[10px] font-semibold",
-                evidenceLow ? "text-amber-700" : "text-primary",
+                evidenceLow ? "text-amber-400" : "text-emerald-400",
               )}
             >
               {evidenceLow
@@ -266,23 +261,18 @@ export default async function CoachPage() {
         </div>
       </div>
 
-      {/* ── Two-column layout ── */}
+      {/* Two-column layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Main chat panel */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-border/70">
+        <div className="flex-1 flex flex-col min-w-0 border-r border-white/8">
           <CoachChat className="h-full" />
         </div>
 
-        {/* ── Right context rail ── */}
+        {/* Right context rail */}
         <aside className="hidden lg:flex flex-col w-72 xl:w-80 shrink-0 overflow-y-auto">
-          {/* Dark intelligence surface — pipeline at a glance */}
-          <div
-            className="shrink-0 p-4 border-b border-white/6"
-            style={{ backgroundColor: "#111110" }}
-          >
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/40 mb-3">
-              Pipeline at a glance
-            </p>
+          {/* Pipeline at a glance */}
+          <div className="shrink-0 p-4 border-b border-white/8">
+            <p className="hw-section-label mb-3">Pipeline at a glance</p>
             <div className="space-y-0.5">
               <div className="flex items-center justify-between py-1.5">
                 <span className="text-xs text-white/50">Active jobs</span>
@@ -379,9 +369,9 @@ export default async function CoachPage() {
 
           {/* Recent Activity */}
           {ctx?.recentEvents && ctx.recentEvents.length > 0 && (
-            <div className="p-4 border-b border-border/70">
+            <div className="p-4 border-b border-white/8">
               <div className="flex items-center gap-1.5 mb-2.5">
-                <Activity className="h-2.5 w-2.5 text-muted-foreground" />
+                <Activity className="h-2.5 w-2.5 text-white/40" />
                 <RailLabel>Recent activity</RailLabel>
               </div>
               <div className="space-y-2">
@@ -393,16 +383,16 @@ export default async function CoachPage() {
                     {event.job_id ? (
                       <Link
                         href={`/jobs/${event.job_id}`}
-                        className="text-xs text-foreground hover:text-primary transition-colors leading-snug flex-1 min-w-0 truncate"
+                        className="text-xs text-white/70 hover:text-white transition-colors leading-snug flex-1 min-w-0 truncate"
                       >
                         {EVENT_LABEL[event.event_type] ?? event.event_type}
                       </Link>
                     ) : (
-                      <span className="text-xs text-foreground leading-snug flex-1 min-w-0 truncate">
+                      <span className="text-xs text-white/70 leading-snug flex-1 min-w-0 truncate">
                         {EVENT_LABEL[event.event_type] ?? event.event_type}
                       </span>
                     )}
-                    <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+                    <span className="text-[10px] text-white/30 shrink-0 tabular-nums">
                       {timeAgo(event.created_at)}
                     </span>
                   </div>
@@ -419,10 +409,10 @@ export default async function CoachPage() {
 
           {/* Grounding note */}
           <div className="p-4 mt-auto">
-            <div className="rounded-xl bg-foreground/4 border border-border px-3 py-3">
+            <div className="hw-ticket hw-ticket-dark px-3 py-3">
               <div className="flex items-start gap-2">
                 <Zap className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                <p className="text-[11px] text-white/50 leading-relaxed">
                   Coach responses are grounded in your verified evidence. Claims
                   not backed by your Career Context will be flagged.
                 </p>
