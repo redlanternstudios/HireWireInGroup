@@ -387,11 +387,8 @@ async function reAnalyzeExistingJob(
     ats_phrases: analysis.ats_phrases,
     matched_skills: strengths.filter((r: string) => !/^Gap:/i.test(r)),
     known_gaps: gaps.filter((r: string) => /^Gap:/i.test(r)),
-    soc_major_group: analysis.soc_major_group ?? null,
-    soc_group_name: analysis.soc_group_name ?? null,
-    soc_category: analysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
-    analysis_model: "claude-sonnet",
+    analysis_model: "gpt-4o",
   })
   if (analysisError) console.error("[re-analyze] job_analyses INSERT error:", analysisError.message, analysisError.details)
 
