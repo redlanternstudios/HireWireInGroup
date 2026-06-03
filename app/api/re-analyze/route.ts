@@ -103,7 +103,8 @@ export async function POST(request: NextRequest) {
       nextAction: readiness?.nextAction ?? null,
     })
   } catch (error) {
-    console.error("Error in re-analyze:", error)
+    console.error("[re-analyze] Unhandled error:", error)
+    console.error("[re-analyze] Stack:", error instanceof Error ? error.stack : "no stack")
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Re-analysis failed" },
       { status: 500 }
@@ -392,7 +393,7 @@ async function reAnalyzeExistingJob(
     analysis_version: "3.0-explainable",
     analysis_model: "claude-sonnet",
   })
-  if (analysisError) console.error("Analysis insert error:", analysisError)
+  if (analysisError) console.error("[re-analyze] job_analyses INSERT error:", analysisError.message, analysisError.details)
 
   // Insert fresh scores record
   const { error: scoresError } = await supabase.from("job_scores").insert({
@@ -406,7 +407,7 @@ async function reAnalyzeExistingJob(
     ats_keywords: toDbScore(dimensionScores.ats),
     scoring_version: "3.0-explainable",
   })
-  if (scoresError) console.error("Scores insert error:", scoresError)
+  if (scoresError) console.error("[re-analyze] job_scores INSERT error:", scoresError.message, scoresError.details)
 
   // Run orchestration (coaching, matching, etc.)
   await runJobFlow({
