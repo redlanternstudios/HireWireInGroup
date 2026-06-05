@@ -7,6 +7,7 @@ import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
 import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
 import { AnalyzeJobButton } from "../AnalyzeJobButton"
+import { StripedCorner } from "@/components/off-white-stripes"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requirements"
 import { cn } from "@/lib/utils"
@@ -22,11 +23,11 @@ function asCanonicalEvidenceMap(value: unknown): CanonicalJobEvidenceMap | null 
 }
 
 function uiStatus(match: RequirementEvidenceMatch) {
-  if (match.status === "met") return { label: "Covered", className: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-  if (match.status === "partial" && match.confidence === "high") return { label: "Probably covered", className: "bg-sky-50 text-sky-700 border-sky-200" }
-  if (match.status === "partial") return { label: "Needs a clearer example", className: "bg-amber-50 text-amber-700 border-amber-200" }
-  if (match.priority === "keyword") return { label: "Optional", className: "bg-slate-50 text-slate-600 border-slate-200" }
-  return { label: "Needs an example", className: "bg-rose-50 text-rose-700 border-rose-200" }
+  if (match.status === "met") return { label: "Verified", className: "hw-badge-verified" }
+  if (match.status === "partial" && match.confidence === "high") return { label: "Verified", className: "hw-badge-verified" }
+  if (match.status === "partial") return { label: "Inferred", className: "hw-badge-inferred" }
+  if (match.priority === "keyword") return { label: "Pending", className: "hw-badge-pending" }
+  return { label: "Unsupported", className: "hw-badge-unsupported" }
 }
 
 function normalizeFixableMatch(
@@ -142,7 +143,8 @@ export default async function EvidenceMatchPage({
   const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
 
   return (
-    <div className="hw-page">
+    <div className="hw-proof-context min-h-screen">
+      <div className="hw-page">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link
@@ -155,9 +157,10 @@ export default async function EvidenceMatchPage({
       </div>
 
       {/* Header */}
-      <div className="hw-card px-6 py-5">
-        <p className="hw-section-label mb-1">Prove Fit</p>
-        <h1 className="hw-page-title">Prove Fit</h1>
+      <div className="hw-card relative overflow-hidden px-6 py-5">
+        <StripedCorner position="top-right" className="opacity-25" />
+        <p className="hw-ticket-label mb-1 text-primary">Prove Fit</p>
+        <h1 className="hw-hero-title">Prove your fit</h1>
         <p className="hw-page-subtitle">
           HireWire matched what it could. The Match Interview covers only what still needs your judgment.
         </p>
@@ -224,10 +227,11 @@ export default async function EvidenceMatchPage({
               />
 
               {requiredGaps.length === 0 && (
-                <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
+                <div className="hw-card relative overflow-hidden border-l-4 border-l-emerald-500 px-5 py-4">
+                  <StripedCorner position="bottom-right" className="opacity-20" />
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="hw-section-label mb-1">Fit is proved enough to continue.</p>
+                      <p className="hw-proof-stamp locked mb-3">Proof locked in</p>
                       <p className="text-sm text-muted-foreground">
                         HireWire will generate from confirmed, auto-matched, or intentionally skipped claims.
                       </p>
@@ -258,9 +262,9 @@ export default async function EvidenceMatchPage({
                         id={requirementAnchorId(match.requirement_id)}
                         key={match.requirement_id}
                         className={cn(
-                          "hw-requirement-card rounded-md border bg-background px-5 py-4",
+                          "hw-ticket hw-requirement-card px-5 py-4",
                           requestedRequirementId === match.requirement_id
-                            ? "border-primary bg-primary/5"
+                            ? "border-primary bg-primary/10"
                             : "border-border",
                         )}
                       >
@@ -268,13 +272,13 @@ export default async function EvidenceMatchPage({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <Target className="h-4 w-4 text-primary" />
-                          <span className="hw-section-label">
+                          <span className="hw-ticket-label">
                             {match.priority === "required" ? "Important" : match.priority === "preferred" ? "Nice to have" : "Keyword"}
                           </span>
                           <span className="rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
                             {requirementType.replace(/_/g, " ")}
                           </span>
-                          <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}>
+                          <span className={status.className}>
                             {status.label}
                           </span>
                         </div>
@@ -373,6 +377,7 @@ export default async function EvidenceMatchPage({
           </div>
         </div>
       </div>
+    </div>
     </div>
   )
 }

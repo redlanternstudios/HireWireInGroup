@@ -3,6 +3,14 @@
 import { cn } from "@/lib/utils"
 import { CONFIDENCE_CONFIG, type ConfidenceLevel } from "./types"
 
+const PROOF_BADGE_CLASS: Record<ConfidenceLevel, string> = {
+  strong: "hw-badge-verified",
+  partial: "hw-badge-inferred",
+  weak: "hw-badge-inferred",
+  missing: "hw-badge-unsupported",
+  needs_review: "hw-badge-pending",
+}
+
 export function ConfidenceBadge({
   level,
   className,
@@ -14,8 +22,8 @@ export function ConfidenceBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
-        config.className,
+        "inline-flex items-center gap-1.5",
+        PROOF_BADGE_CLASS[level] ?? config.className,
         className,
       )}
     >

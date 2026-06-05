@@ -284,6 +284,7 @@ export function MatchInterviewModal({
 }: MatchInterviewModalProps) {
   const requirementType = inferRequirementType(requirement.requirement_text)
   const [retryNonce, setRetryNonce] = useState(0)
+  const [proofLocked, setProofLocked] = useState(false)
 
   const [state, dispatch] = useReducer(reducer, {
     jobId,
@@ -307,6 +308,7 @@ export function MatchInterviewModal({
   // Reset and start a new session whenever requirement changes
   useEffect(() => {
     if (!open) return
+    setProofLocked(false)
     dispatch({ type: "RESET_SESSION" })
     dispatch({ type: "SET_SESSION_STATUS", status: "loading" })
 
@@ -416,8 +418,12 @@ export function MatchInterviewModal({
         try {
           await confirmDraft(evidence.id)
           dispatch({ type: "SET_STATUS", status: "completed" })
-          onStepSaved?.("answer")
-          onNext?.()
+          setProofLocked(true)
+          window.setTimeout(() => {
+            setProofLocked(false)
+            onStepSaved?.("answer")
+            onNext?.()
+          }, 700)
         } catch (error) {
           dispatch({
             type: "ADD_MESSAGE",
@@ -459,8 +465,12 @@ export function MatchInterviewModal({
         }
         dispatch({ type: "SET_SAVING", value: false })
         dispatch({ type: "SET_STATUS", status: "completed" })
-        onStepSaved?.("answer")
-        onNext?.()
+        setProofLocked(true)
+        window.setTimeout(() => {
+          setProofLocked(false)
+          onStepSaved?.("answer")
+          onNext?.()
+        }, 700)
       } catch (error) {
         dispatch({ type: "SET_SAVING", value: false })
         dispatch({
@@ -515,7 +525,7 @@ export function MatchInterviewModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex flex-col gap-0 overflow-hidden border-border/60 p-0 shadow-2xl"
+        className="hw-proof-context flex flex-col gap-0 overflow-hidden border-border/60 bg-background p-0 text-foreground shadow-2xl"
         style={{
           width: "min(780px, 94vw)",
           maxWidth: "none",
@@ -538,6 +548,13 @@ export function MatchInterviewModal({
 
         {/* Chat area */}
         <div className="relative flex-1 min-h-0">
+          {proofLocked && (
+            <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center">
+              <span className="hw-proof-stamp locked bg-background/95 shadow-xl">
+                Proof locked in
+              </span>
+            </div>
+          )}
           {state.sessionStatus === "loading" ? (
             <InterviewLoadingState />
           ) : state.sessionStatus === "error" ? (

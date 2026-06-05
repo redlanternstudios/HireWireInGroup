@@ -303,10 +303,7 @@ export function CoachChat({
           {messages.length === 0 && (
             <div className="space-y-4">
               {/* Coach intro — dark intelligence surface */}
-              <div
-                className="rounded-2xl px-5 py-4 shadow-md"
-                style={{ backgroundColor: "#111110" }}
-              >
+              <div className="hw-card rounded-2xl px-5 py-4 shadow-md">
                 <div className="flex items-center gap-2.5 mb-3">
                   <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
                     <Sparkles className="h-3.5 w-3.5 text-white" />
@@ -338,7 +335,7 @@ export function CoachChat({
                       className={cn(
                         "text-sm font-bold",
                         jobContext.score >= 70
-                          ? "text-[#22c55e]"
+                          ? "text-[hsl(var(--success))]"
                           : jobContext.score >= 50
                             ? "text-amber-400"
                             : "text-primary",

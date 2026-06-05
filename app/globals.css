@@ -347,6 +347,22 @@
 
   /* ─── DARK PROOF CONTEXT (coach, requirement screens) ─── */
   .hw-proof-context {
+    --background: 24 7% 5%;
+    --foreground: 30 23% 95%;
+    --card: 28 12% 10%;
+    --card-foreground: 30 23% 95%;
+    --popover: 28 12% 10%;
+    --popover-foreground: 30 23% 95%;
+    --secondary: 28 8% 16%;
+    --secondary-foreground: 30 23% 95%;
+    --muted: 28 8% 16%;
+    --muted-foreground: 30 10% 68%;
+    --accent: 28 8% 16%;
+    --accent-foreground: 30 23% 95%;
+    --panel: 28 10% 12%;
+    --panel-foreground: 30 23% 95%;
+    --border: 30 8% 22%;
+    --input: 30 8% 18%;
     background: #0f0e0d;
     color: #f5f2ef;
   }
@@ -373,6 +389,11 @@
     border-radius: var(--radius-lg);
     border: 1px solid rgba(26, 23, 20, 0.10);
     border-left: 3px solid hsl(var(--primary));
+  }
+  .hw-proof-context .hw-ticket {
+    border-color: rgba(245, 242, 239, 0.10);
+    border-left-color: hsl(var(--primary));
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
   }
   .hw-ticket-label {
     font-size: 10px;

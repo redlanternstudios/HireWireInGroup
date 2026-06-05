@@ -32,8 +32,8 @@ export function EvidenceSummaryCard({
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border/60 bg-muted/30 px-4 py-2.5">
         <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
-        <p className="text-[11px] font-bold uppercase tracking-wider text-foreground">
-          Proof summary
+        <p className="hw-ticket-label text-foreground">
+          PROOF SUMMARY
         </p>
         <div className="ml-auto">
           <ConfidenceBadge level={confidence} />

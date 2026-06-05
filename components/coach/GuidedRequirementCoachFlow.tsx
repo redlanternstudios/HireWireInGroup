@@ -103,12 +103,12 @@ export function GuidedRequirementCoachFlow({
   }
 
   return (
-    <div className="hw-card px-5 py-4 border-l-4 border-l-primary">
+    <div className="hw-ticket px-5 py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4 text-primary" />
-            <p className="hw-section-label">Prove Fit</p>
+            <p className="hw-ticket-label">Prove Fit</p>
             <span className="rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
               Match Interview
             </span>

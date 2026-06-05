@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { CoachChat } from "@/components/coach-chat";
+import { HireWireLogo } from "@/components/hirewire-logo";
 import {
   ArrowRight,
   Zap,
@@ -219,11 +220,13 @@ export default async function CoachPage() {
     ctx?.evidenceCount === 0 || (ctx?.approvedEvidence ?? 0) < 2;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2.5rem)]">
+    <div className="hw-proof-context flex flex-col h-[calc(100vh-2.5rem)]">
       {/* ── Page Header ── */}
       <div className="shrink-0 px-6 pt-5 pb-4 border-b border-border/70">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div className="flex items-start gap-4">
+            <HireWireLogo variant="white" size="sm" className="mt-[-18px] shrink-0 opacity-95" />
+            <div>
             {/* Editorial label */}
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary mb-1">
               AI Coach
@@ -235,6 +238,7 @@ export default async function CoachPage() {
               Strategic guidance grounded in your pipeline, Career Context, and
               application materials.
             </p>
+            </div>
           </div>
 
           {/* Grounded indicator */}
@@ -276,10 +280,7 @@ export default async function CoachPage() {
         {/* ── Right context rail ── */}
         <aside className="hidden lg:flex flex-col w-72 xl:w-80 shrink-0 overflow-y-auto">
           {/* Dark intelligence surface — pipeline at a glance */}
-          <div
-            className="shrink-0 p-4 border-b border-white/6"
-            style={{ backgroundColor: "#111110" }}
-          >
+          <div className="shrink-0 bg-background p-4 border-b border-white/6">
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/40 mb-3">
               Pipeline at a glance
             </p>
@@ -296,7 +297,7 @@ export default async function CoachPage() {
                   className={cn(
                     "text-xs font-semibold tabular-nums",
                     (ctx?.readyCount ?? 0) > 0
-                      ? "text-[#22c55e]"
+                      ? "text-[hsl(var(--success))]"
                       : "text-white/40",
                   )}
                 >
@@ -321,7 +322,7 @@ export default async function CoachPage() {
                   className={cn(
                     "text-xs font-semibold",
                     evidenceStrong
-                      ? "text-[#22c55e]"
+                      ? "text-[hsl(var(--success))]"
                       : evidenceLow
                         ? "text-amber-400"
                         : "text-white",
