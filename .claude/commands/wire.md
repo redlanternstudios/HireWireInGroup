@@ -1,0 +1,29 @@
+# /wire — Wire a v0 Component
+# Visual structure is locked. You wire only. You do not redesign.
+
+Rules:
+- Visual output must not change
+- Do not add, remove, or reposition UI elements
+- Wire to existing hooks, actions, and data patterns
+- Do not create new hooks — use what exists
+
+Step 1: Identify what data the component needs + where it lives
+Step 2: Map props → existing data sources
+Step 3: Replace mock data with live data using project's canonical fetch pattern
+Step 4: Verify — TypeScript clean, all states work, mobile at 375px matches v0
+
+## OUTPUT FORMAT
+
+```
+PROPS MAPPED:
+  [prop] → [data source / existing helper]
+
+FILES TOUCHED:
+  [path] — [what changed]
+
+VISUAL CHANGES: none
+(if any exist, list them and ask Rory to approve before proceeding)
+
+VERIFY: [command]
+DONE WHEN: [observable behavior]
+```
