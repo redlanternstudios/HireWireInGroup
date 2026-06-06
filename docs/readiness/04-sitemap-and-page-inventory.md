@@ -21,7 +21,7 @@
 - `/jobs/[id]/interview-prep`
 - `/logs`
 - `/companies`
-- `/ready-queue`
+- `/ready-to-apply`
 - `/documents`
 - `/templates`
 - `/profile`

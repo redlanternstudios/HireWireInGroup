@@ -15,22 +15,16 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { extractTextFromPDF } from "@/lib/pdf/extractText"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export const maxDuration = 30
 
 export async function POST(request: NextRequest) {
   try {
     // ── Auth ──────────────────────────────────────────────────────────────────
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
 
     // ── Parse form data ───────────────────────────────────────────────────────
     const contentType = request.headers.get("content-type") ?? ""

@@ -1,7 +1,7 @@
 // LinkedIn ↔ Resume Consistency Engine
 import { z } from "zod"
-import { generateText, Output } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { generateStructuredText } from "@/lib/ai/gateway"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 export const ConsistencyFlagSchema = z.object({
   field: z.string(),
@@ -13,12 +13,14 @@ export const ConsistencyFlagSchema = z.object({
   delta: z.string().optional(),
 })
 
-export async function checkResumeLinkedInConsistency(resume: any, linkedin: any) {
-  const prompt = `Compare the following resume and LinkedIn profile data. For each field (title, company, date_range, etc.), flag any contradictions. Return a JSON array of { field, source_a, source_b, value_a, value_b, severity, delta }.`
-  const result = await generateText({
-    model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: z.array(ConsistencyFlagSchema) }),
-    prompt: `${prompt}\n\nResume: ${JSON.stringify(resume)}\nLinkedIn: ${JSON.stringify(linkedin)}`,
-  })
-  return result.experimental_output
+export async function checkResumeLinkedInConsistency(resume: unknown, linkedin: unknown) {
+  return generateStructuredText(
+    {
+      model: CLAUDE_MODELS.SONNET,
+      schema: z.array(ConsistencyFlagSchema),
+      schemaDescription: `Array of: { "field": string, "source_a": string, "source_b": string, "value_a": string, "value_b": string, "severity": "cosmetic"|"disqualifying", "delta": string }`,
+      contextPrompt: `Compare the following resume and LinkedIn profile data. For each field (title, company, date_range, etc.), flag any contradictions. Return a JSON array of { field, source_a, source_b, value_a, value_b, severity, delta }.\n\nResume: ${JSON.stringify(resume)}\nLinkedIn: ${JSON.stringify(linkedin)}`,
+    },
+    { route: "resume-linkedin-consistency" }
+  )
 }

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 
-// /jobs/new redirects to /jobs where the JobInputForm lives
+// /jobs/new is a compatibility redirect to the Jobs page with intake open.
 export default function NewJobPage() {
-  redirect("/jobs")
+  redirect("/jobs?add=true")
 }

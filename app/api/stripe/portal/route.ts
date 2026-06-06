@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/supabase/require-user"
 import { stripe } from "@/lib/stripe"
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     const { data: userData } = await supabase
       .from("users")
       .select("stripe_customer_id")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single()
 
     if (!userData?.stripe_customer_id) {
@@ -23,7 +21,13 @@ export async function POST(request: Request) {
       )
     }
 
-    const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+    const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL
+    if (!origin) {
+      return NextResponse.json(
+        { error: "Missing application URL configuration" },
+        { status: 500 }
+      )
+    }
 
     const session = await stripe.billingPortal.sessions.create({
       customer: userData.stripe_customer_id,

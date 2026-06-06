@@ -1,5 +1,5 @@
 // Coach strategy profile logic
-import { StrategyProfile, GenerationIntent } from "./types"
+import type { StrategyProfile, GenerationIntent } from "./types"
 
 export const DEFAULT_STRATEGY_PROFILE: StrategyProfile = {
   id: "default",

@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
 
 /**
  * Normalize a company name for matching purposes
@@ -202,10 +203,13 @@ export async function getCompaniesWithStats(
       company_id,
       company_name,
       status,
+      applied_at,
       created_at,
       job_scores (overall_score),
       generated_resume,
-      generated_cover_letter
+      generated_cover_letter,
+      evidence_map,
+      quality_passed
     `)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -255,7 +259,7 @@ export async function getCompaniesWithStats(
     if (["applied", "interviewing", "offered"].includes(status)) {
       stats.applied_count++
     }
-    if (status === "ready") {
+    if (evaluateReadiness(job).stage === "ready") {
       stats.ready_count++
     }
     
@@ -305,7 +309,7 @@ export async function getCompaniesWithStats(
         if (["applied", "interviewing", "offered"].includes(status)) {
           stats.applied_count++
         }
-        if (status === "ready") {
+        if (evaluateReadiness(job).stage === "ready") {
           stats.ready_count++
         }
         
@@ -371,7 +375,10 @@ export async function getJobsForCompany(
         confidence_score
       ),
       generated_resume,
-      generated_cover_letter
+      generated_cover_letter,
+      evidence_map,
+      quality_passed,
+      applied_at
     `)
     .eq("user_id", userId)
     .is("deleted_at", null)

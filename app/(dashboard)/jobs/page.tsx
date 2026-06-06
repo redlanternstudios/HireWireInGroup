@@ -4,38 +4,106 @@ import { JobsPipelineClient, type PipelineJob } from "@/components/jobs/jobs-pip
 
 export const dynamic = "force-dynamic"
 
-export default async function JobsPage() {
+type JobsRow = {
+  id: string
+  role_title: string | null
+  company_name: string | null
+  status: string | null
+  generation_status: string | null
+  generated_resume: string | null
+  generated_cover_letter: string | null
+  quality_passed: boolean | null
+  applied_at: string | null
+  evidence_map: Record<string, unknown> | null
+  score: number | null
+  score_gaps: string[] | null
+  gap_clarifications: unknown
+  gaps_addressed: string[] | null
+  intelligence: Record<string, unknown> | null
+  updated_at: string | null
+  created_at: string
+  job_scores: Array<{ overall_score?: number }> | null
+}
+
+type ProveFitDecisionRow = {
+  job_id: string | null
+  requirement_id?: string | null
+  decision?: string | null
+  claim_text?: string | null
+}
+
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ add?: string | string[] }>
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const addParam = resolvedSearchParams?.add
+  const initialShowAddJob = Array.isArray(addParam)
+    ? addParam[0] === "true"
+    : addParam === "true"
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
   // Fetch all fields needed by display-stage, staleness, and priority helpers
-  const { data: jobs } = await supabase
-    .from("jobs")
-    .select(`
-      id,
-      role_title,
-      company_name,
-      status,
-      generation_status,
-      generated_resume,
-      generated_cover_letter,
-      quality_passed,
-      applied_at,
-      evidence_map,
-      score,
-      updated_at,
-      created_at,
-      job_scores ( overall_score )
-    `)
-    .eq("user_id", user.id)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .limit(200)
+  const [
+    { data: jobs },
+    { data: proveFitDecisions },
+    { data: analysisPresence },
+  ] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select(`
+        id,
+        role_title,
+        company_name,
+        status,
+        generation_status,
+        generated_resume,
+        generated_cover_letter,
+        quality_passed,
+        applied_at,
+        evidence_map,
+        score,
+        score_gaps,
+        gap_clarifications,
+        gaps_addressed,
+        intelligence,
+        updated_at,
+        created_at,
+        job_scores ( overall_score )
+      `)
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("prove_fit_decisions")
+      .select("job_id, requirement_id, decision, claim_text")
+      .eq("user_id", user.id),
+    supabase
+      .from("job_analyses")
+      .select("job_id")
+      .eq("user_id", user.id),
+  ])
+
+  const decisionsByJobId = new Map<string, ProveFitDecisionRow[]>()
+  for (const decision of (proveFitDecisions ?? []) as ProveFitDecisionRow[]) {
+    if (!decision.job_id) continue
+    const list = decisionsByJobId.get(decision.job_id) ?? []
+    list.push(decision)
+    decisionsByJobId.set(decision.job_id, list)
+  }
+  const analysisJobIds = new Set(
+    ((analysisPresence ?? []) as Array<{ job_id: string | null }>)
+      .map((row) => row.job_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  )
 
   // Normalize score — prefer job_scores.overall_score, fall back to jobs.score
-  const pipeline: PipelineJob[] = (jobs ?? []).map(j => {
-    const scores = (j.job_scores as Array<{ overall_score?: number }> | null) ?? []
+  const pipeline: PipelineJob[] = ((jobs ?? []) as JobsRow[]).map((j) => {
+    const scores = j.job_scores ?? []
     const score = scores[0]?.overall_score ?? (j.score as number | null) ?? null
     return {
       id:                    j.id,
@@ -49,10 +117,16 @@ export default async function JobsPage() {
       applied_at:            j.applied_at ?? null,
       evidence_map:          (j.evidence_map as Record<string, unknown> | null) ?? null,
       score,
+      score_gaps:            (j.score_gaps as string[] | null) ?? null,
+      gap_clarifications:    j.gap_clarifications ?? null,
+      gaps_addressed:        (j.gaps_addressed as string[] | null) ?? null,
+      intelligence:          (j.intelligence as Record<string, unknown> | null) ?? null,
       updated_at:            j.updated_at ?? null,
       created_at:            j.created_at,
+      analysis_present:      analysisJobIds.has(j.id),
+      prove_fit_decisions:   decisionsByJobId.get(j.id) ?? [],
     }
   })
 
-  return <JobsPipelineClient jobs={pipeline} />
+  return <JobsPipelineClient jobs={pipeline} initialShowAddJob={initialShowAddJob} />
 }

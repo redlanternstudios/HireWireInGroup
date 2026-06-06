@@ -10,6 +10,17 @@ const ALLOWED_REDIRECT_PREFIXES = [
   '/dashboard',
   '/jobs',
   '/profile',
+  '/evidence',
+  '/coach',
+  '/billing',
+  '/settings',
+  '/analytics',
+  '/documents',
+  '/ready-queue',
+  '/ready-to-apply',
+  '/applications',
+  '/integrity',
+  '/logs',
 ]
 
 function isValidRedirect(path: string): boolean {

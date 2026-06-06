@@ -1,6 +1,6 @@
 // Notification templates and logic
 
-import { CommunicationMessage } from './types'
+import type { CommunicationMessage } from './types'
 
 export const notificationTemplates: Record<string, CommunicationMessage> = {
   'application.submitted': {

@@ -1,6 +1,127 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { generateText, Output } from "ai"
+import { analyzeJobCore } from "@/lib/analyze/analyze-job-core"
+import { handleDomainEvent } from "@/lib/domain-events"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { requireUser } from "@/lib/supabase/require-user"
+
+/**
+ * POST /api/re-analyze
+ *
+ * Re-runs the full analysis pipeline for an existing job.
+ * Accepts { job_id } and uses the job's stored source_url (job_url) to re-fetch
+ * and re-analyze. Falls back gracefully if re-fetch is unavailable.
+ *
+ * This is distinct from /api/analyze which CREATES a new job from a URL.
+ * re-analyze UPDATES an existing job that already has a job_url in the DB.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { job_id } = body
+
+    if (!job_id || typeof job_id !== "string") {
+      return NextResponse.json(
+        { success: false, error: "job_id is required" },
+        { status: 400 }
+      )
+    }
+
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
+
+    // Fetch the existing job to get its URL
+    const { data: job, error: jobError } = await supabase
+      .from("jobs")
+      .select("id, job_url, status")
+      .eq("id", job_id)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .single()
+
+    if (jobError || !job) {
+      return NextResponse.json({ success: false, error: "Job not found" }, { status: 404 })
+    }
+
+    if (!job.job_url) {
+      return NextResponse.json(
+        { success: false, error: "This job has no URL to re-analyze. Add a job URL first." },
+        { status: 400 }
+      )
+    }
+
+    // Mark the job as analyzing so the UI shows a loading state
+    await supabase
+      .from("jobs")
+      .update({ status: "analyzing" })
+      .eq("id", job_id)
+      .eq("user_id", userId)
+
+    // Delete any stale analysis/scores rows so re-insert works cleanly
+    await Promise.all([
+      supabase.from("job_analyses").delete().eq("job_id", job_id).eq("user_id", userId),
+      supabase.from("job_scores").delete().eq("job_id", job_id),
+    ])
+
+    // Run analyzeJobCore — it will find the existing job by URL and return early
+    // with the duplicate response, so we bypass that by deleting first then calling
+    // the core function differently. Instead, we call the HTTP analyze endpoint
+    // logic directly, bypassing duplicate detection for re-analysis.
+    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId)
+
+    if (!result.success) {
+      // Restore the previous status on failure
+      await supabase
+        .from("jobs")
+        .update({ status: "analyzed" })
+        .eq("id", job_id)
+        .eq("user_id", userId)
+
+      return NextResponse.json({ success: false, error: result.error }, { status: 500 })
+    }
+
+    // Emit domain event — best effort, never blocks the response
+    await handleDomainEvent({
+      supabase,
+      event_type: "job_analyzed",
+      job_id,
+      user_id: userId,
+      source: "analyze_job_route",
+      payload: { triggeredAt: new Date().toISOString(), reanalysis: true },
+    })
+
+    const readiness =
+      result.job && typeof result.job === "object"
+        ? evaluateReadiness(result.job)
+        : null
+
+    return NextResponse.json({
+      success: true,
+      job_id,
+      job: result.job,
+      nextAction: readiness?.nextAction ?? null,
+    })
+  } catch (error) {
+    console.error("Error in re-analyze:", error)
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Re-analysis failed" },
+      { status: 500 }
+    )
+  }
+}
+
+// ─── Internal re-analyze function ───────────────────────────────────────────
+// Skips duplicate detection since we know this job already exists.
+// Reuses the full extraction + scoring + backfill logic from analyzeJobCore
+// by calling it with the job_url — but the job row already exists so we need
+// to update rather than insert. We achieve this by temporarily removing the
+// job_url from the row, calling analyzeJobCore (which creates a new row), then
+// merging the result back and deleting the duplicate.
+//
+// Simpler approach: just call the shared extraction logic directly.
+
+import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
 import { z } from "zod"
 import {
   normalizeEvidenceRecord,
@@ -9,7 +130,6 @@ import {
   type CanonicalEvidence,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
 import { parseJobPage } from "@/lib/parsers"
 import {
   inferRoleFromJobTitle,
@@ -17,31 +137,39 @@ import {
   calculateWeightedScore,
 } from "@/lib/scoring-weights"
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
-import type { User } from "@supabase/supabase-js"
-import type { createClient as createClientType } from "@/lib/supabase/server"
-
-/**
- * POST /api/re-analyze
- *
- * Re-runs the full analysis pipeline for an existing job.
- * Accepts { job_id } and uses the job's stored job_url to re-fetch and re-analyze.
- *
- * FIX (2026-05-29): Deletes are now deferred until AFTER successful AI extraction.
- * Previously, stale rows were deleted before the AI call — a failed extraction left
- * the job with score data on the jobs row but empty job_analyses/job_scores, creating
- * a "79/100 but Analysis not run yet" contradiction that caused an infinite loop.
- *
- * FIX (2026-05-29): Model fallback — tries SONNET first, falls back to HAIKU on 403.
- * The v0 preview AI gateway returns 403 for claude-sonnet-4; HAIKU is accessible.
- */
-
-type ServerSupabase = Awaited<ReturnType<typeof createClientType>>
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
 const ROLE_FAMILIES = [
   "AI Technical Product Manager", "Technical Product Manager", "AI Product Manager",
   "Product Manager", "Senior Product Manager", "Systems Product Manager",
   "Workflow Product Manager", "Analytics Product Manager", "Product Owner",
   "Program Manager", "Other",
+] as const
+
+const SOC_CATEGORIES = [
+  "Management",
+  "Business_Financial",
+  "Computer_Mathematical",
+  "Architecture_Engineering",
+  "Life_Physical_Social_Science",
+  "Community_Social_Services",
+  "Legal",
+  "Education_Library",
+  "Arts_Design_Entertainment_Sports_Media",
+  "Healthcare_Practitioners",
+  "Healthcare_Support",
+  "Protective_Service",
+  "Food_Preparation_Serving",
+  "Building_Grounds",
+  "Personal_Care_Service",
+  "Sales",
+  "Office_Administrative",
+  "Farming_Fishing_Forestry",
+  "Construction_Extraction",
+  "Installation_Maintenance_Repair",
+  "Production",
+  "Transportation_Material_Moving",
+  "Military",
 ] as const
 
 const JobAnalysisSchema = z.object({
@@ -58,6 +186,9 @@ const JobAnalysisSchema = z.object({
   ats_phrases: z.array(z.string()),
   tech_stack: z.array(z.string()),
   role_family: z.enum(ROLE_FAMILIES),
+  soc_major_group: z.number().int().min(11).max(55).nullable(),
+  soc_group_name: z.string().nullable(),
+  soc_category: z.enum(SOC_CATEGORIES).nullable(),
   industry_guess: z.string().nullable(),
   seniority_level: z.string().nullable(),
   fit_signals: z.object({
@@ -82,109 +213,13 @@ function normalizeSeniority(level: string | null): string {
   return "Mid"
 }
 
-/**
- * Attempt AI extraction with SONNET, falling back to HAIKU on 403.
- * The v0 preview gateway blocks claude-sonnet-4 with a 403 — HAIKU is accessible.
- */
-async function extractWithFallback(
-  pageContent: string
-): Promise<z.infer<typeof JobAnalysisSchema>> {
-  const prompt = `Analyze this job posting and extract structured information.\n\nJob posting:\n${pageContent}`
-
-  const modelsToTry = [CLAUDE_MODELS.SONNET, CLAUDE_MODELS.HAIKU] as const
-
-  let lastError: Error | null = null
-  for (const model of modelsToTry) {
-    try {
-      const result = await generateText({
-        model,
-        output: Output.object({ schema: JobAnalysisSchema }),
-        prompt,
-      })
-      return result.experimental_output!
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e))
-      const is403 = err.message.includes("403") || err.message.includes("Forbidden") || err.message.includes("Access denied")
-      lastError = err
-      if (!is403) throw err // Non-403 errors propagate immediately — don't try fallback
-      console.warn(`[re-analyze] Model ${model} returned 403, trying fallback`)
-    }
-  }
-  throw lastError ?? new Error("All models failed")
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { job_id } = body
-
-    if (!job_id || typeof job_id !== "string") {
-      return NextResponse.json({ success: false, error: "job_id is required" }, { status: 400 })
-    }
-
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-    }
-
-    const { data: job, error: jobError } = await supabase
-      .from("jobs")
-      .select("id, job_url, status")
-      .eq("id", job_id)
-      .eq("user_id", user.id)
-      .is("deleted_at", null)
-      .single()
-
-    if (jobError || !job) {
-      return NextResponse.json({ success: false, error: "Job not found" }, { status: 404 })
-    }
-
-    if (!job.job_url) {
-      return NextResponse.json(
-        { success: false, error: "This job has no URL to re-analyze. Add a job URL first." },
-        { status: 400 }
-      )
-    }
-
-    // Mark analyzing so the UI shows a loading state — does NOT delete anything yet.
-    await supabase
-      .from("jobs")
-      .update({ status: "analyzing" })
-      .eq("id", job_id)
-      .eq("user_id", user.id)
-
-    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, user, request)
-
-    if (!result.success) {
-      // Restore previous status. Existing analysis rows are untouched (never deleted).
-      await supabase
-        .from("jobs")
-        .update({ status: "analyzed" })
-        .eq("id", job_id)
-        .eq("user_id", user.id)
-      return NextResponse.json({ success: false, error: result.error }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, job_id, job: result.job })
-  } catch (error) {
-    console.error("Error in re-analyze:", error)
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Re-analysis failed" },
-      { status: 500 }
-    )
-  }
-}
-
 async function reAnalyzeExistingJob(
   jobUrl: string,
   jobId: string,
   supabase: ServerSupabase,
-  user: User,
-  requestLike: { headers: { get(name: string): string | null } }
+  userId: string
 ): Promise<{ success: true; job: unknown } | { success: false; error: string }> {
-
-  // ── Step 1: Fetch the job page ───────────────────────────────────────────
+  // Fetch page
   let pageContent: string
   try {
     const controller = new AbortController()
@@ -195,36 +230,61 @@ async function reAnalyzeExistingJob(
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const html = await response.text()
-    pageContent = parseJobPage(html, jobUrl).text
+    const parsed = parseJobPage(html, jobUrl)
+    pageContent = parsed.text
   } catch (e) {
-    return { success: false, error: `Failed to fetch job page: ${e instanceof Error ? e.message : "unknown"}` }
+    return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
   }
 
-  // ── Step 2: AI extraction — SONNET with HAIKU fallback on 403 ───────────
-  // CRITICAL: Do NOT delete existing rows until extraction succeeds.
-  // If we delete first and the AI call fails, the job is left with a score on
-  // the jobs row but empty job_analyses — creating a broken loop state.
+  // Extract structured data via generateStructuredText (works with all Groq models)
   let analysis: z.infer<typeof JobAnalysisSchema>
   try {
-    analysis = await extractWithFallback(pageContent)
+    analysis = await generateStructuredText({
+      model: CLAUDE_MODELS.SONNET,
+      schema: JobAnalysisSchema,
+      contextPrompt: `Analyze this job posting:\n\n${pageContent.slice(0, 12000)}`,
+      schemaDescription: `{
+  "title": string | null,
+  "company": string | null,
+  "location": string | null,
+  "employment_type": string | null,
+  "salary_text": string | null,
+  "description_summary": string | null,
+  "responsibilities": string[],
+  "qualifications_required": string[],
+  "qualifications_preferred": string[],
+  "keywords": string[],
+  "ats_phrases": string[],
+  "tech_stack": string[],
+  "role_family": "AI Technical Product Manager"|"Technical Product Manager"|"AI Product Manager"|"Product Manager"|"Senior Product Manager"|"Systems Product Manager"|"Workflow Product Manager"|"Analytics Product Manager"|"Product Owner"|"Program Manager"|"Other",
+  "soc_major_group": number | null,
+  "soc_group_name": string | null,
+  "soc_category": "Management"|"Business_Financial"|"Computer_Mathematical"|"Architecture_Engineering"|"Life_Physical_Social_Science"|"Community_Social_Services"|"Legal"|"Education_Library"|"Arts_Design_Entertainment_Sports_Media"|"Healthcare_Practitioners"|"Healthcare_Support"|"Protective_Service"|"Food_Preparation_Serving"|"Building_Grounds"|"Personal_Care_Service"|"Sales"|"Office_Administrative"|"Farming_Fishing_Forestry"|"Construction_Extraction"|"Installation_Maintenance_Repair"|"Production"|"Transportation_Material_Moving"|"Military" | null,
+  "industry_guess": string | null,
+  "seniority_level": string | null,
+  "fit_signals": {
+    "has_ai_focus": boolean,
+    "has_technical_requirements": boolean,
+    "has_workflow_focus": boolean,
+    "has_startup_culture": boolean,
+    "has_pure_engineering": boolean,
+    "has_people_management": boolean,
+    "product_ownership_level": "low"|"medium"|"high"
+  }
+}`,
+    }, { route: "re-analyze", operation: "job-analysis" })
   } catch (e) {
     return { success: false, error: `AI extraction failed: ${e instanceof Error ? e.message : "unknown"}` }
   }
-
-  // ── Step 3: AI succeeded — NOW safe to delete stale rows ────────────────
-  await Promise.all([
-    supabase.from("job_analyses").delete().eq("job_id", jobId).eq("user_id", user.id),
-    supabase.from("job_scores").delete().eq("job_id", jobId),
-  ])
 
   const title = analysis.title || "Unknown Position"
   const company = analysis.company || "Unknown Company"
   const seniority = normalizeSeniority(analysis.seniority_level)
 
-  // ── Step 4: Score against evidence ──────────────────────────────────────
+  // Load evidence for scoring
   const [evidenceResult, profileResult] = await Promise.all([
-    supabase.from("evidence_library").select("*").eq("user_id", user.id).eq("is_active", true),
-    supabase.from("user_profile").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase.from("evidence_library").select("*").eq("user_id", userId).eq("is_active", true),
+    supabase.from("user_profile").select("*").eq("user_id", userId).maybeSingle(),
   ])
 
   const canonicalEvidence: CanonicalEvidence[] = []
@@ -233,14 +293,11 @@ async function reAnalyzeExistingJob(
   }
   if (profileResult.data?.experience) {
     const exps = Array.isArray(profileResult.data.experience) ? profileResult.data.experience : []
-    for (const exp of exps) canonicalEvidence.push(...normalizeProfileExperience(exp, user.id))
+    for (const exp of exps) canonicalEvidence.push(...normalizeProfileExperience(exp, userId))
   }
 
   const techMatch = analysis.tech_stack.filter((t) =>
-    canonicalEvidence.some((e) =>
-      e.skills.some((s) => s.toLowerCase().includes(t.toLowerCase())) ||
-      e.text.toLowerCase().includes(t.toLowerCase())
-    )
+    canonicalEvidence.some((e) => e.skills.some((s) => s.toLowerCase().includes(t.toLowerCase())) || e.text.toLowerCase().includes(t.toLowerCase()))
   )
   const kwMatch = analysis.keywords.filter((k) =>
     canonicalEvidence.some((e) => e.text.toLowerCase().includes(k.toLowerCase()))
@@ -255,7 +312,7 @@ async function reAnalyzeExistingJob(
   }
 
   const inferredRole = inferRoleFromJobTitle(title)
-  const weights = getWeightsForRole(inferredRole)
+  const weights = getWeightsForRole(inferredRole, analysis.soc_category ?? undefined)
   calculateWeightedScore({
     experience_relevance: dimensionScores.experience,
     evidence_quality: dimensionScores.evidence,
@@ -268,48 +325,45 @@ async function reAnalyzeExistingJob(
     canonicalEvidence,
     analysis.qualifications_required,
     analysis.qualifications_preferred,
-    dimensionScores
+    dimensionScores,
+    weights
   )
 
   const fitBandToLegacy: Record<FitBand, "HIGH" | "MEDIUM" | "LOW"> = {
     strong_match: "HIGH", moderate_match: "MEDIUM", stretch_but_viable: "MEDIUM", low_match: "LOW",
   }
 
-  const gaps = explainableFit.gaps
-    .filter((g) => g.severity === "critical")
-    .slice(0, 5)
-    .map((g) => `Gap: ${g.requirement.slice(0, 80)}`)
-  const strengths = explainableFit.strengths
-    .slice(0, 5)
-    .map((s) => `Strong: ${s.requirement.slice(0, 80)}`)
+  // Prefix format must match the /^Gap:/i regex used in analyzeJobCore and job_analyses inserts.
+  const gaps = explainableFit.gaps.filter((g) => g.severity === "critical").slice(0, 5).map((g) => `Gap: ${g.requirement.slice(0, 80)}`)
+  const strengths = explainableFit.strengths.slice(0, 5).map((s) => `Strong: ${s.requirement.slice(0, 80)}`)
 
-  // ── Step 5: Write results ────────────────────────────────────────────────
+  // Update the existing jobs row — only columns that exist on public.jobs
   const { error: updateError } = await supabase
     .from("jobs")
     .update({
       role_title: title,
       company_name: company,
       status: "analyzed",
-      qualifications_required: analysis.qualifications_required,
-      responsibilities: analysis.responsibilities,
       score: explainableFit.score,
       fit: fitBandToLegacy[explainableFit.band],
       score_gaps: gaps,
       score_strengths: strengths,
       seniority_level: seniority,
       role_family: analysis.role_family,
-      location: analysis.location,
       industry_guess: analysis.industry_guess,
-      ats_keywords: analysis.keywords,
       job_description: pageContent.slice(0, 10000),
     })
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
 
-  if (updateError) return { success: false, error: "Failed to update job record" }
+  if (updateError) {
+    console.error("[re-analyze] jobs PATCH error:", updateError.message, updateError.details)
+    return { success: false, error: `Failed to update job: ${updateError.message}` }
+  }
 
+  // Insert fresh analysis record
   const { error: analysisError } = await supabase.from("job_analyses").insert({
-    user_id: user.id,
+    user_id: userId,
     job_id: jobId,
     title,
     company,
@@ -322,17 +376,21 @@ async function reAnalyzeExistingJob(
     qualifications_preferred: analysis.qualifications_preferred,
     keywords: analysis.keywords,
     ats_phrases: analysis.ats_phrases,
-    matched_skills: strengths.filter((r: string) => !r.startsWith("Gap:")),
-    known_gaps: gaps.filter((r: string) => r.startsWith("Gap:")),
+    matched_skills: strengths.filter((r: string) => !/^Gap:/i.test(r)),
+    known_gaps: gaps.filter((r: string) => /^Gap:/i.test(r)),
+    soc_major_group: analysis.soc_major_group ?? null,
+    soc_group_name: analysis.soc_group_name ?? null,
+    soc_category: analysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
-    analysis_model: "claude-haiku-fallback",
+    analysis_model: "claude-sonnet",
   })
-  if (analysisError) console.error("[re-analyze] Analysis insert error:", analysisError)
+  if (analysisError) console.error("Analysis insert error:", analysisError)
 
+  // Insert fresh scores record
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: jobId,
     overall_score: explainableFit.score,
-    confidence_score: explainableFit.confidence === "HIGH" ? 0.9 : explainableFit.confidence === "MEDIUM" ? 0.7 : 0.5,
+    confidence_score: explainableFit.confidence === "high" ? 0.9 : explainableFit.confidence === "medium" ? 0.7 : 0.5,
     skills_match: dimensionScores.skills,
     experience_relevance: dimensionScores.experience,
     evidence_quality: dimensionScores.evidence,
@@ -340,21 +398,20 @@ async function reAnalyzeExistingJob(
     ats_keywords: dimensionScores.ats,
     scoring_version: "3.0-explainable",
   })
-  if (scoresError) console.error("[re-analyze] Scores insert error:", scoresError)
+  if (scoresError) console.error("Scores insert error:", scoresError)
 
+  // Run orchestration (coaching, matching, etc.)
   await runJobFlow({
     supabase,
-    request: requestLike,
-    userId: user.id,
+    userId,
     jobId,
-    triggerInterviewPrep: false,
   })
 
   const { data: updatedJob } = await supabase
     .from("jobs")
     .select("*")
     .eq("id", jobId)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .single()
 
   return { success: true, job: updatedJob }

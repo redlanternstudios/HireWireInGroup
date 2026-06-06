@@ -198,6 +198,17 @@
     transform: translateY(-1px);
   }
 
+  .hw-requirement-card {
+    scroll-margin-top: 6rem;
+  }
+
+  .hw-requirement-card:target {
+    border-color: rgba(217, 119, 6, 0.45);
+    box-shadow:
+      0 0 0 3px rgba(251, 191, 36, 0.24),
+      0 8px 24px rgba(120, 53, 15, 0.10);
+  }
+
   /* ─── INTELLIGENCE PANEL / RIGHT RAIL ─── */
   .hw-panel {
     background: hsl(var(--panel));
@@ -332,5 +343,19 @@
     left: 0; right: 0;
     height: 2px;
     background: hsl(var(--primary));
+  }
+}
+
+/* ─── PRINT ISOLATION ────────────────────────────────────────────────────────
+   When the user prints via the preview panel's isolated print window,
+   this CSS is a safety net for any browser that renders the main document.
+   The hw-watermark must never appear in any printed or exported output.
+────────────────────────────────────────────────────────────────────────────── */
+@media print {
+  .hw-watermark {
+    display: none !important;
+  }
+  .hw-preview-chrome {
+    display: none !important;
   }
 }

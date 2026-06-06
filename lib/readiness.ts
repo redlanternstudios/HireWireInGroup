@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server"
 // WorkflowStage is the single canonical type — always import from job-workflow.
 // readiness.ts never re-declares it.
 import type { WorkflowStage } from "@/lib/job-workflow"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { getCoachStepState, isEvidenceMapMetadataKey } from "@/lib/coach-step"
 export type { WorkflowStage }
 
 /**
@@ -29,6 +31,7 @@ export interface ReadinessResult {
   has_cover_letter: boolean
   quality_passed: boolean
   is_applied: boolean
+  is_archived: boolean
   
   // Derived counts
   evidence_count: number
@@ -42,6 +45,9 @@ export interface ReadinessResult {
   can_interview_prep: boolean
   can_apply: boolean
   is_ready: boolean
+  coach_required: boolean
+  coach_complete: boolean
+  coach_skipped: boolean
   
   // Blockers - why gates are false
   reasons_not_ready: string[]
@@ -85,26 +91,59 @@ export async function evaluateJobReadiness(
   }
   
   // Fetch evidence count
-  const { count: evidenceCount } = await supabase
+  const [
+    { count: evidenceCount },
+    { data: contextGapMatches },
+    { data: proveFitDecisions },
+  ] = await Promise.all([
+    supabase
     .from("evidence_library")
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
-    .eq("is_active", true)
+      .eq("is_active", true),
+    supabase
+      .from("context_gap_matches")
+      .select("match_type, risk_level")
+      .eq("job_id", jobId)
+      .eq("user_id", userId)
+      .then(
+        (result) => result,
+        () => ({ data: null, error: null }),
+      ),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", jobId)
+      .eq("user_id", userId),
+  ])
   
   // Extract artifact states
-  const analyses = (job.job_analyses as Array<{ id: string; qualifications_required?: string[]; qualifications_preferred?: string[] }>) || []
-  const scores = (job.job_scores as Array<{ id: string; overall_score?: number }>) || []
+  const analyses: Array<{ id: string; qualifications_required?: string[]; qualifications_preferred?: string[] }> =
+    Array.isArray(job.job_analyses) ? job.job_analyses : []
+  const scores: Array<{ id: string; overall_score?: number }> =
+    Array.isArray(job.job_scores) ? job.job_scores : []
   const evidenceMap = job.evidence_map as Record<string, unknown> | null
   
   const has_job_analysis = analyses.length > 0
   const has_evidence_mapping = evidenceMap !== null && Object.keys(evidenceMap).length > 0
-  const matching_complete = has_evidence_mapping && evidenceMap?.matching_complete === true
+  const canonicalReadiness = evaluateReadiness({
+    ...job,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  })
+  const matching_complete = has_evidence_mapping && canonicalReadiness.checklist.evidence
   const has_score = scores.length > 0 || job.score !== null
   const has_resume = !!job.generated_resume
   const has_cover_letter = !!job.generated_cover_letter
   const quality_passed = job.quality_passed === true
   const is_applied = job.applied_at !== null || job.status === "applied"
   const is_archived = job.status === "archived"
+  const coachStep = getCoachStepState(job)
+  const contextCriticalGaps = Array.isArray(contextGapMatches)
+    ? contextGapMatches.filter((match: { match_type?: string; risk_level?: string }) =>
+        ["true_gap", "unsupported"].includes(match.match_type ?? "") ||
+        ["high", "blocked"].includes(match.risk_level ?? "")
+      ).length
+    : 0
   
   // Derive requirement count from analysis
   const requirementCount = analyses[0]?.qualifications_required?.length || 0
@@ -113,7 +152,7 @@ export async function evaluateJobReadiness(
   let gapCount = 0
   if (has_evidence_mapping && evidenceMap) {
     const mappedRequirements = Object.keys(evidenceMap).filter(
-      k => !["matching_complete", "completed_at", "bullet_provenance", "paragraph_provenance", "selected_evidence_ids", "blocked_evidence"].includes(k)
+      k => !isEvidenceMapMetadataKey(k)
     )
     gapCount = Math.max(0, requirementCount - mappedRequirements.length)
   } else {
@@ -126,7 +165,7 @@ export async function evaluateJobReadiness(
   let stage: WorkflowStage = "job_ingested"
   if (is_applied) {
     stage = "applied"
-  } else if (quality_passed) {
+  } else if (canonicalReadiness.isReady) {
     stage = "ready"
   } else if (has_resume && has_cover_letter) {
     stage = "materials_generated"
@@ -143,9 +182,9 @@ export async function evaluateJobReadiness(
   // Calculate gates
   const can_match_evidence = has_job_analysis
   const can_score = has_job_analysis && (evidenceCount || 0) > 0
-  const can_generate = (matching_complete || requirementCount === 0) && (evidenceCount || 0) > 0 && has_job_analysis
+  const can_generate = (matching_complete || requirementCount === 0) && (evidenceCount || 0) > 0 && has_job_analysis && coachStep.complete
   const can_interview_prep = has_resume && has_cover_letter
-  const can_apply = has_resume && has_cover_letter && quality_passed && !is_applied && !is_archived
+  const can_apply = canonicalReadiness.isReady && contextCriticalGaps === 0 && !is_applied && !is_archived
   const is_ready = can_apply
   
   // Build reasons list
@@ -166,6 +205,15 @@ export async function evaluateJobReadiness(
   if (!has_cover_letter) {
     reasons_not_ready.push("Cover letter not generated")
   }
+  if (!canonicalReadiness.checklist.evidence) {
+    reasons_not_ready.push("Fit not proved yet")
+  }
+  if (!canonicalReadiness.checklist.coach) {
+    reasons_not_ready.push("Coach step required")
+  }
+  if (contextCriticalGaps > 0) {
+    reasons_not_ready.push(`${contextCriticalGaps} ContextEngine evidence gap(s) need review`)
+  }
   if (!quality_passed && has_resume && has_cover_letter) {
     reasons_not_ready.push("Quality review not passed (Red Team)")
   }
@@ -181,15 +229,17 @@ export async function evaluateJobReadiness(
     }
   } else if (!matching_complete && requirementCount > 0) {
     next_action = {
-      label: "Match Evidence",
-      href: `/jobs/${jobId}/evidence-match`,
-      description: "Map your experience to job requirements",
+      label: "Prove Fit",
+      href: canonicalReadiness.nextAction?.label === "Prove Fit"
+        ? canonicalReadiness.nextAction.href
+        : `/jobs/${jobId}/evidence-match`,
+      description: "Answer only what HireWire cannot verify yet",
     }
-  } else if (!has_score) {
+  } else if (coachStep.required && !coachStep.complete) {
     next_action = {
-      label: "Generate Materials",
-      href: `/jobs/${jobId}/documents`,
-      description: "Generate tailored resume and cover letter",
+      label: "Start Match Interview",
+      href: `/jobs/${jobId}/evidence-match`,
+      description: "Confirm or skip unclear claims before generation",
     }
   } else if (!has_resume || !has_cover_letter) {
     next_action = {
@@ -206,7 +256,7 @@ export async function evaluateJobReadiness(
   } else if (!is_applied) {
     next_action = {
       label: "Apply Now",
-      href: `/jobs/${jobId}`,
+      href: `/ready-to-apply`,
       description: "Submit your application",
     }
   }
@@ -223,6 +273,7 @@ export async function evaluateJobReadiness(
     has_cover_letter,
     quality_passed,
     is_applied,
+    is_archived,
     evidence_count: evidenceCount || 0,
     requirement_count: requirementCount,
     gap_count: gapCount,
@@ -232,6 +283,9 @@ export async function evaluateJobReadiness(
     can_interview_prep,
     can_apply,
     is_ready,
+    coach_required: coachStep.required,
+    coach_complete: coachStep.complete,
+    coach_skipped: coachStep.skipped,
     reasons_not_ready,
     next_action,
   }
@@ -246,33 +300,23 @@ export async function getReadyJobIds(userId: string): Promise<{
   pending_quality: string[]
 }> {
   const supabase = await createClient()
-  
-  // Ready: has materials AND quality_passed = true AND not applied/archived
-  const { data: readyJobs } = await supabase
+
+  const { data: jobs } = await supabase
     .from("jobs")
-    .select("id")
+    .select("id, status, generated_resume, generated_cover_letter, evidence_map, quality_passed, score, score_gaps, gap_clarifications, gaps_addressed")
     .eq("user_id", userId)
     .is("deleted_at", null)
-    .eq("quality_passed", true)
-    .not("generated_resume", "is", null)
-    .not("generated_cover_letter", "is", null)
-    .not("status", "in", "(applied,archived)")
-  
-  // Pending quality: has materials BUT quality_passed = false
-  const { data: pendingJobs } = await supabase
-    .from("jobs")
-    .select("id")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .or("quality_passed.is.null,quality_passed.eq.false")
-    .not("generated_resume", "is", null)
-    .not("generated_cover_letter", "is", null)
-    .not("status", "in", "(applied,archived)")
-  
+    .not("status", "in", "(applied,interviewing,offered,rejected,archived)")
+
+  const evaluatedJobs = (jobs ?? []).map(job => ({
+    id: job.id,
+    readiness: evaluateReadiness(job),
+  }))
+
   return {
-    ready: (readyJobs || []).map(j => j.id),
-    pending_quality: (pendingJobs || []).map(j => j.id),
+    ready: evaluatedJobs.filter(job => job.readiness.isReady).map(job => job.id),
+    pending_quality: evaluatedJobs
+      .filter(job => job.readiness.checklist.resume && job.readiness.checklist.coverLetter && !job.readiness.isReady)
+      .map(job => job.id),
   }
 }
-
-

@@ -59,9 +59,11 @@ See `docs/GENERATION_STRATEGY.md` for the full decision tree.
 | ≥65%     | any             | `strong_match`    |
 | 40–64%   | any             | `partial_match`   |
 | 25–39%   | any             | `honest_stretch`  |
-| <25%     | any             | `do_not_generate` |
+| <25%     | any             | `honest_stretch`  |
 
-**HARD BLOCK**: `strategy = "do_not_generate"` means no resume, no cover letter, no DB write.
+Low coverage is not a generation veto. It triggers automated conservative,
+evidence-only generation. `do_not_generate` is reserved for direct fabrication
+or safety risk, not fit score or credential mismatch.
 
 ---
 

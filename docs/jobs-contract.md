@@ -92,6 +92,47 @@ This document is the canonical, human-readable contract for the `/jobs` page and
 ### **C. Audit Trail**
 - Every state change/action is logged with: who, what, when, why
 
+### **D. Prove Fit Drawer Read Contract**
+
+UI drawer/sheet surfaces must not recompute unresolved requirement logic.
+Consume the canonical read route instead:
+
+```txt
+GET /api/jobs/[id]/evidence-map
+```
+
+Response shape:
+
+```ts
+type ProveFitEvidenceMapRead = {
+  success: true
+  matching_complete: boolean
+  blocked_requirements: Array<{
+    id: string
+    text: string
+    status: string
+    priority: "required" | "preferred" | "keyword"
+  }>
+  first_unresolved_requirement_id: string | null
+  next_action: {
+    label: "Prove Fit"
+    href: string
+    description: string
+  } | null
+}
+```
+
+Contract rules:
+
+- Use `next_action.href` for the primary Prove Fit CTA.
+- Do not rebuild requirement anchors in UI when the API provides an href.
+- `confirmed` only resolves when backed by `prove_fit_decisions`.
+- `auto_mapped` and `skipped` resolve.
+- `gap`, `unknown`, `partial`, stale cached `confirmed`, and missing usable
+  packet remain unresolved.
+- Readiness and apply gates remain owned by `lib/readiness/evaluator.ts` and
+  `/ready-to-apply`.
+
 ---
 
 ## 5. Alignment & Extensibility

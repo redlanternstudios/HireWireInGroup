@@ -34,6 +34,48 @@ export type ClaimVerdict = {
   failure_reason?: string
 }
 
+export type Claim = {
+  claim_id: string
+  type?: string
+  text: string
+  claim_text?: string
+  cited_evidence_id?: string | null
+  evidence_ids: string[]
+  truth_state: "VERIFIED" | "USER_CONFIRMED" | "DERIVED" | "UNSUPPORTED"
+  confidence: number
+  skills?: string[]
+  job_requirements_matched?: string[]
+  source?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export type DriftReport = {
+  drift_score: number
+  changed_claims: string[]
+  added_claims: string[]
+  removed_claims: string[]
+  notes: string[]
+}
+
+export type EvidenceItem = {
+  id: string
+  user_id?: string
+  source_type?: string
+  source_id?: string
+  title?: string
+  content: string
+  skills?: string[]
+  confidence: number
+  created_at?: string
+}
+
+export type QualityGateResult = {
+  passed: boolean
+  hardFails: string[]
+  warnings: string[]
+}
+
 // ── Drift Scoring ─────────────────────────────────────────────────────────────
 
 export type DriftCategory =
@@ -70,15 +112,15 @@ export type GenerationStrategy =
   | "full_match"        // ≥80% requirement coverage, high confidence
   | "strong_match"      // 65–79% coverage
   | "partial_match"     // 40–64% coverage, gaps noted honestly
-  | "honest_stretch"    // 25–39% coverage, transparent framing
-  | "do_not_generate"   // <25% coverage or critical fabrication risk
+  | "honest_stretch"    // <40% coverage, transparent framing
+  | "do_not_generate"   // critical fabrication risk
 
 export type StrategyDecision = {
   strategy: GenerationStrategy
   requirement_coverage: number
   evidence_quality_pct: number
   reasoning: string
-  /** If do_not_generate, the user-facing reason. */
+  /** If do_not_generate, the user-facing safety reason. */
   block_reason?: string
 }
 
@@ -158,6 +200,7 @@ export type GovernanceEvidence = {
   source_title: string
   source_type: string
   confidence_level: string
+  responsibilities?: string[]
   outcomes: string[]
   tools_used: string[]
   team_size?: number | null
@@ -165,4 +208,29 @@ export type GovernanceEvidence = {
   user_impact_scale?: string | null
   what_not_to_overstate?: string | null
   approved_achievement_bullets: string[]
+}
+
+export type GenerationIntent =
+  | "ATS_OPTIMIZED"
+  | "MORE_CONCISE"
+  | "MORE_EXECUTIVE"
+  | "MORE_TECHNICAL"
+  | "MORE_LEADERSHIP"
+  | "MORE_RECRUITER_READABLE"
+  | "MORE_HIRING_MANAGER_READABLE"
+  | "MORE_METRICS_FOCUSED"
+  | "SECTION_REWRITE"
+  | "FULL_REWRITE"
+
+export type StrategyProfile = {
+  id: string
+  name: string
+  description: string
+  allowedIntents: GenerationIntent[]
+  constraints: {
+    maxResumeLength: number
+    maxBulletsPerSection: number
+    maxSectionLength: number
+    atsSafe: boolean
+  }
 }

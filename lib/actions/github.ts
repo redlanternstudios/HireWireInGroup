@@ -1,60 +1,47 @@
-'use server'
+"use server"
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath } from "next/cache"
+import { importGithubEvidence } from "@/lib/github/importEvidence"
+import { createClient } from "@/lib/supabase/server"
 
-export async function parseGithubLink(
-  linkId: string
-): Promise<{ success?: true; error?: string; evidence_created?: number }> {
-  const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000'
-
-  try {
-    const res = await fetch(`${baseUrl}/api/parse-github`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ link_id: linkId }),
-      cache: 'no-store',
-    })
-    const data = await res.json()
-    if (!res.ok) return { error: data.error || `HTTP ${res.status}` }
-
-    revalidatePath('/onboarding')
-    revalidatePath('/profile')
-    revalidatePath('/dashboard')
-    return { success: true, evidence_created: data.evidence_created }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Network error'
-    return { error: msg }
-  }
+type ParseGithubActionResult = {
+  success?: true
+  error?: string
+  evidence_created?: number
+  username?: string
 }
 
-export async function parseGithubUrl(
-  githubUrl: string
-): Promise<{ success?: true; error?: string; evidence_created?: number; username?: string }> {
-  const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000'
+export async function parseGithubLink(linkId: string): Promise<ParseGithubActionResult> {
+  return parseGithub({ linkId })
+}
 
-  try {
-    const res = await fetch(`${baseUrl}/api/parse-github`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ github_url: githubUrl }),
-      cache: 'no-store',
-    })
-    const data = await res.json()
-    if (!res.ok) return { error: data.error || `HTTP ${res.status}` }
+export async function parseGithubUrl(githubUrl: string): Promise<ParseGithubActionResult> {
+  return parseGithub({ githubUrl })
+}
 
-    revalidatePath('/profile')
-    revalidatePath('/dashboard')
-    return { success: true, evidence_created: data.evidence_created, username: data.username }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Network error'
-    return { error: msg }
+async function parseGithub(input: { linkId?: string; githubUrl?: string }): Promise<ParseGithubActionResult> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return { error: "Not authenticated" }
+  }
+
+  const result = await importGithubEvidence(supabase, user.id, input)
+  if (!result.success) {
+    return { error: result.error }
+  }
+
+  revalidatePath("/onboarding")
+  revalidatePath("/profile")
+  revalidatePath("/dashboard")
+
+  return {
+    success: true,
+    evidence_created: result.evidence_created,
+    username: result.username,
   }
 }

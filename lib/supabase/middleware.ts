@@ -1,6 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+function cleanEnvValue(value: string | undefined) {
+  return value?.replace(/[\u2028\u2029]/g, '').trim()
+}
+
 const PUBLIC_ROUTES = [
   '/',
   '/login',
@@ -12,6 +16,7 @@ const PUBLIC_ROUTES = [
   '/terms',
   '/privacy',
   '/waitlist',
+  '/test-fixtures',
 ]
 
 const AUTH_ROUTES = [
@@ -23,8 +28,8 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)!,
+    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!,
     {
       cookies: {
         getAll() {
@@ -60,7 +65,10 @@ export async function updateSession(request: NextRequest) {
 
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone()
-    url.pathname = '/jobs'
+    // Honor ?redirect= param if present, otherwise send to dashboard
+    const redirectParam = request.nextUrl.searchParams.get('redirect')
+    url.pathname = redirectParam && redirectParam.startsWith('/') ? redirectParam : '/dashboard'
+    url.search = ''
     return NextResponse.redirect(url)
   }
 

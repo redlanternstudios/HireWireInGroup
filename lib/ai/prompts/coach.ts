@@ -1,5 +1,9 @@
 /**
  * HireWire Coach System Prompt
+ *
+ * Generic fallback prompt for broad coach chat only.
+ * Requirement-scoped coaching must use lib/coach/buildCoachPrompt.ts so the
+ * runtime authority stays anchored to the active job requirement and evidence.
  * 
  * The coach is a strategic career advisor with access to:
  * - User profile

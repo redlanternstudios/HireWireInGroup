@@ -6,6 +6,8 @@ import { UserProvider } from '@/components/user-provider'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
+export const dynamic = 'force-dynamic'
+
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
@@ -32,8 +34,8 @@ export const metadata: Metadata = {
     description: 'Your job search, grounded in real evidence. AI-generated materials that actually sound like you.',
   },
   icons: {
-    icon: '/brand/favicon.ico',
-    apple: '/brand/apple-touch-icon.png',
+    icon: '/brand/hirewire-logo.png',
+    apple: '/brand/hirewire-logo.png',
   },
 }
 

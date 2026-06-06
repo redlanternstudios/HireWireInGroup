@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Zap } from "lucide-react"
+import { toast } from "sonner"
 
 interface AnalyzeJobButtonProps {
   jobId: string
@@ -56,10 +57,19 @@ export function AnalyzeJobButton({ jobId, hasUrl, label = "Analyze Job", size = 
         return
       }
 
-      // Refresh the page to show updated analysis
-      router.refresh()
+      const nextHref =
+        typeof data.nextAction?.href === "string"
+          ? data.nextAction.href
+          : `/jobs/${jobId}`
+
+      toast.success("Analysis complete — next action is ready")
+
+      setTimeout(() => {
+        router.push(nextHref)
+      }, 2000)
     } catch {
       setError("Network error. Please try again.")
+    } finally {
       setLoading(false)
     }
   }

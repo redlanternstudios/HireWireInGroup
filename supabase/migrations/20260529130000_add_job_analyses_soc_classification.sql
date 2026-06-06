@@ -1,0 +1,2 @@
+-- BLS SOC classification for universal role coverage. Safe to re-run.
+ALTER TABLE public.job_analyses ADD COLUMN IF NOT EXISTS soc_major_group integer, ADD COLUMN IF NOT EXISTS soc_group_name text, ADD COLUMN IF NOT EXISTS soc_category text;

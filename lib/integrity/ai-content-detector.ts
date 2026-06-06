@@ -1,7 +1,7 @@
 // AI-Generated Content Detector
 import { z } from "zod"
-import { generateText, Output } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { generateStructuredText } from "@/lib/ai/gateway"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 export const AIContentFlagSchema = z.object({
   section: z.string(),
@@ -10,11 +10,13 @@ export const AIContentFlagSchema = z.object({
 })
 
 export async function detectAIContent(resumeText: string) {
-  const prompt = `Analyze the following resume text. For each section, return an AI confidence score (0-1) and any phrases that appear AI-generated or generic.`
-  const result = await generateText({
-    model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: z.array(AIContentFlagSchema) }),
-    prompt: `${prompt}\n\n${resumeText}`,
-  })
-  return result.experimental_output
+  return generateStructuredText(
+    {
+      model: CLAUDE_MODELS.SONNET,
+      schema: z.array(AIContentFlagSchema),
+      schemaDescription: `Array of: { "section": string, "ai_confidence_score": number 0-1, "flagged_phrases": string[] }`,
+      contextPrompt: `Analyze the following resume text. For each section, return an AI confidence score (0-1) and any phrases that appear AI-generated or generic.\n\n${resumeText}`,
+    },
+    { route: "detect-ai-content" }
+  )
 }

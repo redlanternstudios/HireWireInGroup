@@ -1,5 +1,5 @@
 // Workflow-aware recommendation priority system
-import { CoachRecommendation } from "./index"
+import type { CoachRecommendation } from "./index";
 
 export enum RecommendationPriority {
   Blocker = 1,
@@ -9,6 +9,8 @@ export enum RecommendationPriority {
   Motivational = 5,
 }
 
-export function sortRecommendations(recs: CoachRecommendation[]): CoachRecommendation[] {
-  return recs.sort((a, b) => a.priority - b.priority)
+export function sortRecommendations(
+  recs: CoachRecommendation[],
+): CoachRecommendation[] {
+  return recs.sort((a, b) => a.priority - b.priority);
 }

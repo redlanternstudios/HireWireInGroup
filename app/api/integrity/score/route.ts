@@ -5,7 +5,9 @@ import { scoreResumeBullets } from "@/lib/integrity/scorer"
 
 export async function POST(req: NextRequest) {
   try {
-    const { user, supabase } = await requireUser()
+    const result = await requireUser()
+    if (!result.ok) return result.response
+    const { userId, supabase } = result
     const body = await req.json()
     const { resume_version_id, bullets } = body
     if (!Array.isArray(bullets) || !resume_version_id) {
@@ -16,7 +18,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < results.length; i++) {
       const r = results[i]
       await supabase.from("career_integrity_scores").insert({
-        user_id: user.id,
+        user_id: userId,
         resume_version_id,
         bullet_index: i,
         bullet_text: r.bullet,

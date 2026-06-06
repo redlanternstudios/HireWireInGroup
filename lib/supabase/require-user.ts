@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
 
 interface AuthSuccess {
   ok: true
   supabase: SupabaseClient
   userId: string
+  user: User
 }
 
 interface AuthFailure {
@@ -33,5 +34,6 @@ export async function requireUser(): Promise<AuthResult> {
     ok: true,
     supabase,
     userId: user.id,
+    user,
   }
 }

@@ -13,6 +13,7 @@
  */
 
 import type { EvidenceRecord, UserProfile, ProfileExperience } from "./types"
+import { DEFAULT_WEIGHTS, type ScoringWeights } from "./scoring-weights"
 
 // ============================================================================
 // CANONICAL EVIDENCE TYPES
@@ -39,8 +40,47 @@ export type EvidenceType =
   | "portfolio_entry"
   | "shipped_product"
   | "open_source"
-  | "metric"
-  | "testimonial"
+  | "live_site"
+  | "language"
+  | "award"
+  | "volunteer"
+  | "military"
+  | "website"
+  | "linkedin"
+  | "github"
+  | "user_input"
+  | "ai_inferred"
+
+const EVIDENCE_TYPES = new Set<EvidenceType>([
+  "work_experience",
+  "project",
+  "achievement",
+  "skill",
+  "certification",
+  "education",
+  "publication",
+  "portfolio_entry",
+  "shipped_product",
+  "open_source",
+  "live_site",
+  "language",
+  "award",
+  "volunteer",
+  "military",
+  "website",
+  "linkedin",
+  "github",
+  "user_input",
+  "ai_inferred",
+])
+
+function normalizeEvidenceType(sourceType: string): EvidenceType {
+  if (EVIDENCE_TYPES.has(sourceType as EvidenceType)) {
+    return sourceType as EvidenceType
+  }
+
+  throw new Error(`[HireWire] Unsupported evidence source_type: ${sourceType}`)
+}
 
 export type QuantificationSafety =
   | "explicit_metric"       // User-provided or source-documented number
@@ -405,7 +445,7 @@ export function normalizeEvidenceRecord(
     source_id: record.id,
     text: mainText,
     title: record.source_title,
-    evidence_type: record.source_type as EvidenceType,
+    evidence_type: normalizeEvidenceType(record.source_type),
     company: record.company_name || undefined,
     role: record.role_name || undefined,
     date_range: record.date_range || undefined,
@@ -508,6 +548,52 @@ export function matchEvidenceToRequirement(
   }
 }
 
+const TRANSFERABLE_EVIDENCE_TYPES = new Set<EvidenceType>([
+  "project",
+  "achievement",
+  "publication",
+  "portfolio_entry",
+  "shipped_product",
+  "open_source",
+  "live_site",
+  "award",
+  "volunteer",
+  "military",
+  "website",
+  "linkedin",
+  "github",
+  "user_input",
+  "ai_inferred",
+])
+
+export function categorizeGap(
+  evidenceType: EvidenceType | null,
+  matchType: RequirementMatchType | "no_evidence"
+): GapCategory {
+  if (matchType === "no_evidence") return "missing_evidence"
+  if (matchType === "partial_match") return "weak_phrasing"
+  if (matchType === "adjacent_transferable") return "transferable_unproven"
+
+  if (!evidenceType) return "missing_evidence"
+
+  if (
+    evidenceType === "skill" ||
+    evidenceType === "certification" ||
+    evidenceType === "education" ||
+    evidenceType === "language"
+  ) {
+    return "missing_skill"
+  }
+
+  if (TRANSFERABLE_EVIDENCE_TYPES.has(evidenceType)) {
+    return "transferable_unproven"
+  }
+
+  if (matchType === "unsupported") return "missing_direct_experience"
+
+  return "missing_evidence"
+}
+
 /**
  * Calculate explainable fit score from evidence and requirements
  */
@@ -515,7 +601,8 @@ export function calculateExplainableFit(
   canonicalEvidence: CanonicalEvidence[],
   requirements: string[],
   preferredQualifications: string[] = [],
-  dimensionScores: DimensionScores
+  dimensionScores: DimensionScores,
+  weights: ScoringWeights = DEFAULT_WEIGHTS
 ): ExplainableFitScore {
   const strengths: FitStrength[] = []
   const gaps: FitGap[] = []
@@ -562,7 +649,7 @@ export function calculateExplainableFit(
       } else if (bestMatch.match_type === "adjacent_transferable") {
         gaps.push({
           requirement,
-          gap_category: "transferable_unproven",
+          gap_category: categorizeGap(bestEvidence.evidence_type, bestMatch.match_type),
           severity: "moderate",
           suggestion: "Emphasize transferable skills from related experience",
           transferable_evidence: bestEvidence.text.slice(0, 150),
@@ -571,7 +658,7 @@ export function calculateExplainableFit(
         missing++
         gaps.push({
           requirement,
-          gap_category: "missing_direct_experience",
+          gap_category: categorizeGap(bestEvidence.evidence_type, bestMatch.match_type),
           severity: "critical",
           suggestion: "Consider if this is a stretch role",
         })
@@ -580,28 +667,56 @@ export function calculateExplainableFit(
       missing++
       gaps.push({
         requirement,
-        gap_category: "missing_evidence",
+        gap_category: categorizeGap(null, "no_evidence"),
         severity: "critical",
         suggestion: "Add evidence for this requirement to your profile",
       })
     }
   }
   
-  // Calculate weighted score
+  // Calculate coverage score
   const totalRequired = requirements.length || 1
   const coverageScore = (directMatches + partialMatches * 0.6) / totalRequired
-  
-  // Weight dimension scores
-  const weightedScore = (
-    dimensionScores.experience * 0.30 +
-    dimensionScores.evidence * 0.25 +
-    dimensionScores.skills * 0.20 +
-    dimensionScores.seniority * 0.15 +
-    dimensionScores.ats * 0.10
-  )
-  
-  // Combine coverage and dimension scores
-  const finalScore = Math.round((coverageScore * 50) + (weightedScore * 0.5))
+
+  // Zero-evidence short-circuit: return 0 rather than a misleading non-zero score
+  if (canonicalEvidence.length === 0) {
+    return {
+      band: "low_match",
+      score: 0,
+      confidence: "low",
+      matched_requirements_count: 0,
+      partial_matches_count: 0,
+      missing_requirements_count: requirements.length,
+      total_requirements_count: totalRequired,
+      strengths: [],
+      gaps: requirements.map(req => ({
+        requirement: req,
+        gap_category: categorizeGap(null, "no_evidence"),
+        severity: "critical" as const,
+        suggestion: "Add evidence for this requirement to your profile",
+      })),
+      score_explanation: "No evidence available — add work history and skills to your Career Context.",
+      dimension_scores: dimensionScores,
+      warnings: ["No evidence found in profile — add work history and skills to get a real score"],
+    }
+  }
+
+  // Apply role-aware weights from scoring-weights.ts (normalized to fractions)
+  const totalWeight =
+    weights.experience_relevance +
+    weights.evidence_quality +
+    weights.skills_match +
+    weights.seniority_alignment +
+    weights.ats_keywords
+  const weightedDimensionScore =
+    dimensionScores.experience * (weights.experience_relevance / totalWeight) +
+    dimensionScores.evidence * (weights.evidence_quality / totalWeight) +
+    dimensionScores.skills * (weights.skills_match / totalWeight) +
+    dimensionScores.seniority * (weights.seniority_alignment / totalWeight) +
+    dimensionScores.ats * (weights.ats_keywords / totalWeight)
+
+  // 60% coverage-driven, 40% dimension-driven — avoids the structural 32 floor
+  const finalScore = Math.round((coverageScore * 60) + (weightedDimensionScore * 0.4))
   
   // Determine band
   let band: FitBand

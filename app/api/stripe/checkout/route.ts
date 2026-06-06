@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/supabase/require-user"
 import { stripe, HIREWIRE_PRO_PRICE_ID } from "@/lib/stripe"
 
 /**
@@ -8,15 +8,9 @@ import { stripe, HIREWIRE_PRO_PRICE_ID } from "@/lib/stripe"
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     const body = await request.json()
     const { plan } = body
@@ -29,28 +23,31 @@ export async function POST(request: Request) {
     const { data: userData } = await supabase
       .from("users")
       .select("stripe_customer_id, email")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single()
 
     let customerId = userData?.stripe_customer_id
 
     if (!customerId) {
       const customer = await stripe.customers.create({
-        email: user.email || userData?.email,
-        metadata: { supabase_user_id: user.id },
+        email: userData?.email,
+        metadata: { supabase_user_id: userId },
       })
       customerId = customer.id
 
       await supabase
         .from("users")
         .update({ stripe_customer_id: customerId })
-        .eq("id", user.id)
+        .eq("id", userId)
     }
 
-    const origin =
-      request.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "http://localhost:3000"
+    const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL
+    if (!origin) {
+      return NextResponse.json(
+        { error: "Missing application URL configuration" },
+        { status: 500 }
+      )
+    }
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -59,9 +56,9 @@ export async function POST(request: Request) {
       success_url: `${origin}/billing?upgraded=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/billing?canceled=true`,
       allow_promotion_codes: true,
-      metadata: { user_id: user.id, plan: "pro" },
+      metadata: { user_id: userId, plan: "pro" },
       subscription_data: {
-        metadata: { user_id: user.id, plan: "pro" },
+        metadata: { user_id: userId, plan: "pro" },
       },
     })
 

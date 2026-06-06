@@ -73,7 +73,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         .from("users")
         .select("plan_type, subscription_status")
         .eq("id", user.id)
-        .single()
+        .maybeSingle()
       
       // Determine plan: check users.plan_type first, fall back to subscription status
       let userPlan: PlanType = "free"

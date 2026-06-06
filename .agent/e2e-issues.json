@@ -1,0 +1,56 @@
+[
+  {
+    "severity": "HIGH",
+    "category": "Data Persistence",
+    "issue": "Generated resume not stored in jobs.generated_resume",
+    "impact": "User cannot view/edit generated documents on the documents page",
+    "evidence": "jobs.generated_resume is null despite documents_generated event"
+  },
+  {
+    "severity": "HIGH",
+    "category": "Data Persistence",
+    "issue": "Generated cover letter not stored in jobs.generated_cover_letter",
+    "impact": "User cannot view/edit generated cover letter",
+    "evidence": "jobs.generated_cover_letter is null"
+  },
+  {
+    "severity": "HIGH",
+    "category": "Configuration",
+    "issue": "Generation used OpenAI (gpt-4o) instead of Anthropic Claude",
+    "impact": "Fallback to different provider than intended; costs and quality differ",
+    "evidence": "ai_generation_audit_logs.provider = \"openai\", model = \"gpt-4o\"",
+    "context": "CLAUDE.md expects Anthropic; check isAnthropicConfigured() and fallback logic"
+  },
+  {
+    "severity": "HIGH",
+    "category": "API Design",
+    "issue": "Regeneration blocked by session authentication requirement",
+    "impact": "Cannot programmatically regenerate documents; only user in UI can trigger",
+    "evidence": "/api/generate-documents requires userClient.auth.getUser()",
+    "context": "Prevents automated testing and server-side retries"
+  },
+  {
+    "severity": "LOW",
+    "category": "Logging",
+    "issue": "MCP relay warning from relative URL server-side fetch",
+    "impact": "Console warnings during generation; no functional impact",
+    "evidence": "/api/mcp/relay fetched as relative URL from server component",
+    "context": "Mentioned by user in E2E proof"
+  },
+  {
+    "severity": "HIGH",
+    "category": "Data Persistence",
+    "issue": "Generated documents not stored in generation_governance_runs",
+    "impact": "Resume/cover letter content not accessible from governance audit trail",
+    "evidence": "generation_governance_runs has no content columns (only verdicts)",
+    "context": "Should documents live in jobs table, governance_runs, or domain_events?"
+  },
+  {
+    "severity": "MEDIUM",
+    "category": "Architecture",
+    "issue": "Quality gate stored in multiple tables with no sync guarantee",
+    "impact": "Readiness state could diverge if updates are incomplete",
+    "evidence": "quality passed stored in jobs.quality_passed, generation_quality_checks.passed, and jobs.status",
+    "context": "CLAUDE.md: lib/readiness/evaluator.ts is canonical, but multiple sources could go stale"
+  }
+]

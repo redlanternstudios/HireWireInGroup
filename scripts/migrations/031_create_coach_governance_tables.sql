@@ -1,5 +1,9 @@
 -- Migration: 031_create_coach_governance_tables.sql
 -- Purpose: Add structured tables for the Coach Governance Layer.
+--
+-- Legacy manual migration reference. Canonical Supabase migrations live in
+-- supabase/migrations and have already superseded this file. Keep this aligned
+-- enough for documentation/manual recovery, but prefer `supabase db push`.
 -- These tables store per-generation governance runs, claim verdicts, and drift scores
 -- so that every AI generation is auditable.
 --
@@ -21,6 +25,7 @@ CREATE TABLE IF NOT EXISTS generation_governance_runs (
   -- Strategy decision
   strategy            TEXT NOT NULL
                         CHECK (strategy IN (
+                          'direct_match', 'adjacent_transition', 'stretch_honest',
                           'full_match', 'strong_match', 'partial_match',
                           'honest_stretch', 'do_not_generate'
                         )),
@@ -144,7 +149,7 @@ COMMENT ON TABLE governance_claim_verdicts IS
   'Per-claim breakdown of generation governance. Supplemental to the JSONB columns in generation_governance_runs.';
 
 COMMENT ON COLUMN generation_governance_runs.drift_score IS
-  '0 = perfect evidence fidelity, 100 = entirely fabricated. Score >= 40 blocks persistence.';
+  '0 = perfect evidence fidelity, 100 = entirely fabricated. Score >= 65 blocks persistence.';
 
 COMMENT ON COLUMN generation_governance_runs.governance_version IS
   'Version of lib/coach governance rules active at generation time. See docs/COACH_CONSTITUTION.md.';

@@ -1,5 +1,5 @@
 // Example signal payloads
-import { CoachSignal } from "./index"
+import { CoachSignal } from "./index";
 
 export const exampleSignals: CoachSignal[] = [
   {
@@ -17,4 +17,4 @@ export const exampleSignals: CoachSignal[] = [
     payload: { coverage: 0.5 },
     timestamp: "2026-05-10T12:00:00Z",
   },
-]
+];

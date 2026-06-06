@@ -1,66 +1,89 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export function JobInputForm() {
-  const [url, setUrl] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
+  const [url, setUrl] = useState("");
+  const [description, setDescription] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
+    e.preventDefault();
+    setError(null);
 
-    try {
-      new URL(url)
-    } catch {
-      setError("Please enter a valid URL (e.g. https://jobs.lever.co/...)")
-      return
+    if (!url.trim() && !description.trim()) {
+      setError("Please enter a job URL or paste a job description.");
+      return;
     }
 
-    setIsLoading(true)
+    let payload: Record<string, string> = {};
+    if (url.trim()) {
+      try {
+        new URL(url);
+        payload.job_url = url;
+      } catch {
+        setError("Please enter a valid URL (e.g. https://jobs.lever.co/...)");
+        return;
+      }
+    } else if (description.trim()) {
+      payload.job_description = description;
+    }
+
+    setIsLoading(true);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_url: url }),
-      })
-      const data = await res.json()
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
 
       if (!res.ok || !data.success) {
         if (res.status === 429) {
-          setError(data.error || "AI service is busy. Please wait 30 seconds and try again.")
+          setError(
+            data.error ||
+              "AI service is busy. Please wait 30 seconds and try again.",
+          );
         } else {
-          setError(data.error || "Analysis failed — please try again.")
+          setError(data.error || "Analysis failed — please try again.");
         }
-        return
+        return;
       }
 
-      router.push(`/jobs/${data.job_id}`)
+      router.push(`/jobs/${data.job_id}`);
     } catch {
-      setError("Something went wrong. Please try again.")
+      setError("Something went wrong. Please try again.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3">
         <input
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://jobs.lever.co/company/role-id"
-          required
+          placeholder="Paste a job URL (optional)"
           disabled={isLoading}
-          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground disabled:opacity-50 min-w-0"
+          className="rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground disabled:opacity-50 min-w-0"
+        />
+        <div className="text-center text-xs text-muted-foreground">or</div>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Paste a full job description (optional)"
+          rows={6}
+          disabled={isLoading}
+          className="rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground disabled:opacity-50 min-w-0"
         />
         <button
           type="submit"
-          disabled={isLoading || !url.trim()}
+          disabled={isLoading || (!url.trim() && !description.trim())}
           className="rounded-md bg-black text-white px-4 py-2 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 shrink-0"
         >
           {isLoading ? "Analyzing…" : "Analyze job"}
@@ -68,12 +91,10 @@ export function JobInputForm() {
       </div>
       {isLoading && (
         <p className="text-sm text-muted-foreground">
-          Fetching and analyzing the job listing — this takes 15–30 seconds…
+          Fetching and analyzing the job — this takes 15–30 seconds…
         </p>
       )}
-      {error && (
-        <p className="text-sm text-red-500">{error}</p>
-      )}
+      {error && <p className="text-sm text-red-500">{error}</p>}
     </form>
-  )
+  );
 }

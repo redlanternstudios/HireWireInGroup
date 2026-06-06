@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "file": "app/(dashboard)/analytics/page.tsx",
+      "check": "coming soon copy",
+      "contains": "Pro gate or coming soon",
+      "reason": "Existing analytics placeholder predates the autonomous-builder gate."
+    },
+    {
+      "file": "app/(dashboard)/analytics/page.tsx",
+      "check": "coming soon copy",
+      "contains": "Detailed charts coming soon",
+      "reason": "Existing analytics placeholder predates the autonomous-builder gate."
+    }
+  ]
+}

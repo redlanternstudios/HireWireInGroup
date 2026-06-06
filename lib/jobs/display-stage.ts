@@ -3,59 +3,26 @@
  *
  * Derives a user-facing pipeline stage label from persisted job fields.
  * This is for UI organization ONLY.
- * It must not replace lib/readiness.ts.
+ * It consumes lib/readiness/evaluator.ts for readiness authority.
  * It must not set readiness.
  * It must not write job status.
  */
 
-export type DisplayStage =
-  | "inbox"
-  | "analyzed"
-  | "needs_evidence"
-  | "ready_to_generate"
-  | "package_drafted"
-  | "needs_review"
-  | "ready_to_apply"
-  | "applied"
-  | "follow_up_due"
-  | "interviewing"
-  | "offered"
-  | "rejected"
-  | "archived"
-  | "stale"
+import {
+  evaluateReadiness,
+  READINESS_DISPLAY_CLASS,
+  READINESS_DISPLAY_LABEL,
+  type ReadinessDisplayState,
+} from "@/lib/readiness/evaluator"
+
+export type DisplayStage = ReadinessDisplayState
 
 export const DISPLAY_STAGE_LABEL: Record<DisplayStage, string> = {
-  inbox:             "Inbox",
-  analyzed:          "Analyzed",
-  needs_evidence:    "Needs Evidence",
-  ready_to_generate: "Ready to Generate",
-  package_drafted:   "Package Drafted",
-  needs_review:      "Needs Review",
-  ready_to_apply:    "Ready to Apply",
-  applied:           "Applied",
-  follow_up_due:     "Follow Up Due",
-  interviewing:      "Interviewing",
-  offered:           "Offered",
-  rejected:          "Rejected",
-  archived:          "Archived",
-  stale:             "Stale",
+  ...READINESS_DISPLAY_LABEL,
 }
 
 export const DISPLAY_STAGE_COLOR: Record<DisplayStage, string> = {
-  inbox:             "bg-stone-100 text-stone-600 border-stone-200",
-  analyzed:          "bg-amber-50 text-amber-700 border-amber-200",
-  needs_evidence:    "bg-orange-50 text-orange-700 border-orange-200",
-  ready_to_generate: "bg-sky-50 text-sky-700 border-sky-200",
-  package_drafted:   "bg-violet-50 text-violet-700 border-violet-200",
-  needs_review:      "bg-yellow-50 text-yellow-700 border-yellow-200",
-  ready_to_apply:    "bg-emerald-50 text-emerald-700 border-emerald-200",
-  applied:           "bg-blue-50 text-blue-700 border-blue-200",
-  follow_up_due:     "bg-red-50 text-red-700 border-red-200",
-  interviewing:      "bg-indigo-50 text-indigo-700 border-indigo-200",
-  offered:           "bg-emerald-50 text-emerald-700 border-emerald-200",
-  rejected:          "bg-rose-50 text-rose-600 border-rose-200",
-  archived:          "bg-stone-100 text-stone-500 border-stone-200",
-  stale:             "bg-amber-50 text-amber-600 border-amber-200",
+  ...READINESS_DISPLAY_CLASS,
 }
 
 export interface JobFields {
@@ -71,38 +38,11 @@ export interface JobFields {
 }
 
 /**
- * Derive a display stage from job fields.
- * Uses evidence of persisted artifacts, not computed readiness.
+ * Derive a display stage from the canonical readiness display state.
  */
-export function deriveDisplayStage(job: JobFields, isStale: boolean): DisplayStage {
-  const status = job.status ?? ""
-
-  if (status === "archived") return "archived"
-  if (status === "offered") return "offered"
-  if (status === "rejected") return "rejected"
-  if (status === "interviewing") return "interviewing"
-
-  if (status === "applied" || !!job.applied_at) return "applied"
-
-  const hasResume = !!job.generated_resume
-  const hasCoverLetter = !!job.generated_cover_letter
-  const qualityPassed = job.quality_passed === true
-  const hasScore = job.score !== null && job.score !== undefined
-  const evidenceMap = job.evidence_map
-  const matchingComplete = evidenceMap?.matching_complete === true
-  const hasAnalysis = ["analyzed", "generating", "ready", "needs_review"].includes(status) || hasScore || !!evidenceMap
-
-  if (hasResume && hasCoverLetter && qualityPassed) return "ready_to_apply"
-  if (hasResume && hasCoverLetter && !qualityPassed) return "needs_review"
-  if (hasResume || hasCoverLetter) return "package_drafted"
-
-  if (hasAnalysis && matchingComplete) return "ready_to_generate"
-  if (hasAnalysis && !matchingComplete) return "needs_evidence"
-  if (status === "analyzed" || hasScore) return "analyzed"
-
-  if (isStale) return "stale"
-
-  return "inbox"
+export function deriveDisplayStage(job: JobFields, _isStale: boolean): DisplayStage {
+  const readiness = evaluateReadiness(job)
+  return readiness.displayState
 }
 
 /**
@@ -111,18 +51,15 @@ export function deriveDisplayStage(job: JobFields, isStale: boolean): DisplaySta
 export type ViewTab = "active" | "needs_action" | "ready" | "applied" | "closed" | "archived" | "all"
 
 export const STAGE_TO_VIEW: Record<DisplayStage, ViewTab> = {
-  inbox:             "active",
-  analyzed:          "active",
-  needs_evidence:    "needs_action",
+  analyze_needed:    "active",
+  evidence_needed:   "needs_action",
+  coach_needed:      "needs_action",
   ready_to_generate: "active",
-  package_drafted:   "active",
-  needs_review:      "needs_action",
+  package_review:    "needs_action",
   ready_to_apply:    "ready",
   applied:           "applied",
-  follow_up_due:     "applied",
   interviewing:      "applied",
   offered:           "closed",
   rejected:          "closed",
   archived:          "archived",
-  stale:             "needs_action",
 }

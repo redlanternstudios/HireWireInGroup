@@ -1,5 +1,7 @@
 # GENERATION_STRATEGY.md
+
 # HireWire Generation Strategy Decision Tree
+
 # Version: 1.0.0
 
 ---
@@ -8,9 +10,11 @@
 
 The generation strategy is resolved by `lib/coach/generation-strategy.ts`
 immediately after the evidence map is built. It is the primary control surface
-that determines how the AI writes — and whether it writes at all.
+that determines how the AI writes. Low coverage changes the framing; it does
+not decide whether the candidate is allowed to generate materials.
 
 The strategy is derived from two inputs:
+
 1. **Requirement coverage** — what percentage of required qualifications the
    evidence_library covers, as computed by the evidence-map step.
 2. **Evidence quality** — percentage of evidence items with `confidence_level = "high"`.
@@ -21,7 +25,10 @@ The strategy is derived from two inputs:
 
 ```
 requirementCoverage < 25%
-    └── strategy = do_not_generate (HARD BLOCK)
+    └── strategy = honest_stretch
+        - Automated conservative generation
+        - Evidence-only claims
+        - Unsupported requirements are omitted, not satisfied
 
 requirementCoverage 25–39%
     └── strategy = honest_stretch
@@ -46,10 +53,28 @@ requirementCoverage ≥80% AND evidenceQuality ≥70%
         - Write with full confidence
         - Lead with strongest differentiators
         - Include all relevant metrics from evidence
-
-requirementCoverage ≥80% AND evidenceQuality <70%
-    └── strategy = strong_match (evidence quality insufficient for full_match)
 ```
+
+---
+
+## Regeneration Rules
+
+- Never allow random regenerate.
+- Every regeneration requires intent.
+- Default regeneration is targeted by section.
+- Full rewrite requires explicit intent.
+- Evidence locked is default.
+- New claims require new evidence or user confirmation.
+- Store full snapshots, not diffs.
+
+## Generation Flow
+
+1. Job analysis must exist and be valid.
+2. Requirement graph must exist or be created.
+3. Evidence match controls confidence/framing; low coverage uses conservative generation.
+4. Generation intent is required for all regeneration.
+5. All claims must pass constitution and quality gates before rendering.
+6. Artifacts are rendered from structured claims, not freeform text.
 
 ---
 
@@ -60,6 +85,7 @@ letter generation prompts. These are defined in
 `lib/coach/generation-strategy.ts::STRATEGY_PROMPT_FRAGMENTS`.
 
 The fragments:
+
 - Tell the AI how confident to sound
 - Define what framing is permitted
 - Prohibit specific language patterns for stretch strategies
@@ -68,7 +94,11 @@ The fragments:
 
 ## do_not_generate Triggers
 
-Beyond coverage thresholds, `do_not_generate` is also triggered when:
+`do_not_generate` must not be triggered by coverage, fit score, career path,
+or credential mismatch alone. Those are candidate-context questions, not safety
+questions.
+
+`do_not_generate` is reserved for:
 
 1. **Direct fabrication risk detected** — if the pre-flight evidence check
    determines that the required qualifications cannot be covered without
@@ -84,6 +114,7 @@ Beyond coverage thresholds, `do_not_generate` is also triggered when:
 ## Strategy Persistence
 
 The selected strategy is stored in:
+
 - `jobs.resume_strategy` — the string enum value
 - `jobs.score_reasoning.strategy` — full strategy decision object (JSON)
 - `generation_governance_runs.strategy_decision` — full JSONB record per run

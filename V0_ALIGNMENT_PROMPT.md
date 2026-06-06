@@ -1,8 +1,24 @@
 # HireWire v0 Alignment Prompt
 ## Canonical Contract for Every v0 Build Session
 
-**Version**: 1.2.0
-**Last Updated**: 2026-04-13
+**Version**: 1.3.0
+**Last Updated**: 2026-05-19
+
+---
+
+## Required Companion Spec (UI Cohesion)
+
+Before any UI-focused pass, also read:
+
+- `hire-wire-sight-engine-ui-cohesion-pass.md`
+
+If there is any conflict on visual/layout guidance, follow this precedence order:
+
+1. `.github/copilot-instructions.md`
+2. `CLAUDE.md`
+3. `hire-wire-sight-engine-ui-cohesion-pass.md`
+4. `V0_ALIGNMENT_PROMPT.md`
+5. `.ai/prompts/v0-ui-alignment.md`
 
 ---
 
@@ -52,28 +68,33 @@ any code that reads from it and overrides `jobs.*` values will null out
 all generated content downstream.
 
 ### 2. AI SDK Pattern
-This codebase uses Vercel AI SDK v6 with Anthropic via AI Gateway.
+This codebase uses Vercel AI SDK v6 through `@/lib/ai/gateway`.
+For structured JSON, use `generateStructuredText()` so providers that reject
+`json_schema` never receive schema-mode requests.
 
 ```typescript
 // CORRECT
-import { generateText, Output } from "ai"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { generateStructuredText, CLAUDE_MODELS } from "@/lib/ai/gateway"
 
-const result = await generateText({
+const data = await generateStructuredText({
   model: CLAUDE_MODELS.SONNET,
-  output: Output.object({ schema: MyZodSchema }),
+  schema: MyZodSchema,
+  schemaDescription: `{
+    "items": string[]
+  }`,
   prompt: "...",
 })
-const data = result.experimental_output
 
 // FORBIDDEN — these patterns break the build
 import { generateObject } from "ai"                    // ❌ does not exist in v6
 import { anthropic } from "@ai-sdk/anthropic"          // ❌ use CLAUDE_MODELS instead
+import { Output } from "ai"                            // ❌ do not use Output.object
 import { createGroq } from "@ai-sdk/groq"              // ❌ Groq is dead code
 model: anthropic("claude-sonnet-4-20250514")           // ❌ wrong pattern
+output: Output.object({ schema: MyZodSchema })         // ❌ can trigger json_schema 400s
 ```
 
-Model constants live in `lib/adapters/anthropic.ts`:
+Model constants live in `lib/ai/gateway.ts`:
 - `CLAUDE_MODELS.SONNET` — primary generation model
 - `CLAUDE_MODELS.OPUS` — complex reasoning
 - `CLAUDE_MODELS.HAIKU` — fast/simple tasks
@@ -168,13 +189,24 @@ Never put UPDATE before DROP in the same migration script. Supabase executes
 statements in order — the CHECK violation fires immediately.
 
 ### 10. Readiness Engine Is Sole Gate Authority
-`lib/readiness.ts` exports:
-- `evaluateJobReadiness(jobId, userId)` — per-job detail views
-- `getReadyJobIds(userId)` — list views (ready queue)
+`lib/readiness/evaluator.ts` is the canonical readiness authority (not the legacy `lib/readiness.ts`).
 
 No page, component, or API route may compute its own readiness logic.
 No component may locally derive whether a job "can generate" or "can apply".
 Call the readiness engine. Trust its output.
+
+### 12. Governance Is Part of Generation — Not a Side Feature
+Every document generation run produces a `generation_governance_runs` row and per-claim `governance_claim_verdicts` rows. These are written by `app/api/generate-documents/route.ts` and must not be bypassed.
+
+Governance columns on `jobs`:
+- `governance_passed` — whether the latest run passed all checks
+- `governance_drift_score` — 0–100; score ≥ 65 blocks persistence
+- `last_governance_run_id` — FK to `generation_governance_runs.id`
+- `governance_version` — e.g. `"1.0.0"`
+
+**Do not read governance state from anywhere other than `jobs` or `generation_governance_runs`.** Do not recompute drift or claim validation locally.
+
+`confidence` values in `governance_claim_verdicts`: `high | medium | low | fabricated`. A `fabricated` verdict means the claim has no grounding in `evidence_library` — never suppress or hide these.
 
 ### 11. Profile Links — Canonical Storage and CRUD Path
 
@@ -215,13 +247,15 @@ Do not add new consumers that read these as the primary link source.
 
 | Table | Critical Columns | Always Filter |
 |---|---|---|
-| `jobs` | `generated_resume`, `generated_cover_letter`, `quality_passed`, `evidence_map`, `deleted_at` | `user_id` + `deleted_at IS NULL` |
+| `jobs` | `generated_resume`, `generated_cover_letter`, `quality_passed`, `evidence_map`, `deleted_at`, `governance_passed`, `governance_drift_score`, `last_governance_run_id` | `user_id` + `deleted_at IS NULL` |
 | `user_profile` | `education(jsonb)`, `experience(jsonb)`, `skills[]` — core professional identity | `user_id` |
 | `user_profile_links` | `link_type`, `url`, `is_primary`, `label`, `source`, `parse_status` — **canonical link storage** | `user_id` |
 | `job_analyses` | `qualifications_required`, `qualifications_preferred`, `keywords` | `user_id` |
 | `job_scores` | `overall_score`, `skills_match`, `experience_relevance` | via jobs RLS subquery |
 | `evidence_library` | `source_type`, `outcomes[]`, `tools_used[]`, `is_active` | `user_id` |
 | `audit_events` | `event_type`, `outcome`, `metadata(jsonb)` | `user_id` |
+| `generation_governance_runs` | `strategy`, `drift_score`, `drift_is_blocking`, `governance_passed`, `failed_at_phase`, `governance_version` | `user_id`, `job_id` |
+| `governance_claim_verdicts` | `document_type`, `claim_text`, `confidence`, `evidence_exists`, `claim_grounded`, `failure_reason` | `user_id`, `run_id` |
 
 ### Tables That Are Read-Only for Most Features
 - `companies` — lookup only unless explicitly managing companies
@@ -262,7 +296,7 @@ always go through `@/lib/analytics`.
 ### 1. Reality Check — Ask These Questions
 - Does my code read document content from `jobs.generated_resume` (not `generated_documents`)?
 - Do I have `Array.isArray()` guards on every JSONB column I'm mapping?
-- Am I using `generateText + Output.object()` not `generateObject`?
+- Am I using `generateStructuredText()` for structured JSON, never `Output.object()` or `generateObject()`?
 - Did I include `user_id` and `deleted_at` filters on every jobs query?
 - Am I using `CLAUDE_MODELS.SONNET` not a raw model string?
 - Did any Groq reference slip in?
@@ -288,10 +322,14 @@ always go through `@/lib/analytics`.
 |---|---|
 | Import from `@ai-sdk/groq` or `lib/adapters/groq` | Groq removed; breaks imports |
 | Use `generateObject()` | Does not exist in AI SDK v6 |
+| Use `Output.object()` / `experimental_output` | Can trigger provider `json_schema` failures |
 | Read content from `generated_documents` relation | Always empty; nulls downstream |
 | Override `jobs.generated_resume` with null from dead relation | Breaks entire review spine |
 | Write `status: "ready"` to gate quality approval | Readiness is derived, not written |
 | Create a second quality-pass route under `[id]/` | Duplicate with conflicting logic |
+| Bypass governance writes in generate-documents | Governance must run and persist on every generation, including fallback |
+| Recompute drift or claim validation outside the governance pipeline | `generation_governance_runs` is the canonical record |
+| Suppress or hide `fabricated` confidence verdicts | These are claim safety signals — always surface them |
 | Call `.map()` on JSONB without `Array.isArray()` guard | Crashes on `{}` return |
 | Use `data.links || []` pattern for JSONB arrays | `{}` is truthy, .map() still crashes |
 | Add billing plan values not in `lib/contracts/hirewire.ts` | DB constraint violation |
@@ -311,26 +349,36 @@ always go through `@/lib/analytics`.
 | `lib/contracts/hirewire.ts` | Billing type source of truth | Diverging from this breaks DB constraints |
 | `lib/adapters/anthropic.ts` | Model constant definitions | Changing model IDs breaks all AI routes |
 | `components/posthog-provider.tsx` | PostHog initialization + user identity | Wraps the entire app; changes affect all events |
+| `lib/readiness/evaluator.ts` | Canonical readiness authority (replaces legacy `lib/readiness.ts`) | Breaking gates breaks the entire workflow |
+| `lib/coach/claim-validator.ts` | Per-claim grounding checks against evidence_library | False negatives allow fabricated content through |
+| `lib/coach/drift-scorer.ts` | Drift score computation; ≥65 blocks persistence | Wrong threshold lets high-drift docs persist |
 
 ---
 
-## Current Spine Status (as of 2026-04-11)
+## Current Spine Status (as of 2026-05-19)
 
 All stages of the workflow spine are wired and unblocked:
 
 | Stage | Route/Page | Status |
 |---|---|---|
-| Job Add + Analyze | `components/dashboard-content.tsx` + `/api/analyze` | ✅ |
+| Job Add + Analyze | `/api/analyze` | ✅ |
 | Evidence Match | `/jobs/[id]/evidence-match` | ✅ |
 | Generate Documents | `/api/generate-documents` | ✅ |
-| Red Team Review | `/jobs/[id]/red-team` | ✅ |
-| Quality Approve | `/api/jobs/[jobId]/quality-pass` | ✅ |
-| Ready Queue | `/ready-queue` | ✅ |
-| Apply | `ready-job-actions.tsx` + `job-detail.tsx` | ✅ |
+| Governance Audit | auto-runs inside generation | ✅ E2E verified |
+| Document Review | `/jobs/[id]/documents` | ✅ |
+| Ready Gate | `lib/readiness/evaluator.ts` + `/ready-to-apply` | ✅ |
+| Apply | `lib/actions/apply.ts` | ✅ |
+
+E2E verified on 2026-05-19: `governance_passed=true`, `drift_score=0`,
+15 claim verdicts all `high` confidence, `quality_passed=true`, `generation_status=ready`.
 
 All 6 PostHog funnel events are wired. Sentry capture is wired on
 `analyze` and `generate-documents`. `lib/analytics.ts`, `lib/audit.ts`,
 and `app/providers/posthog-provider.tsx` are all on remote.
+
+**One known caveat**: `/api/ai/health` reports AI Gateway unconfigured on preview.
+The governance pipeline is proven correct on the fallback path. Once `AI_GATEWAY_API_KEY`
+is wired in Vercel env, live generation will exercise the same pipeline.
 
 ---
 

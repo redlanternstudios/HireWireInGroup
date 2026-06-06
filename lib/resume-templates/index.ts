@@ -1,5 +1,6 @@
-// HireWire Resume Templates — Pack Index
-// Import from this file throughout HireWire
+// Deprecated: decorative resume template pack.
+// Do not use for readiness-gated HireWire exports.
+// Use lib/resume-formats instead.
 
 // Components
 export { ResumeBase } from "./components/ResumeBase";

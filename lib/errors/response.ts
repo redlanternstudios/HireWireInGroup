@@ -16,16 +16,16 @@ export function toActionResult(error: AppError | Error | unknown) {
 
 export function toApiErrorResponse(error: AppError | Error | unknown) {
   const err = normalizeUnknownError(error)
+  // error is a flat string so client code can safely render it as a React child.
+  // Structured fields are available alongside for programmatic handling.
   return {
     success: false,
-    error: {
-      code: err.code,
-      category: err.category,
-      message: err.userMessage,
-      retryable: err.retryable,
-      actionLabel: err.actionLabel,
-      correlationId: err.correlationId,
-    },
+    error: err.userMessage,
+    error_code: err.code,
+    error_category: err.category,
+    retryable: err.retryable,
+    actionLabel: err.actionLabel,
+    correlationId: err.correlationId,
   }
 }
 

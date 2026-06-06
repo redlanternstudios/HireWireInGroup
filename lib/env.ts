@@ -27,9 +27,10 @@ export interface EnvConfig {
 export function validateEnv(): EnvConfig {
   const missing: string[] = []
 
-  // Check required vars
+  // Check required vars — SUPABASE_SERVICE_ROLE_KEY accepts SUPABASE_SECRET_KEY as alias
   for (const key of REQUIRED_ENV) {
-    if (!process.env[key]) {
+    const alias = key === "SUPABASE_SERVICE_ROLE_KEY" ? "SUPABASE_SECRET_KEY" : undefined
+    if (!process.env[key] && !(alias && process.env[alias])) {
       missing.push(key)
     }
   }
@@ -44,7 +45,8 @@ export function validateEnv(): EnvConfig {
   return {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL!,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    // Accept SUPABASE_SECRET_KEY as alias (set by Supabase integration under that name)
+    SUPABASE_SERVICE_ROLE_KEY: (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY)!,
   }
 }
 

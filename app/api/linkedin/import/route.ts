@@ -10,22 +10,19 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { parseResumeText } from "@/lib/resumeParser"
 import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
 import { extractEducationFromResumeText, buildEducationEvidenceRows } from "@/lib/resume/extractEducation"
+import { detectEvidenceDuplicates } from "@/lib/evidence/duplicates"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-    }
-    const userId = user.id
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     const body = await request.json()
     const rawText: string = typeof body.rawText === "string" ? body.rawText.trim() : ""
@@ -83,7 +80,7 @@ export async function POST(request: NextRequest) {
     // ── Deduplicate against existing evidence ─────────────────────────────────
     const { data: existing } = await supabase
       .from("evidence_library")
-      .select("id, source_type, source_title, role_name, company_name, date_range")
+      .select("id, source_type, source_title, role_name, company_name, date_range, responsibilities, tools_used, outcomes, proof_snippet")
       .eq("user_id", userId)
 
     const existingMap = new Map<string, string>()
@@ -98,7 +95,12 @@ export async function POST(request: NextRequest) {
       existingMap.set(key, row.id)
     }
 
-    const rowsToInsert = candidateRows.filter((row) => !existingMap.has(dedupeKey(row)))
+    let rowsToInsert = candidateRows.filter((row) => !existingMap.has(dedupeKey(row)))
+    const duplicateCandidates = detectEvidenceDuplicates(rowsToInsert, existing ?? [])
+    const duplicateIndexes = new Set(
+      duplicateCandidates.map((candidate) => candidate.group_id.replace("evidence-duplicate-", ""))
+    )
+    rowsToInsert = rowsToInsert.filter((_row, index) => !duplicateIndexes.has(String(index)))
 
     let inserted = 0
     if (rowsToInsert.length > 0) {
@@ -129,6 +131,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       itemsExtracted: inserted + educationInserted,
+      duplicates_found: duplicateCandidates.length,
+      duplicate_candidates: duplicateCandidates,
     })
   } catch (error) {
     console.error("[linkedin/import] error:", error)

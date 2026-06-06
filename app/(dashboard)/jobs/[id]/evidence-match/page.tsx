@@ -2,19 +2,82 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ArrowRight, ShieldCheck, AlertCircle, Lightbulb } from "lucide-react"
+import { ChevronLeft, ArrowRight, AlertCircle, Lightbulb, Target } from "lucide-react"
+import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
+import { GuidedRequirementCoachFlow } from "@/components/coach/GuidedRequirementCoachFlow"
+import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapButton"
+import { AnalyzeJobButton } from "../AnalyzeJobButton"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requirements"
+import { cn } from "@/lib/utils"
+import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
+import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
 
 export const dynamic = "force-dynamic"
 
-export default async function EvidenceMatchPage({ params }: { params: Promise<{ id: string }> }) {
+function asCanonicalEvidenceMap(value: unknown): CanonicalJobEvidenceMap | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const map = value as CanonicalJobEvidenceMap
+  return Array.isArray(map.requirement_matches) ? map : null
+}
+
+function uiStatus(match: RequirementEvidenceMatch) {
+  if (match.status === "met") return { label: "Covered", className: "bg-emerald-50 text-emerald-700 border-emerald-200" }
+  if (match.status === "partial" && match.confidence === "high") return { label: "Probably covered", className: "bg-sky-50 text-sky-700 border-sky-200" }
+  if (match.status === "partial") return { label: "Needs a clearer example", className: "bg-amber-50 text-amber-700 border-amber-200" }
+  if (match.priority === "keyword") return { label: "Optional", className: "bg-slate-50 text-slate-600 border-slate-200" }
+  return { label: "Needs an example", className: "bg-rose-50 text-rose-700 border-rose-200" }
+}
+
+function normalizeFixableMatch(
+  match: RequirementEvidenceMatch,
+  unresolvedRequirementIds: Set<string>,
+): RequirementEvidenceMatch {
+  if (!unresolvedRequirementIds.has(match.requirement_id)) return match
+
+  return {
+    ...match,
+    status: match.status === "met" ? "partial" : match.status,
+    confidence: match.status === "met" ? "low" : match.confidence,
+    proof_needed:
+      (match.proof_needed?.length ?? 0) > 0
+        ? match.proof_needed
+        : [
+            `Confirm a concrete proof point HireWire can safely use for: ${match.requirement_text}`,
+          ],
+  }
+}
+
+export default async function EvidenceMatchPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ resolve?: string | string[]; req?: string | string[] }>
+}) {
   const { id } = await params
+  const resolvedSearchParams = await searchParams
+  const resolveParam = resolvedSearchParams?.resolve
+  const reqParam = resolvedSearchParams?.req
+  const requestedReqParam = Array.isArray(reqParam)
+    ? (reqParam[0] ?? null)
+    : (reqParam ?? null)
+  const legacyResolveParam = Array.isArray(resolveParam)
+    ? (resolveParam[0] ?? null)
+    : (resolveParam ?? null)
+  if (!requestedReqParam && legacyResolveParam) {
+    redirect(
+      `/jobs/${id}/evidence-match?req=${encodeURIComponent(legacyResolveParam)}#${requirementAnchorId(legacyResolveParam)}`,
+    )
+  }
+  const requestedRequirementId = requestedReqParam ?? legacyResolveParam
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("id, role_title, company_name, qualifications_required, responsibilities")
+    .select("id, role_title, company_name, status, score, score_gaps, evidence_map, gap_clarifications, gaps_addressed, generated_resume, generated_cover_letter, quality_passed, applied_at, job_url")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -22,31 +85,64 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
 
   if (error || !job) notFound()
 
-  const [{ data: evidenceItems }, { data: analysis }] = await Promise.all([
+  const [{ data: evidenceItems }, { data: analysis }, { data: proveFitDecisions }] = await Promise.all([
     supabase
       .from("evidence_library")
       .select("id, source_title, source_type, confidence_level, outcomes")
       .eq("user_id", user.id)
+      .eq("is_active", true)
       .order("created_at", { ascending: false }),
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, qualifications_required")
+      .select("matched_skills, known_gaps, qualifications_required, responsibilities")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", id)
+      .eq("user_id", user.id),
   ])
 
   const requirements: string[] = [
-    ...(Array.isArray(job.qualifications_required) ? job.qualifications_required : []),
     ...(Array.isArray(analysis?.qualifications_required) ? analysis.qualifications_required : []),
+    ...(Array.isArray(analysis?.responsibilities) ? analysis.responsibilities : []),
   ].filter(Boolean)
 
+  const evidenceMap = asCanonicalEvidenceMap(job.evidence_map)
+  const requirementMatches = evidenceMap?.requirement_matches ?? []
+  const mapBuildError =
+    job.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
+      ? (job.evidence_map as Record<string, unknown>).map_build_error
+      : null
+  const mapBuildErrorText =
+    mapBuildError && typeof mapBuildError === "object" && !Array.isArray(mapBuildError)
+      ? String((mapBuildError as Record<string, unknown>).message ?? "Evidence mapping failed")
+      : null
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const gaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
-  const evidenceCount = evidenceItems?.length ?? 0
+  const analysisPresent = requirements.length > 0 || matchedSkills.length > 0 || requirementMatches.length > 0
+  const jobWithDecisionAuthority = {
+    ...job,
+    analysis_present: analysisPresent,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  }
+  const readiness = evaluateReadiness(jobWithDecisionAuthority)
+  const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
+  const matchScore = typeof job.score === "number" ? job.score : null
+  const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
+  const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
+  const unresolvedRequirements = listUnresolvedRequirements(jobWithDecisionAuthority)
+  const unresolvedRequirementIds = new Set(unresolvedRequirements.map((match) => match.id))
+  const normalizedRequirementMatches = requirementMatches.map((match) =>
+    normalizeFixableMatch(match, unresolvedRequirementIds),
+  )
+  const proofGaps = unresolvedRequirements
+  const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
 
   return (
-    <div className="hw-page max-w-3xl">
+    <div className="hw-page">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link
@@ -60,31 +156,34 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
 
       {/* Header */}
       <div className="hw-card px-6 py-5">
-        <p className="hw-section-label mb-1">Step 2 of 5</p>
-        <h1 className="hw-page-title">Evidence Matching</h1>
+        <p className="hw-section-label mb-1">Prove Fit</p>
+        <h1 className="hw-page-title">Prove Fit</h1>
         <p className="hw-page-subtitle">
-          Map your proof points from your evidence library to the requirements of this role.
-          Stronger coverage leads to a higher fit score and better-tailored documents.
+          HireWire matched what it could. The Match Interview covers only what still needs your judgment.
         </p>
       </div>
 
       {/* Status strip */}
       <div className="hw-metrics">
         <div className="hw-stat">
-          <span className="hw-stat-value text-primary">{requirements.length}</span>
-          <span className="hw-stat-label">Requirements</span>
+          <span className="hw-stat-value text-primary">{matchScore !== null ? `${matchScore}/100` : "—"}</span>
+          <span className="hw-stat-label">Match Score</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-emerald-600">{matchedSkills.length}</span>
-          <span className="hw-stat-label">Matched</span>
+          <span className="hw-stat-value text-primary">{requiredTotal}</span>
+          <span className="hw-stat-label">Role Signals</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-amber-600">{gaps.length}</span>
-          <span className="hw-stat-label">Gaps</span>
+          <span className="hw-stat-value text-emerald-600">{requiredCovered}</span>
+          <span className="hw-stat-label">Auto-Matched</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value">{evidenceCount}</span>
-          <span className="hw-stat-label">Proof Points</span>
+          <span className="hw-stat-value text-amber-600">{proofGaps.length || gaps.length}</span>
+          <span className="hw-stat-label">Need Judgment</span>
+        </div>
+        <div className="hw-stat">
+          <span className="hw-stat-value">{Math.max(requiredTotal - requiredCovered - (proofGaps.length || gaps.length), 0)}</span>
+          <span className="hw-stat-label">Clear</span>
         </div>
       </div>
 
@@ -92,27 +191,126 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
       <div className="hw-workspace">
         <div className="hw-workspace-main space-y-4">
 
-          {/* Matched skills */}
-          {matchedSkills.length > 0 && (
-            <div className="hw-card px-5 py-4">
-              <h2 className="hw-section-label mb-3">Matched Requirements</h2>
-              <ul className="space-y-2">
-                {matchedSkills.map((skill, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm">
-                    <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span className="text-foreground">{skill}</span>
-                  </li>
-                ))}
-              </ul>
+          {mapBuildErrorText && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-red-800">Evidence mapping needs retry</p>
+                  <p className="mt-1 text-xs text-red-700">
+                    {mapBuildErrorText}
+                  </p>
+                </div>
+                <RebuildEvidenceMapButton jobId={id} />
+              </div>
             </div>
           )}
 
-          {/* Gaps */}
-          {gaps.length > 0 && (
+          {normalizedRequirementMatches.length > 0 && (
+            <div className="space-y-4">
+              <GuidedRequirementCoachFlow
+                jobId={id}
+                jobTitle={job.role_title ?? "this role"}
+                company={job.company_name ?? "this company"}
+                score={job.score}
+                status={job.status}
+                requirementMatches={normalizedRequirementMatches}
+                requestedRequirementId={requestedRequirementId}
+                evidenceItems={(evidenceItems ?? []).map((item) => ({
+                  id: item.id,
+                  source_title: item.source_title,
+                  source_type: item.source_type,
+                }))}
+                generationBlocked={!readiness.canGenerate}
+              />
+
+              {requiredGaps.length === 0 && (
+                <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="hw-section-label mb-1">Fit is proved enough to continue.</p>
+                      <p className="text-sm text-muted-foreground">
+                        HireWire will generate from confirmed, auto-matched, or intentionally skipped claims.
+                      </p>
+                    </div>
+                    <Link href={`/jobs/${id}`} className="shrink-0">
+                      <Button size="sm" className="hw-btn-primary gap-1.5">
+                        Return to job <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              <details className="hw-card px-5 py-4" open={!!requestedRequirementId}>
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                  Show what HireWire checked ({requirementMatches.length})
+                </summary>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This is context only. The Match Interview handles anything that needs your judgment.
+                </p>
+
+                <div className="mt-3 space-y-3">
+                  {normalizedRequirementMatches.map((match) => {
+                    const status = uiStatus(match)
+                    const requirementType = inferRequirementType(match.requirement_text)
+                    return (
+                      <div
+                        id={requirementAnchorId(match.requirement_id)}
+                        key={match.requirement_id}
+                        className={cn(
+                          "hw-requirement-card rounded-md border bg-background px-5 py-4",
+                          requestedRequirementId === match.requirement_id
+                            ? "border-primary bg-primary/5"
+                            : "border-border",
+                        )}
+                      >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Target className="h-4 w-4 text-primary" />
+                          <span className="hw-section-label">
+                            {match.priority === "required" ? "Important" : match.priority === "preferred" ? "Nice to have" : "Keyword"}
+                          </span>
+                          <span className="rounded border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                            {requirementType.replace(/_/g, " ")}
+                          </span>
+                          <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}>
+                            {status.label}
+                          </span>
+                        </div>
+                        <h2 className="mt-2 text-sm font-semibold text-foreground">{match.requirement_text}</h2>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {match.employer_intent ?? match.normalized_requirement}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="hw-panel p-3">
+                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">Already Verified</p>
+                        <p className="mt-1 text-xs text-foreground">
+                          {match.matched_evidence_titles.length > 0 ? match.matched_evidence_titles.join(", ") : "Nothing strong enough yet."}
+                        </p>
+                      </div>
+                      <div className="hw-panel p-3">
+                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">What Needs Judgment</p>
+                        <p className="mt-1 text-xs text-foreground">
+                          {(match.proof_needed ?? [])[0] ?? "Share a real project, responsibility, or result that shows this."}
+                        </p>
+                      </div>
+                    </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </details>
+            </div>
+          )}
+
+          {requirementMatches.length === 0 && gaps.length > 0 && (
             <div className="hw-card px-5 py-4">
-              <h2 className="hw-section-label mb-3">Gaps to Address</h2>
+              <h2 className="hw-section-label mb-3">Match Interview</h2>
               <p className="text-xs text-muted-foreground mb-3">
-                These requirements have no strong evidence match yet. Add proof points to your Career Context to fill them.
+                These points need your judgment before HireWire can make a truthful claim.
               </p>
               <ul className="space-y-2">
                 {gaps.map((gap, i) => (
@@ -123,17 +321,21 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
                 ))}
               </ul>
               <div className="mt-4 pt-3 border-t border-border">
-                <Link href="/evidence">
-                  <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                    Add to Career Context <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </Link>
+                <RequirementCoachModal
+                  jobId={id}
+                  jobTitle={job.role_title ?? "this role"}
+                  company={job.company_name ?? "this company"}
+                  score={job.score}
+                  status={job.status}
+                  gaps={gaps}
+                  showGenerationUnlock={!readiness.canGenerate}
+                />
               </div>
             </div>
           )}
 
           {/* No analysis yet */}
-          {requirements.length === 0 && matchedSkills.length === 0 && (
+          {requirementMatches.length === 0 && requirements.length === 0 && matchedSkills.length === 0 && (
             <div className="hw-empty">
               <div className="hw-empty-icon">
                 <AlertCircle className="h-5 w-5 text-muted-foreground" />
@@ -141,56 +343,23 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
               <div>
                 <p className="text-sm font-semibold">Analysis required first</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  Run job analysis before matching evidence. Return to the job detail page and trigger analysis.
+                  HireWire needs to extract this role&apos;s requirements before you can prove fit. Run it right here — no need to leave this page.
                 </p>
               </div>
-              <Link href={`/jobs/${id}`}>
-                <Button size="sm" className="hw-btn-primary gap-1.5">
-                  Go back and analyze <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
+              <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Analyze this job" size="sm" />
             </div>
           )}
         </div>
 
         {/* Right rail */}
         <div className="hw-workspace-rail">
-          <h2 className="hw-section-label mb-3">Your Proof Points</h2>
-          <div className="hw-panel p-4 space-y-2">
-            {evidenceCount === 0 ? (
-              <div className="text-center py-4">
-                <p className="text-xs text-muted-foreground">No evidence yet.</p>
-                <Link href="/evidence" className="text-xs text-primary hover:underline mt-1 block">
-                  Add career context
-                </Link>
-              </div>
-            ) : (
-              (evidenceItems ?? []).slice(0, 8).map((item) => (
-                <div key={item.id} className="flex items-start gap-2 py-1.5 border-b border-border/50 last:border-0">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{item.source_title}</p>
-                    <p className="text-[10px] text-muted-foreground capitalize">{item.source_type?.replace(/_/g, " ")}</p>
-                  </div>
-                </div>
-              ))
-            )}
-            {evidenceCount > 8 && (
-              <p className="text-[10px] text-muted-foreground text-center pt-1">
-                +{evidenceCount - 8} more in your library
+          <h2 className="hw-section-label mb-3">How HireWire Decides</h2>
+          <div className="hw-panel p-4">
+            <div className="flex items-start gap-2">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Strong matches move silently. Unclear, risky, or missing claims come here for one focused question. Skipping keeps the materials honest.
               </p>
-            )}
-          </div>
-
-          <div className="mt-4">
-            <h2 className="hw-section-label mb-2">Tip</h2>
-            <div className="hw-panel p-4">
-              <div className="flex items-start gap-2">
-                <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Every gap you address with real evidence reduces the AI&apos;s need to infer, producing stronger and more accurate application materials.
-                </p>
-              </div>
             </div>
           </div>
 
@@ -198,7 +367,7 @@ export default async function EvidenceMatchPage({ params }: { params: Promise<{ 
           <div className="mt-4">
             <Link href={`/jobs/${id}`}>
               <Button className="w-full hw-btn-primary gap-1.5 text-sm">
-                Continue to scoring <ArrowRight className="h-4 w-4" />
+                Continue to job <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
           </div>

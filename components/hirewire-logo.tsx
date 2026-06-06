@@ -3,7 +3,7 @@ import Image from "next/image"
 const SIZE_MAP: Record<string, number> = {
   sm: 80,
   md: 120,
-  lg: 160,
+  lg: 150,
   xl: 220,
 }
 
@@ -31,7 +31,7 @@ export function HireWireLogo({
   size?: "sm" | "md" | "lg" | "xl"
 }) {
   const width = SIZE_MAP[size] ?? 120
-  const height = Math.round(width * 0.45)
+  const height = Math.round(width * (1024 / 1536))
 
   return (
     <Image
@@ -40,7 +40,13 @@ export function HireWireLogo({
       width={width}
       height={height}
       className={className}
-      style={VARIANT_FILTER[variant] ? { filter: VARIANT_FILTER[variant] } : undefined}
+      // height:auto preserves exact aspect ratio regardless of container.
+      // Never let a parent constraint squash the logo vertically.
+      style={{
+        width: `${width}px`,
+        height: "auto",
+        ...(VARIANT_FILTER[variant] ? { filter: VARIANT_FILTER[variant] } : {}),
+      }}
       priority
     />
   )

@@ -1,6 +1,6 @@
 // Coach validation logic for claims, evidence, and quality gates
-import { Claim, EvidenceItem, QualityGateResult } from "./types"
-import { TRUTH_STATES, QUALITY_HARD_FAILS, QUALITY_WARNINGS } from "./constants"
+import type { Claim, EvidenceItem, QualityGateResult } from "./types"
+import { QUALITY_HARD_FAILS } from "./constants"
 
 export function validateClaim(claim: Claim): string[] {
   const errors: string[] = []

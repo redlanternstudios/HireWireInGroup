@@ -16,11 +16,20 @@ export type BrandSurface =
   | "error_state"
 
 export type CommsTone =
-  | "direct"       // clear, no fluff
-  | "supportive"   // helpful, warm but not cheesy
-  | "urgent"       // action required
-  | "informational" // status update, no action needed
-  | "celebratory"  // milestone, success
+  | "direct"         // clear, no fluff
+  | "supportive"     // helpful, warm but not cheesy
+  | "urgent"         // action required
+  | "informational"  // status update, no action needed
+  | "celebratory"    // milestone, success
+
+export type Tone =
+  | CommsTone
+  | "calm"
+  | "strategic"
+  | "encouraging"
+  | "formal"
+  | "warm"
+  | "neutral"
 
 export interface CommsMessage {
   /** Unique identifier for this message template */
@@ -51,4 +60,21 @@ export interface CommsMessage {
   actionHref?: string
   /** Whether user must approve before sending */
   requiresApproval: boolean
+}
+
+export type CommunicationMessage = {
+  id: string
+  domain: string
+  audience: string
+  intent: string
+  channel: string
+  tone: string
+  subject?: string
+  title?: string
+  body: string
+  actionLabel?: string
+  actionHref?: string
+  requiresApproval?: boolean
+  isDraft?: boolean
+  createdAt?: string
 }

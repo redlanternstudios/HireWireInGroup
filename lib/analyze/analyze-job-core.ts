@@ -12,14 +12,24 @@
  * client-supplied input.
  */
 
-import { generateText, Output } from "ai"
-import { z } from "zod"
-import { runJobFlow } from "@/lib/orchestrator/runJobFlow"
+import { generateStructuredText } from "@/lib/ai/gateway";
+import { z } from "zod";
+import { runJobFlow } from "@/lib/orchestrator/runJobFlow";
+import { withCoachStepMeta } from "@/lib/coach-step";
+import { buildEvidenceMapForJob, initializeEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
+import {
+  buildEvidenceLibraryContext,
+  buildJobContext,
+  isContextEngineEnabled,
+  mirrorGapMatches,
+  mirrorJobContext,
+  mirrorProfileContext,
+  runContextGapMatch,
+} from "@/lib/context-engine";
 import {
   inferRoleFromJobTitle,
   getWeightsForRole,
-  calculateWeightedScore,
-} from "@/lib/scoring-weights"
+} from "@/lib/scoring-weights";
 import {
   normalizeEvidenceRecord,
   normalizeProfileExperience,
@@ -28,18 +38,29 @@ import {
   type ExplainableFitScore,
   type FitBand,
 } from "@/lib/canonical-evidence"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
-import { parseJobPage, detectSource } from "@/lib/parsers"
-import { findJobByUrl } from "@/lib/queries/jobs"
-import { linkJobToCompany } from "@/lib/company-utils"
-import { checkForDuplicate, getDuplicateResponse } from "@/lib/duplicate-detection"
-import type { createClient } from "@/lib/supabase/server"
-import type { User } from "@supabase/supabase-js"
-import type { Job } from "@/lib/types"
+import { detectGaps } from "@/lib/gap-detection";
+import {
+  CLAUDE_MODELS,
+  getActiveAnalysisModelName,
+  isAnthropicConfigured,
+} from "@/lib/ai/gateway";
+import { parseJobPage, detectSource } from "@/lib/parsers";
+import { findJobByUrl } from "@/lib/queries/jobs";
+import { linkJobToCompany } from "@/lib/company-utils";
+import {
+  checkForDuplicate,
+  getDuplicateResponse,
+} from "@/lib/duplicate-detection";
+import type { createClient } from "@/lib/supabase/server";
+import type { User } from "@supabase/supabase-js";
 
-type ServerSupabase = Awaited<ReturnType<typeof createClient>>
+function toDbScore(value: number | null | undefined): number {
+  return Math.round(Number.isFinite(value ?? NaN) ? value! : 0);
+}
+import type { Job } from "@/lib/types";
 
-// Role families for categorization - PM-focused but extensible
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
+
 const ROLE_FAMILIES = [
   "AI Technical Product Manager",
   "Technical Product Manager",
@@ -52,25 +73,58 @@ const ROLE_FAMILIES = [
   "Product Owner",
   "Program Manager",
   "Other",
-] as const
+] as const;
 
-// Schema for job analysis extraction
 const JobAnalysisSchema = z.object({
-  title: z.string().nullable().describe("Job title as stated, or null if not found"),
+  title: z
+    .string()
+    .nullable()
+    .describe("Job title as stated, or null if not found"),
   company: z.string().nullable().describe("Company name, or null if not found"),
   location: z.string().nullable().describe("Job location or Remote"),
-  employment_type: z.string().nullable().describe("Full-time, Part-time, Contract, etc."),
+  employment_type: z
+    .string()
+    .nullable()
+    .describe("Full-time, Part-time, Contract, etc."),
   salary_text: z.string().nullable().describe("Salary range if mentioned"),
-  description_summary: z.string().nullable().describe("Brief 2-3 sentence summary of the role, or null if content not available"),
-  responsibilities: z.array(z.string()).describe("List of key responsibilities"),
-  qualifications_required: z.array(z.string()).describe("Required qualifications"),
-  qualifications_preferred: z.array(z.string()).describe("Preferred/nice-to-have qualifications"),
+  description_summary: z
+    .string()
+    .nullable()
+    .describe(
+      "Brief 2-3 sentence summary of the role, or null if content not available",
+    ),
+  responsibilities: z
+    .array(z.string())
+    .describe("List of key responsibilities"),
+  qualifications_required: z
+    .array(z.string())
+    .describe("Required qualifications"),
+  qualifications_preferred: z
+    .array(z.string())
+    .describe("Preferred/nice-to-have qualifications"),
   keywords: z.array(z.string()).describe("Important keywords for ATS matching"),
-  ats_phrases: z.array(z.string()).describe("Exact phrases to include in resume for ATS"),
-  tech_stack: z.array(z.string()).describe("Technologies, tools, and frameworks mentioned"),
-  role_family: z.enum(ROLE_FAMILIES).describe("Best matching role family for categorization"),
-  industry_guess: z.string().nullable().describe("Primary industry or null if unknown"),
-  seniority_level: z.string().nullable().describe("Seniority level: Entry, Mid, Senior, Lead, Principal, Director, VP, or C-Level"),
+  ats_phrases: z
+    .array(z.string())
+    .describe("Exact phrases to include in resume for ATS"),
+  tech_stack: z
+    .array(z.string())
+    .describe("Technologies, tools, and frameworks mentioned"),
+  role_family: z
+    .enum(ROLE_FAMILIES)
+    .describe("Best matching role family for categorization"),
+  soc_major_group: z.number().int().min(11).max(55).nullable().describe("BLS SOC 2-digit major group code. 11=Management 13=Business/Financial 15=Computer/Mathematical 17=Architecture/Engineering 19=Life/Physical/Social_Science 21=Community/Social_Services 23=Legal 25=Education/Library 27=Arts/Design/Entertainment 29=Healthcare_Practitioners 31=Healthcare_Support 33=Protective_Service 35=Food_Preparation 37=Building/Grounds 39=Personal_Care 41=Sales 43=Office/Administrative 45=Farming/Fishing/Forestry 47=Construction/Extraction 49=Installation/Maintenance/Repair 51=Production 53=Transportation/Material_Moving 55=Military"),
+  soc_group_name: z.string().nullable().describe("BLS SOC major group name e.g. Computer and Mathematical Occupations"),
+  soc_category: z.enum(["Management","Business_Financial","Computer_Mathematical","Architecture_Engineering","Life_Physical_Social_Science","Community_Social_Services","Legal","Education_Library","Arts_Design_Entertainment_Sports_Media","Healthcare_Practitioners","Healthcare_Support","Protective_Service","Food_Preparation_Serving","Building_Grounds","Personal_Care_Service","Sales","Office_Administrative","Farming_Fishing_Forestry","Construction_Extraction","Installation_Maintenance_Repair","Production","Transportation_Material_Moving","Military"]).nullable().describe("BLS SOC category enum for scoring profile selection"),
+  industry_guess: z
+    .string()
+    .nullable()
+    .describe("Primary industry or null if unknown"),
+  seniority_level: z
+    .string()
+    .nullable()
+    .describe(
+      "Seniority level: Entry, Mid, Senior, Lead, Principal, Director, VP, or C-Level",
+    ),
   fit_signals: z.object({
     has_ai_focus: z.boolean(),
     has_technical_requirements: z.boolean(),
@@ -80,81 +134,268 @@ const JobAnalysisSchema = z.object({
     has_people_management: z.boolean(),
     product_ownership_level: z.enum(["low", "medium", "high"]),
   }),
-})
+});
+
+const JOB_ANALYSIS_SCHEMA_DESCRIPTION = `{
+  "title": string | null,
+  "company": string | null,
+  "location": string | null,
+  "employment_type": string | null,
+  "salary_text": string | null,
+  "description_summary": string | null,
+  "responsibilities": string[],
+  "qualifications_required": string[],
+  "qualifications_preferred": string[],
+  "keywords": string[],
+  "ats_phrases": string[],
+  "tech_stack": string[],
+  "role_family": "AI Technical Product Manager" | "Technical Product Manager" | "AI Product Manager" | "Product Manager" | "Senior Product Manager" | "Systems Product Manager" | "Workflow Product Manager" | "Analytics Product Manager" | "Product Owner" | "Program Manager" | "Other",
+  "industry_guess": string | null,
+  "seniority_level": string | null,
+  "fit_signals": {
+    "has_ai_focus": boolean,
+    "has_technical_requirements": boolean,
+    "has_workflow_focus": boolean,
+    "has_startup_culture": boolean,
+    "has_pure_engineering": boolean,
+    "has_people_management": boolean,
+    "product_ownership_level": "low" | "medium" | "high"
+  }
+}`;
 
 export interface AnalyzeCoreResult {
-  success: true
-  job_id: string
-  duplicate: boolean
-  duplicate_type?: string
-  message?: string
-  limited_content?: boolean
-  limited_content_message?: string | null
+  success: true;
+  job_id: string;
+  duplicate: boolean;
+  duplicate_type?: string;
+  message?: string;
+  limited_content?: boolean;
+  limited_content_message?: string | null;
   analysis: {
-    title: string
-    company: string
-    location: string | null
-    employment_type: string | null
-    salary_text: string | null
-    responsibilities: string[]
-    qualifications_required: string[]
-    qualifications_preferred: string[]
-    keywords: string[]
-    ats_phrases: string[]
-    tech_stack: string[]
-    seniority_level: string
-    role_family: string
-    industry_guess: string
-    fit_signals?: z.infer<typeof JobAnalysisSchema>["fit_signals"]
-  }
-  job: Job
+    title: string;
+    company: string;
+    location: string | null;
+    employment_type: string | null;
+    salary_text: string | null;
+    responsibilities: string[];
+    qualifications_required: string[];
+    qualifications_preferred: string[];
+    keywords: string[];
+    ats_phrases: string[];
+    tech_stack: string[];
+    seniority_level: string;
+    role_family: string;
+    industry_guess: string;
+    fit_signals?: z.infer<typeof JobAnalysisSchema>["fit_signals"];
+  };
+  job: Job;
   generation?: {
-    attempted: boolean
-    success: boolean
-    error?: string | null
-    strategy?: string
-    quality_passed?: boolean
-  }
+    attempted: boolean;
+    success: boolean;
+    error?: string | null;
+    strategy?: string;
+    quality_passed?: boolean;
+  };
   flow?: {
-    success: boolean
-    steps: unknown[]
-  }
+    success: boolean;
+    steps: unknown[];
+  };
 }
 
-export type AnalyzeCoreError = { success: false; error: string; retryAfter?: number }
+export type AnalyzeCoreError = {
+  success: false;
+  error: string;
+  retryAfter?: number;
+};
 
-export type AnalyzeCoreOutput = AnalyzeCoreResult | AnalyzeCoreError
+export type AnalyzeCoreOutput = AnalyzeCoreResult | AnalyzeCoreError;
 
 async function fetchJobPage(url: string): Promise<string> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
       signal: controller.signal,
-    })
-    if (!response.ok) throw new Error(`Failed to fetch job page: ${response.status}`)
-    const html = await response.text()
-    const parsed = parseJobPage(html, url)
-    return parsed.text
+    });
+    if (!response.ok)
+      throw new Error(`Failed to fetch job page: ${response.status}`);
+    const html = await response.text();
+    const parsed = parseJobPage(html, url);
+    return parsed.text;
   } finally {
-    clearTimeout(timeoutId)
+    clearTimeout(timeoutId);
   }
 }
 
 function normalizeSeniority(level: string | null): string {
-  if (!level) return "Mid"
-  const lower = level.toLowerCase()
-  if (lower.includes("entry") || lower.includes("junior") || lower.includes("associate")) return "Entry"
-  if (lower.includes("senior") || lower.includes("sr.") || lower.includes("sr ")) return "Senior"
-  if (lower.includes("lead") || lower.includes("principal") || lower.includes("staff")) return "Lead"
-  if (lower.includes("director")) return "Director"
-  if (lower.includes("vp") || lower.includes("vice president")) return "VP"
-  if (lower.includes("c-level") || lower.includes("chief") || lower.includes("cto") || lower.includes("cpo")) return "C-Level"
-  return "Mid"
+  if (!level) return "Mid";
+  const lower = level.toLowerCase();
+  if (
+    lower.includes("entry") ||
+    lower.includes("junior") ||
+    lower.includes("associate")
+  )
+    return "Entry";
+  if (
+    lower.includes("senior") ||
+    lower.includes("sr.") ||
+    lower.includes("sr ")
+  )
+    return "Senior";
+  if (
+    lower.includes("lead") ||
+    lower.includes("principal") ||
+    lower.includes("staff")
+  )
+    return "Lead";
+  if (lower.includes("director")) return "Director";
+  if (lower.includes("vp") || lower.includes("vice president")) return "VP";
+  if (
+    lower.includes("c-level") ||
+    lower.includes("chief") ||
+    lower.includes("cto") ||
+    lower.includes("cpo")
+  )
+    return "C-Level";
+  return "Mid";
+}
+
+function collectNumberedSection(content: string, heading: string): string[] {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const start = lines.findIndex(
+    (line) => line.toLowerCase().replace(/:$/, "") === heading.toLowerCase(),
+  );
+  if (start === -1) {
+    const nextHeadings = [
+      "Responsibilities",
+      "Required Qualifications",
+      "Preferred Qualifications",
+    ]
+      .filter((candidate) => candidate.toLowerCase() !== heading.toLowerCase())
+      .join("|");
+    const flatMatch = content.match(
+      new RegExp(
+        `${heading}:?\\s+([\\s\\S]*?)(?=\\s+(?:${nextHeadings}):?|$)`,
+        "i",
+      ),
+    );
+    const flatSection = flatMatch?.[1]?.trim();
+    if (!flatSection) return [];
+    return flatSection
+      .split(/(?:^|\s)\d+\.\s+|(?<=\.)\s+(?=[A-Z][a-z]+ )/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 12)
+      .slice(0, 10);
+  }
+
+  const items: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (
+      /^[A-Z][A-Za-z\s]+:$/.test(line) ||
+      /^(Required|Preferred) Qualifications:?$/i.test(line)
+    )
+      break;
+    const cleaned = line.replace(/^\d+\.\s*/, "").trim();
+    if (cleaned) items.push(cleaned);
+  }
+  return items;
+}
+
+function extractLabeledValue(content: string, label: string): string | null {
+  const labels = [
+    "Title",
+    "Company",
+    "Location",
+    "Salary",
+    "Job Description",
+    "Responsibilities",
+    "Required Qualifications",
+    "Preferred Qualifications",
+  ]
+    .filter((candidate) => candidate.toLowerCase() !== label.toLowerCase())
+    .join("|");
+  const match = content.match(
+    new RegExp(`${label}:\\s*([\\s\\S]+?)(?=\\s+(?:${labels}):?\\s|$)`, "i"),
+  );
+  return match?.[1]?.trim() || null;
+}
+
+function fallbackAnalyzeJob(
+  content: string,
+): z.infer<typeof JobAnalysisSchema> {
+  const responsibilities = collectNumberedSection(content, "Responsibilities");
+  const required = collectNumberedSection(content, "Required Qualifications");
+  const preferred = collectNumberedSection(content, "Preferred Qualifications");
+  const keywordCandidates = [
+    "AI product management",
+    "LLMs",
+    "APIs",
+    "cloud platforms",
+    "product requirements",
+    "Agile",
+    "KPIs",
+    "stakeholder management",
+    "safe AI",
+    "evaluation loops",
+    "Salesforce",
+    "SAP",
+    "SQL",
+    "GTM alignment",
+  ];
+  const lowerContent = content.toLowerCase();
+
+  return {
+    title: extractLabeledValue(content, "Title") || "Unknown Position",
+    company: extractLabeledValue(content, "Company") || "Unknown Company",
+    location: extractLabeledValue(content, "Location") || null,
+    employment_type: "Full-time",
+    salary_text: extractLabeledValue(content, "Salary") || null,
+    description_summary:
+      "AI Product Manager role focused on AI-powered workflow products, enterprise customers, product requirements, KPIs, safe AI experiences, and cross-functional delivery.",
+    responsibilities,
+    qualifications_required: required,
+    qualifications_preferred: preferred,
+    keywords: keywordCandidates.filter((keyword) =>
+      lowerContent.includes(keyword.toLowerCase().replace("llms", "llm")),
+    ),
+    ats_phrases: keywordCandidates.filter((keyword) =>
+      lowerContent.includes(keyword.toLowerCase().replace("llms", "llm")),
+    ),
+    tech_stack: [
+      "LLMs",
+      "APIs",
+      "cloud platforms",
+      "Salesforce",
+      "SAP",
+      "SQL",
+    ].filter((tech) =>
+      lowerContent.includes(tech.toLowerCase().replace("llms", "llm")),
+    ),
+    role_family: "AI Product Manager",
+    soc_major_group: null,
+    soc_group_name: null,
+    soc_category: null,
+    industry_guess: "Enterprise AI workflow software",
+    seniority_level: "Mid",
+    fit_signals: {
+      has_ai_focus: true,
+      has_technical_requirements: true,
+      has_workflow_focus: true,
+      has_startup_culture: lowerContent.includes("startup"),
+      has_pure_engineering: false,
+      has_people_management: false,
+      product_ownership_level: "high",
+    },
+  };
 }
 
 /**
@@ -163,18 +404,25 @@ function normalizeSeniority(level: string | null): string {
  * @param job_url   - The validated job posting URL to analyze
  * @param supabase  - Server-side Supabase client (from createClient() in server.ts)
  * @param user      - Verified user from supabase.auth.getUser() — caller's responsibility
- * @param requestLike - Object satisfying RequestLike for cookie/origin forwarding in runJobFlow
  */
 export async function analyzeJobCore(
-  job_url: string,
+  job_url: string | null,
   supabase: ServerSupabase,
   user: User,
-  requestLike: { headers: { get(name: string): string | null } }
+  job_description?: string | null,
 ): Promise<AnalyzeCoreOutput> {
-  const source = detectSource(job_url)
+  const source = job_url ? detectSource(job_url) : "OTHER";
+  let pageContent = job_description?.trim() || "";
+  const jobUrlForStorage =
+    job_url ?? `manual://hirewire/${crypto.randomUUID()}`;
 
   // Check for existing job with this URL
-  const { data: existingJob } = await findJobByUrl(supabase, user.id, job_url) as { data: Job | null; error: unknown }
+  const { data: existingJob } = job_url
+    ? ((await findJobByUrl(supabase, user.id, job_url)) as {
+        data: Job | null;
+        error: unknown;
+      })
+    : { data: null };
 
   if (existingJob) {
     return {
@@ -192,45 +440,57 @@ export async function analyzeJobCore(
         responsibilities: existingJob.responsibilities || [],
         qualifications_required: existingJob.qualifications_required || [],
         qualifications_preferred: existingJob.qualifications_preferred || [],
-        keywords: existingJob.ats_keywords || existingJob.keywords_extracted || [],
+        keywords:
+          existingJob.ats_keywords || existingJob.keywords_extracted || [],
         ats_phrases: [],
         tech_stack: [],
         seniority_level: existingJob.seniority_level || "Unknown",
         role_family: existingJob.role_family || "Product Manager",
         industry_guess: existingJob.industry_guess || "Unknown",
       },
+    };
+  }
+
+  if (!pageContent) {
+    if (!job_url) {
+      return {
+        success: false,
+        error: "No job_url or job_description provided",
+      };
+    }
+
+    try {
+      pageContent = await fetchJobPage(job_url);
+    } catch (fetchError) {
+      return {
+        success: false,
+        error: `Failed to fetch job page: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`,
+      };
     }
   }
 
-  // Fetch the job page
-  let pageContent: string
-  try {
-    pageContent = await fetchJobPage(job_url)
-  } catch (fetchError) {
-    return {
-      success: false,
-      error: `Failed to fetch job page: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`,
-    }
-  }
-
-  const isLimitedContent = pageContent.length < 100
+  const isLimitedContent = pageContent.length < 100;
   if (isLimitedContent) {
     pageContent = `[LIMITED CONTENT WARNING]
 This job page returned minimal content, likely due to JavaScript rendering requirements.
-URL: ${job_url}
+URL: ${job_url ?? "manual-entry"}
 Source: ${source}
 
 Available content:
 ${pageContent}
 
-Instructions: Extract whatever information is available. For any fields that cannot be determined from this limited content, use null or empty arrays as appropriate.`
+Instructions: Extract whatever information is available. For any fields that cannot be determined from this limited content, use null or empty arrays as appropriate.`;
   }
 
-  // Analyze with Claude
-  const analysisResult = await generateText({
-    model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: JobAnalysisSchema }),
-    prompt: `Analyze this job posting and extract structured information.
+  let analysis: z.infer<typeof JobAnalysisSchema>;
+
+  if (isAnthropicConfigured()) {
+    // Analyze with Claude
+    analysis = await generateStructuredText({
+      model: CLAUDE_MODELS.SONNET,
+      schema: JobAnalysisSchema,
+      schemaDescription: JOB_ANALYSIS_SCHEMA_DESCRIPTION,
+      prompt: `Analyze this job posting and extract structured information.
 
 Be precise and extract only what is explicitly stated. Do not invent or assume information.
 
@@ -251,17 +511,22 @@ Job posting content:
 ${pageContent}
 
 Extract the job details following the schema.`,
-  })
-  const analysis = analysisResult.experimental_output!
+    });
+  } else {
+    analysis = fallbackAnalyzeJob(pageContent);
+  }
 
   const validatedAnalysis = {
     ...analysis,
     title: analysis.title || "Unknown Position",
     company: analysis.company || "Unknown Company",
-    description_summary: analysis.description_summary || "No description available",
-  }
+    description_summary:
+      analysis.description_summary || "No description available",
+  };
 
-  const normalizedSeniority = normalizeSeniority(validatedAnalysis.seniority_level)
+  const normalizedSeniority = normalizeSeniority(
+    validatedAnalysis.seniority_level,
+  );
 
   // Duplicate check by company + role name
   const duplicateCheck = await checkForDuplicate(
@@ -269,12 +534,15 @@ Extract the job details following the schema.`,
     user.id,
     validatedAnalysis.company,
     validatedAnalysis.title,
-    job_url
-  )
+    job_url ?? undefined,
+  );
 
   if (duplicateCheck.isDuplicate && duplicateCheck.existingJob) {
-    const response = getDuplicateResponse(duplicateCheck)
-    if (response.shouldBlock || duplicateCheck.duplicateType === "exact_match") {
+    const response = getDuplicateResponse(duplicateCheck);
+    if (
+      response.shouldBlock ||
+      duplicateCheck.duplicateType === "exact_match"
+    ) {
       return {
         success: true,
         job_id: duplicateCheck.existingJobId!,
@@ -305,26 +573,36 @@ Extract the job details following the schema.`,
           role_family: validatedAnalysis.role_family,
           industry_guess: validatedAnalysis.industry_guess || "Unknown",
         },
-      }
+      };
     }
   }
 
   // Fetch evidence and profile for evidence-based matching
   const [evidenceResult, profileResult] = await Promise.all([
-    supabase.from("evidence_library").select("*").eq("user_id", user.id).eq("is_active", true),
-    supabase.from("user_profile").select("*").eq("user_id", user.id).maybeSingle(),
-  ])
+    supabase
+      .from("evidence_library")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_active", true),
+    supabase
+      .from("user_profile")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
 
-  const canonicalEvidence: CanonicalEvidence[] = []
+  const canonicalEvidence: CanonicalEvidence[] = [];
   if (evidenceResult.data) {
     for (const record of evidenceResult.data) {
-      canonicalEvidence.push(normalizeEvidenceRecord(record))
+      canonicalEvidence.push(normalizeEvidenceRecord(record));
     }
   }
   if (profileResult.data?.experience) {
-    const experiences = Array.isArray(profileResult.data.experience) ? profileResult.data.experience : []
+    const experiences = Array.isArray(profileResult.data.experience)
+      ? profileResult.data.experience
+      : [];
     for (const exp of experiences) {
-      canonicalEvidence.push(...normalizeProfileExperience(exp, user.id))
+      canonicalEvidence.push(...normalizeProfileExperience(exp, user.id));
     }
   }
 
@@ -332,66 +610,98 @@ Extract the job details following the schema.`,
     canonicalEvidence.some(
       (e) =>
         e.skills.some((s) => s.toLowerCase().includes(tech.toLowerCase())) ||
-        e.text.toLowerCase().includes(tech.toLowerCase())
-    )
-  )
+        e.text.toLowerCase().includes(tech.toLowerCase()),
+    ),
+  );
   const keywordMatches = validatedAnalysis.keywords.filter((kw) =>
-    canonicalEvidence.some((e) => e.text.toLowerCase().includes(kw.toLowerCase()))
-  )
+    canonicalEvidence.some((e) =>
+      e.text.toLowerCase().includes(kw.toLowerCase()),
+    ),
+  );
 
   const dimensionScores = {
-    experience: canonicalEvidence.filter((e) => e.evidence_type === "work_experience").length > 0 ? 70 : 40,
+    experience:
+      canonicalEvidence.filter((e) => e.evidence_type === "work_experience")
+        .length > 0
+        ? 70
+        : 40,
     evidence: Math.min(
       100,
-      (canonicalEvidence.filter((e) => e.confidence === "high").length / Math.max(canonicalEvidence.length, 1)) * 100
+      (canonicalEvidence.filter((e) => e.confidence === "high").length /
+        Math.max(canonicalEvidence.length, 1)) *
+        100,
     ),
     skills:
       techStackMatch.length > 0
-        ? Math.min(100, (techStackMatch.length / Math.max(validatedAnalysis.tech_stack.length, 1)) * 100)
+        ? Math.min(
+            100,
+            (techStackMatch.length /
+              Math.max(validatedAnalysis.tech_stack.length, 1)) *
+              100,
+          )
         : 40,
-    seniority: normalizedSeniority === "Senior" || normalizedSeniority === "Lead" ? 70 : 50,
+    seniority:
+      normalizedSeniority === "Senior" || normalizedSeniority === "Lead"
+        ? 70
+        : 50,
     ats:
       keywordMatches.length > 0
-        ? Math.min(100, (keywordMatches.length / Math.max(validatedAnalysis.keywords.length, 1)) * 100)
+        ? Math.min(
+            100,
+            (keywordMatches.length /
+              Math.max(validatedAnalysis.keywords.length, 1)) *
+              100,
+          )
         : 40,
-  }
+  };
 
-  const inferredRole = inferRoleFromJobTitle(validatedAnalysis.title)
-  const weights = getWeightsForRole(inferredRole)
-  const mappedDimensionScores = {
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    skills_match: dimensionScores.skills,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats,
-  }
-  calculateWeightedScore(mappedDimensionScores, weights)
+  const inferredRole = inferRoleFromJobTitle(validatedAnalysis.title);
+  const weights = getWeightsForRole(inferredRole, validatedAnalysis.soc_category ?? undefined);
 
   const explainableFit: ExplainableFitScore = calculateExplainableFit(
     canonicalEvidence,
     validatedAnalysis.qualifications_required,
     validatedAnalysis.qualifications_preferred,
-    dimensionScores
-  )
+    dimensionScores,
+    weights,
+  );
 
   const fitBandToLegacy: Record<FitBand, "HIGH" | "MEDIUM" | "LOW"> = {
     strong_match: "HIGH",
     moderate_match: "MEDIUM",
     stretch_but_viable: "MEDIUM",
     low_match: "LOW",
-  }
+  };
 
   const fitResult = {
     fit: fitBandToLegacy[explainableFit.band],
     score: explainableFit.score,
     reasoning: [
-      ...explainableFit.strengths.slice(0, 3).map((s) => `Strong: ${s.requirement.slice(0, 50)}`),
+      ...explainableFit.strengths
+        .slice(0, 3)
+        .map((s) => `Strong: ${s.requirement.slice(0, 50)}`),
       ...explainableFit.gaps
         .filter((g) => g.severity === "critical")
         .slice(0, 2)
         .map((g) => `Gap: ${g.requirement.slice(0, 50)}`),
     ],
-  }
+  };
+
+  const gapAnalysis = detectGaps(
+    {
+      qualifications_required: validatedAnalysis.qualifications_required,
+      qualifications_preferred: validatedAnalysis.qualifications_preferred,
+      tech_stack: validatedAnalysis.tech_stack,
+      keywords: validatedAnalysis.keywords,
+      responsibilities: validatedAnalysis.responsibilities,
+      seniority_level: normalizedSeniority,
+      industry_guess: validatedAnalysis.industry_guess || undefined,
+    },
+    evidenceResult.data || [],
+    profileResult.data,
+    fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r))
+      .map((r: string) => r.replace(/^Gap:\s*/i, "")),
+  )
 
   // Insert job record
   const { data: job, error: insertError } = await supabase
@@ -401,24 +711,30 @@ Extract the job details following the schema.`,
       role_title: validatedAnalysis.title,
       company_name: validatedAnalysis.company,
       source: source,
-      job_url: job_url,
+      job_url: jobUrlForStorage,
       job_description: pageContent.slice(0, 10000),
       status: "analyzed",
     })
     .select()
-    .single()
+    .single();
 
   if (insertError) {
-    console.error("Job insert error:", insertError)
-    return { success: false, error: "Failed to save job" }
+    console.error("Job insert error:", insertError);
+    return { success: false, error: "Failed to save job" };
   }
 
   // Link to company (non-fatal)
-  const companyResult = await linkJobToCompany(supabase, user.id, job.id, validatedAnalysis.company, {
-    industry: validatedAnalysis.industry_guess || undefined,
-  })
+  const companyResult = await linkJobToCompany(
+    supabase,
+    user.id,
+    job.id,
+    validatedAnalysis.company,
+    {
+      industry: validatedAnalysis.industry_guess || undefined,
+    },
+  );
   if ("error" in companyResult) {
-    console.error("Company link error:", companyResult.error)
+    console.error("Company link error:", companyResult.error);
   }
 
   // Insert analysis record
@@ -436,63 +752,144 @@ Extract the job details following the schema.`,
     qualifications_preferred: validatedAnalysis.qualifications_preferred,
     keywords: validatedAnalysis.keywords,
     ats_phrases: validatedAnalysis.keywords,
-    matched_skills: fitResult.reasoning.filter((r: string) => !/^Gap:/i.test(r)),
+    matched_skills: fitResult.reasoning.filter(
+      (r: string) => !/^Gap:/i.test(r),
+    ),
     known_gaps: fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r)),
+    strengths_json: explainableFit.strengths,
+    gaps_json: gapAnalysis.gaps,
+    soc_major_group: validatedAnalysis.soc_major_group ?? null,
+    soc_group_name: validatedAnalysis.soc_group_name ?? null,
+    soc_category: validatedAnalysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
-    analysis_model: "llama-3.3-70b-versatile",
-  })
-  if (analysisError) console.error("Analysis insert error:", analysisError)
+    analysis_model: getActiveAnalysisModelName(),
+  });
+  if (analysisError) console.error("Analysis insert error:", analysisError);
 
   // Insert scores record
-  const confidenceMap: Record<string, number> = { HIGH: 0.9, MEDIUM: 0.7, LOW: 0.5 }
-  const confidenceScore = confidenceMap[explainableFit.confidence] || 0.7
+  const confidenceMap: Record<string, number> = {
+    HIGH: 0.9,
+    MEDIUM: 0.7,
+    LOW: 0.5,
+  };
+  const confidenceScore = confidenceMap[explainableFit.confidence] || 0.7;
   const { error: scoresError } = await supabase.from("job_scores").insert({
     job_id: job.id,
-    overall_score: fitResult.score,
+    overall_score: toDbScore(fitResult.score),
     confidence_score: confidenceScore,
-    skills_match: dimensionScores.skills,
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats || 0,
+    skills_match: toDbScore(dimensionScores.skills),
+    experience_relevance: toDbScore(dimensionScores.experience),
+    evidence_quality: toDbScore(dimensionScores.evidence),
+    seniority_alignment: toDbScore(dimensionScores.seniority),
+    ats_keywords: toDbScore(dimensionScores.ats),
     scoring_version: "3.0-explainable",
-  })
-  if (scoresError) console.error("Scores insert error:", scoresError)
+  });
+  if (scoresError) console.error("Scores insert error:", scoresError);
 
   // Backfill the jobs row with extracted requirements so hasJobAnalysis() returns true
   // and the workflow stepper advances correctly without needing a separate join.
   // NOTE: jobs table uses role_title/company_name — NOT title/company.
-  const gaps = fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r))
-  const strengths = fitResult.reasoning.filter((r: string) => !/^Gap:/i.test(r))
+  const gaps = fitResult.reasoning.filter((r: string) => /^Gap:/i.test(r));
+  const strengths = fitResult.reasoning.filter(
+    (r: string) => !/^Gap:/i.test(r),
+  );
   const { error: backfillError } = await supabase
     .from("jobs")
     .update({
       role_title: validatedAnalysis.title,
       company_name: validatedAnalysis.company,
-      qualifications_required: validatedAnalysis.qualifications_required,
-      responsibilities: validatedAnalysis.responsibilities,
-      score: fitResult.score,
+      score: toDbScore(fitResult.score),
       fit: fitResult.fit,
+      // Ensure fit and score are always written
       score_gaps: gaps,
       score_strengths: strengths,
+      evidence_map: withCoachStepMeta({}, gaps.length > 0 || fitResult.score < 70 ? "required" : "completed", {
+        reason: "job_analyzed",
+      }),
       seniority_level: normalizedSeniority,
       role_family: validatedAnalysis.role_family,
-      location: validatedAnalysis.location,
       industry_guess: validatedAnalysis.industry_guess,
-      ats_keywords: validatedAnalysis.keywords,
     })
     .eq("id", job.id)
-    .eq("user_id", user.id)
-  if (backfillError) console.error("Jobs backfill error:", backfillError)
+    .eq("user_id", user.id);
+  if (backfillError) console.error("Jobs backfill error:", backfillError);
+  if (!backfillError) {
+    await initializeEvidenceMapForJob({
+      supabase,
+      userId: user.id,
+      jobId: job.id,
+    });
+
+    try {
+      await buildEvidenceMapForJob({
+        supabase,
+        userId: user.id,
+        jobId: job.id,
+      });
+    } catch (evidenceMapError) {
+      console.error("Evidence map build error:", evidenceMapError);
+      await supabase
+        .from("jobs")
+        .update({
+          evidence_map: withCoachStepMeta(
+            {
+              matching_complete: false,
+              map_build_error: {
+                code: "evidence_map_build_failed",
+                message:
+                  evidenceMapError instanceof Error
+                    ? evidenceMapError.message
+                    : "Unknown evidence map build error",
+                failed_at: new Date().toISOString(),
+              },
+            },
+            "required",
+            {
+              reason: "evidence_map_build_failed",
+            },
+          ),
+        })
+        .eq("id", job.id)
+        .eq("user_id", user.id);
+    }
+  }
+
+  if (isContextEngineEnabled()) {
+    const jobContext = buildJobContext({
+      jobId: job.id,
+      jobText: pageContent,
+      title: validatedAnalysis.title,
+      company: validatedAnalysis.company,
+      requirements: validatedAnalysis.qualifications_required,
+      responsibilities: validatedAnalysis.responsibilities,
+      keywords: validatedAnalysis.keywords,
+    });
+    const profileContext = buildEvidenceLibraryContext({
+      userId: user.id,
+      records: (evidenceResult.data ?? []) as Array<Record<string, any>>,
+    });
+    const gapContext = runContextGapMatch({
+      userId: user.id,
+      jobId: job.id,
+      profile: profileContext,
+      requirements: jobContext.requirements,
+    });
+    void mirrorProfileContext({ supabase, userId: user.id, context: profileContext });
+    void mirrorJobContext({ supabase, jobId: job.id, jobContext });
+    void mirrorGapMatches({
+      supabase,
+      userId: user.id,
+      jobId: job.id,
+      matches: gapContext.gapReport.matches,
+    });
+  }
 
   // Run orchestration flow
   const orchestration = await runJobFlow({
     supabase,
-    request: requestLike,
     userId: user.id,
     jobId: job.id,
-    triggerInterviewPrep: false,
-  })
+  });
 
   // Fetch updated job with generated materials
   const { data: updatedJob } = await supabase
@@ -501,7 +898,7 @@ Extract the job details following the schema.`,
     .eq("id", job.id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
-    .single()
+    .single();
 
   return {
     success: true,
@@ -540,5 +937,5 @@ Extract the job details following the schema.`,
       success: orchestration.success,
       steps: orchestration.steps,
     },
-  }
+  };
 }

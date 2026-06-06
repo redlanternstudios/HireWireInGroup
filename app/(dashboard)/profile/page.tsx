@@ -14,6 +14,8 @@ import {
   FileText, CheckCircle, AlertCircle, ShieldCheck,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { LinkedInImportWidget } from "@/components/dashboard/LinkedInImportWidget"
+import { ParseGithubUrlButton } from "@/components/ParseGithubButton"
 
 interface ProfileData {
   full_name: string | null
@@ -47,11 +49,17 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push("/login"); return }
 
-    const { data } = await supabase
+    const { data, error: profileError } = await supabase
       .from("user_profile")
       .select("full_name, email, phone, location, summary, skills, website_url, github_url")
       .eq("user_id", user.id)
-      .single()
+      .maybeSingle()
+
+    if (profileError) {
+      setError(profileError.message)
+      setLoading(false)
+      return
+    }
 
     if (data) {
       setProfile({
@@ -60,7 +68,7 @@ export default function ProfilePage() {
         phone: data.phone || "",
         location: data.location || "",
         summary: data.summary || "",
-        skills: data.skills || [],
+        skills: Array.isArray(data.skills) ? data.skills : [],
         website_url: data.website_url || "",
         github_url: data.github_url || "",
       })
@@ -107,12 +115,12 @@ export default function ProfilePage() {
     const trimmed = skillInput.trim()
     if (!trimmed) return
     if (profile.skills?.includes(trimmed)) { setSkillInput(""); return }
-    setProfile(p => ({ ...p, skills: [...(p.skills || []), trimmed] }))
+    setProfile(p => ({ ...p, skills: [...(Array.isArray(p.skills) ? p.skills : []), trimmed] }))
     setSkillInput("")
   }
 
   const removeSkill = (skill: string) => {
-    setProfile(p => ({ ...p, skills: (p.skills || []).filter(s => s !== skill) }))
+    setProfile(p => ({ ...p, skills: (Array.isArray(p.skills) ? p.skills : []).filter(s => s !== skill) }))
   }
 
   // Profile strength calc
@@ -134,8 +142,18 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="hw-page">
+        <div className="hw-empty min-h-64">
+          <div className="hw-empty-icon">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Loading profile</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Pulling your saved career identity and profile settings.
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
@@ -179,6 +197,25 @@ export default function ProfilePage() {
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
+        </div>
+      )}
+
+      {saved && (
+        <div className="hw-panel p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Profile saved</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Next, add a job so HireWire can match this career identity against a real role.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => router.push("/evidence")}>
+              Career Context
+            </Button>
+            <Button size="sm" className="hw-btn-primary gap-1.5" onClick={() => router.push("/jobs?add=true")}>
+              <Plus className="h-3.5 w-3.5" /> Add Job
+            </Button>
+          </div>
         </div>
       )}
 
@@ -261,8 +298,8 @@ export default function ProfilePage() {
           {/* Skills */}
           <div className="hw-card p-6 space-y-4">
             <p className="hw-section-label">Skills</p>
-            <div className="flex flex-wrap gap-2 min-h-[36px]">
-              {(profile.skills || []).map(skill => (
+            <div className="flex flex-wrap gap-2 min-h-9">
+              {(Array.isArray(profile.skills) ? profile.skills : []).map(skill => (
                 <Badge key={skill} variant="secondary" className="gap-1 pr-1.5">
                   {skill}
                   <button
@@ -274,7 +311,7 @@ export default function ProfilePage() {
                   </button>
                 </Badge>
               ))}
-              {(profile.skills || []).length === 0 && (
+              {(Array.isArray(profile.skills) ? profile.skills : []).length === 0 && (
                 <p className="text-sm text-muted-foreground">No skills added yet.</p>
               )}
             </div>
@@ -311,15 +348,24 @@ export default function ProfilePage() {
                 <Label htmlFor="github_url" className="flex items-center gap-1.5 text-xs">
                   <Github className="h-3.5 w-3.5 text-muted-foreground" /> GitHub
                 </Label>
-                <Input
-                  id="github_url"
-                  value={profile.github_url || ""}
-                  onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
-                  placeholder="https://github.com/yourusername"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="github_url"
+                    value={profile.github_url || ""}
+                    onChange={e => setProfile(p => ({ ...p, github_url: e.target.value }))}
+                    placeholder="https://github.com/yourusername"
+                    className="flex-1"
+                  />
+                  {profile.github_url?.trim() && (
+                    <ParseGithubUrlButton githubUrl={profile.github_url.trim()} />
+                  )}
+                </div>
               </div>
             </div>
           </div>
+
+          {/* LinkedIn Import */}
+          <LinkedInImportWidget />
         </div>
 
         {/* Right Rail — Profile Strength */}

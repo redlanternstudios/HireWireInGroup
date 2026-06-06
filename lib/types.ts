@@ -198,8 +198,13 @@ export interface Job {
   id: string
   
   // Core identification
-  title: string
-  company: string
+  // DB columns are role_title / company_name.
+  // title / company are legacy aliases populated by query mappers (loadJobAnalysis, etc.)
+  // — do not read them from raw DB rows.
+  role_title?: string | null
+  company_name?: string | null
+  title: string        // alias populated by query mappers
+  company: string      // alias populated by query mappers
   source: JobSource
   job_url: string | null
   
@@ -269,7 +274,27 @@ export interface Job {
 
 export interface EvidenceRecord {
   id: string
-  source_type: "work_experience" | "project" | "portfolio_entry" | "shipped_product" | "live_site" | "achievement" | "certification" | "publication" | "open_source" | "education" | "skill"
+  source_type:
+    | "work_experience"
+    | "education"
+    | "skill"
+    | "certification"
+    | "project"
+    | "achievement"
+    | "publication"
+    | "portfolio_entry"
+    | "shipped_product"
+    | "open_source"
+    | "live_site"
+    | "language"
+    | "award"
+    | "volunteer"
+    | "military"
+    | "website"
+    | "linkedin"
+    | "github"
+    | "user_input"
+    | "ai_inferred"
   source_title: string
   source_url?: string | null
   
@@ -290,6 +315,7 @@ export interface EvidenceRecord {
   workflows_created?: string[] | null
   outcomes?: string[] | null
   proof_snippet?: string | null
+  coached_version?: string | null
   
   // Pre-approved content for generation
   approved_keywords?: string[] | null
@@ -310,6 +336,9 @@ export interface EvidenceRecord {
   
   // Provenance
   source_resume_id?: string | null
+  provenance?: "resume_import" | "linkedin_import" | "coach_session" | "user_manual" | null
+  first_confirmed_job_id?: string | null
+  coach_tags?: string[] | null
 
   // Metadata
   is_active: boolean

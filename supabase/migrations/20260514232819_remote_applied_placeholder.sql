@@ -1,0 +1,2 @@
+-- Placeholder for migration already present in remote Supabase history.
+-- Added locally so `supabase db push` can reconcile migration versions.

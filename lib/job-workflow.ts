@@ -16,6 +16,7 @@
  */
 
 import type { Job, EvidenceRecord } from "./types"
+import { getCoachStepState, isEvidenceMapMetadataKey } from "@/lib/coach-step"
 
 // ============================================================================
 // WORKFLOW STAGE TYPES
@@ -70,7 +71,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
 export const STAGE_LABELS: Record<WorkflowStage, string> = {
   job_ingested: "Draft",
   job_parsed: "Parsed",
-  evidence_mapped: "Evidence Mapped",
+  evidence_mapped: "Fit Proved",
   fit_scored: "Scored",
   materials_generated: "Materials Ready",
   ready: "Ready to Apply",
@@ -80,7 +81,7 @@ export const STAGE_LABELS: Record<WorkflowStage, string> = {
 export const STAGE_DESCRIPTIONS: Record<WorkflowStage, string> = {
   job_ingested: "Job added, awaiting analysis",
   job_parsed: "Requirements extracted from job posting",
-  evidence_mapped: "Your evidence mapped to job requirements",
+  evidence_mapped: "HireWire has enough confirmed proof to continue",
   fit_scored: "Fit score calculated based on evidence coverage",
   materials_generated: "Resume and cover letter generated",
   ready: "Quality checks passed, ready to submit application",
@@ -193,7 +194,7 @@ export function hasEvidenceMap(job: Job | null): boolean {
   if (typeof evidenceMap === 'object') {
     const keys = Object.keys(evidenceMap)
     // Filter out metadata keys
-    const requirementKeys = keys.filter(k => !k.startsWith('_') && k !== 'matching_complete' && k !== 'gaps_acknowledged')
+    const requirementKeys = keys.filter(k => !isEvidenceMapMetadataKey(k))
     return requirementKeys.length > 0
   }
   
@@ -245,8 +246,7 @@ export function hasQualityPass(job: Job | null): boolean {
   // Explicit quality pass
   if (job.quality_passed === true) return true
   
-  // No quality issues means pass
-  if (job.generation_quality_issues && job.generation_quality_issues.length === 0) return true
+  // No quality issues also counts as pass
   if (job.generation_quality_issues && job.generation_quality_issues.length === 0) return true
   
   return false
@@ -273,21 +273,13 @@ export function getNextAction(stage: WorkflowStage, jobId?: string): WorkflowAct
     
     case "job_parsed":
       return {
-        label: "Match Evidence",
+        label: "Prove Fit",
         href: `${baseHref}/evidence-match`,
         variant: "default",
-        description: "Map your experience to job requirements",
+        description: "Answer only what HireWire cannot verify yet",
       }
     
     case "evidence_mapped":
-      return {
-        label: "Review Scoring",
-        href: `${baseHref}/scoring`,
-        variant: "default",
-        description: "Review your fit score and gaps",
-      }
-    
-    case "fit_scored":
       return {
         label: "Generate Materials",
         href: `${baseHref}/documents`,
@@ -295,10 +287,19 @@ export function getNextAction(stage: WorkflowStage, jobId?: string): WorkflowAct
         description: "Generate tailored resume and cover letter",
       }
     
+    case "fit_scored": {
+      return {
+        label: "Start Coach",
+        href: `${baseHref}/evidence-match`,
+        variant: "default",
+        description: "Resolve or skip fit gaps before generating materials",
+      }
+    }
+    
     case "materials_generated":
       return {
         label: "Review & Export",
-        href: baseHref,
+        href: `${baseHref}/documents`,
         variant: "default",
         description: "Review materials and export for application",
       }
@@ -333,12 +334,13 @@ function getBlockers(job: Job | null, progress: WorkflowState['progress']): stri
   }
   
   if (!progress.evidenceMapped && progress.parsed) {
-    blockers.push("Match your evidence to job requirements")
+    blockers.push("Prove fit for this role")
   }
   
   // Check for critical gaps that need addressing
-  if (job.score_gaps && job.score_gaps.length > 0 && !areGapsAcknowledged(job)) {
-    blockers.push(`${job.score_gaps.length} gap(s) need attention`)
+  const coachStep = getCoachStepState(job)
+  if (coachStep.required && !coachStep.complete) {
+    blockers.push(`${coachStep.remainingGaps.length || coachStep.gaps.length || 1} gap(s) need attention`)
   }
   
   return blockers
@@ -375,6 +377,8 @@ export function canAccessSection(stage: WorkflowStage, section: JobDetailSection
       return stageIndex >= WORKFLOW_STAGES.indexOf("fit_scored")
     
     case "generation":
+      // Requires matching_complete, which is what advances the stage to "evidence_mapped".
+      // Gate at evidence_mapped (same as can_generate in readiness.ts).
       return stageIndex >= WORKFLOW_STAGES.indexOf("evidence_mapped")
     
     case "materials_preview":
@@ -396,13 +400,13 @@ export function getSectionLockReason(stage: WorkflowStage, section: JobDetailSec
   
   switch (section) {
     case "evidence_matching":
-      return "Analyze job to unlock evidence matching"
+      return "Analyze job to unlock Prove Fit"
     
     case "fit_analysis":
-      return "Complete evidence matching and scoring to see fit analysis"
+      return "Complete Prove Fit and scoring to see fit analysis"
     
     case "generation":
-      return "Match your evidence to unlock document generation"
+      return "Prove fit to unlock document generation"
     
     case "materials_preview":
       return "Generate materials to preview documents"
@@ -430,7 +434,7 @@ export function calculateEvidenceCoverage(
   
   const map = job.evidence_map as Record<string, unknown>
   const mappedKeys = Object.keys(map).filter(
-    k => !k.startsWith('_') && k !== 'matching_complete' && k !== 'gaps_acknowledged'
+    k => !isEvidenceMapMetadataKey(k)
   )
   
   if (!totalRequirements || totalRequirements === 0) {

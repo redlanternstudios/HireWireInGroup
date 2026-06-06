@@ -1,42 +1,32 @@
 import { createClient } from "@/lib/supabase/server"
+import { ReadinessReview } from "@/components/readiness-review"
+import type { DetectedGap } from "@/lib/gap-detection"
+import type { FitStrength } from "@/lib/canonical-evidence"
 import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { GenerateButton } from "./GenerateButton"
 import { AnalyzeJobButton } from "./AnalyzeJobButton"
+import ReadinessChecklist from "@/components/ReadinessChecklist"
 import {
   ChevronLeft,
   ExternalLink,
   RefreshCw,
-  CheckCircle2,
   AlertTriangle,
-  FileText,
   Lock,
   ArrowRight,
-  Zap,
 } from "lucide-react"
-import {
-  getWorkflowState,
-  STAGE_LABELS,
-  WORKFLOW_STAGES,
-  type WorkflowStage,
-} from "@/lib/job-workflow"
+import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
+import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
+import { getUnresolvedRequirements } from "@/lib/clarity/getUnresolvedRequirements"
+import { ClarityDrawerLauncher } from "./ClarityDrawerLauncher"
 
 export const dynamic = "force-dynamic"
 
-const STATUS_CLASS: Record<string, string> = {
-  draft: "status-draft", analyzing: "status-analyzing", analyzed: "status-analyzing",
-  generating: "status-analyzing", ready: "status-ready", applied: "status-applied",
-  interviewing: "status-applied", offered: "status-offered", rejected: "status-rejected",
-}
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft", analyzing: "Analyzing", analyzed: "Analyzed", generating: "Generating",
-  ready: "Ready", applied: "Applied", interviewing: "Interviewing", offered: "Offered", rejected: "Rejected",
-}
-
-function ScoreBar({ label, value }: { label: string; value: number }) {
+function ScoreBar({ label, value, note }: { label: string; value: number; note?: string }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
@@ -46,25 +36,39 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
       <div className="quality-bar">
         <div className="quality-bar-fill" style={{ width: `${Math.min(100, Math.round(value))}%` }} />
       </div>
+      {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
     </div>
   )
 }
 
-/** Horizontal stage progress strip */
-function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
-  const currentIndex = WORKFLOW_STAGES.indexOf(stage)
-  // Only show the 5 main stages (exclude applied for the strip)
-  const visibleStages: WorkflowStage[] = [
-    "job_ingested", "job_parsed", "evidence_mapped", "fit_scored", "materials_generated", "ready",
-  ]
+const READINESS_STEP: Record<string, number> = {
+  analyze_needed: 1,
+  evidence_needed: 2,
+  coach_needed: 2,
+  ready_to_generate: 3,
+  package_review: 4,
+  ready_to_apply: 5,
+  applied: 5,
+  interviewing: 5,
+  offered: 5,
+  rejected: 5,
+  archived: 5,
+}
+
+const STEP_LABELS = ["Analyze", "Prove Fit", "Generate", "Review", "Apply"]
+
+function ReadinessProgressStrip({ displayState }: { displayState: string }) {
+  const currentStep = READINESS_STEP[displayState] ?? 1
+
   return (
     <div className="flex items-center gap-0">
-      {visibleStages.map((s, i) => {
-        const idx = WORKFLOW_STAGES.indexOf(s)
-        const done = idx < currentIndex
-        const active = s === stage
+      {STEP_LABELS.map((label, i) => {
+        const step = i + 1
+        const done = step < currentStep
+        const active = step === currentStep
+
         return (
-          <div key={s} className="flex items-center flex-1 min-w-0">
+          <div key={label} className="flex min-w-0 flex-1 items-center">
             <div className="flex flex-col items-center gap-1 flex-1">
               <div
                 className={[
@@ -76,10 +80,10 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
                 "text-[9px] font-medium uppercase tracking-wide text-center leading-tight hidden sm:block",
                 done ? "text-emerald-600" : active ? "text-primary" : "text-muted-foreground/50",
               ].join(" ")}>
-                {STAGE_LABELS[s]}
+                {label}
               </span>
             </div>
-            {i < visibleStages.length - 1 && (
+            {i < STEP_LABELS.length - 1 && (
               <div className="w-2 h-1.5 shrink-0" />
             )}
           </div>
@@ -89,89 +93,64 @@ function WorkflowProgress({ stage }: { stage: WorkflowStage }) {
   )
 }
 
-/** The always-visible next step CTA banner — never returns null */
-function NextStepBanner({ workflow, jobId, hasDocs }: {
-  workflow: ReturnType<typeof getWorkflowState>
+function ReadinessNextStepCard({
+  readiness,
+  jobId,
+  hasUrl,
+}: {
+  readiness: ReturnType<typeof evaluateReadiness>
   jobId: string
-  hasDocs: boolean
+  hasUrl: boolean
 }) {
-  const { stage, nextAction, blockers } = workflow
-
-  // Terminal: applied
-  if (stage === "applied") {
+  if (readiness.outcome !== "active") {
     return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-emerald-500">
-        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-        <div>
-          <p className="text-sm font-semibold text-foreground">Application submitted</p>
-          <p className="text-xs text-muted-foreground">Track your progress in the Applications tab.</p>
+      <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="hw-section-label mb-1">Next step</p>
+            <p className="text-sm font-semibold text-foreground">
+              {readiness.outcome.replace(/_/g, " ")} — tracking outcomes
+            </p>
+            <p className="text-xs text-muted-foreground">
+              This job has moved into outcome tracking.
+            </p>
+          </div>
+          <Link href="/applications" className="shrink-0">
+            <Button size="sm" variant="outline" className="gap-1.5">
+              View applications <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
         </div>
-        <Link href="/applications" className="ml-auto shrink-0">
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-            Track <ArrowRight className="h-3 w-3" />
-          </Button>
-        </Link>
       </div>
     )
   }
 
-  // Has docs: primary CTA is view documents
-  if (hasDocs) {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-        <Zap className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Materials ready</p>
-          <p className="text-xs text-muted-foreground">Your tailored resume and cover letter are generated.</p>
-        </div>
-        <Link href={`/jobs/${jobId}/documents`} className="shrink-0">
-          <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-            <FileText className="h-3.5 w-3.5" /> View documents
-          </Button>
-        </Link>
-      </div>
-    )
-  }
+  const action = readiness.nextAction
 
-  if (!nextAction) return null
-
-  // job_ingested stage: the CTA is to analyze — render the interactive button inline
-  if (stage === "job_ingested") {
-    return (
-      <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-        <ArrowRight className="h-5 w-5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Next: Analyze Job</p>
-          <p className="text-xs text-muted-foreground">Extract requirements, score your fit, and unlock coaching.</p>
-        </div>
-        <div className="shrink-0">
-          <AnalyzeJobButton jobId={jobId} hasUrl={true} label="Analyze Job" size="sm" />
-        </div>
-      </div>
-    )
-  }
+  if (!action) return null
 
   return (
-    <div className="hw-card px-5 py-4 flex items-center gap-3 border-l-4 border-l-primary">
-      <ArrowRight className="h-5 w-5 text-primary shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground">Next: {nextAction.label}</p>
-        <p className="text-xs text-muted-foreground">{nextAction.description}</p>
-        {blockers.length > 0 && (
-          <ul className="mt-1 space-y-0.5">
-            {blockers.map((b) => (
-              <li key={b} className="flex items-center gap-1 text-[11px] text-amber-600">
-                <AlertTriangle className="h-3 w-3 shrink-0" /> {b}
-              </li>
-            ))}
-          </ul>
+    <div className="hw-card border-l-4 border-l-primary px-5 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="hw-section-label mb-1">Next step</p>
+          <p className="text-sm text-muted-foreground">{action.description}</p>
+        </div>
+        {action.label === "Analyze job" ? (
+          <AnalyzeJobButton
+            jobId={jobId}
+            hasUrl={hasUrl}
+            label={action.label}
+            size="sm"
+          />
+        ) : (
+          <Link href={action.href} className="shrink-0">
+            <Button size="sm" className="hw-btn-primary gap-1.5">
+              {action.label} <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
         )}
       </div>
-      <Link href={nextAction.href} className="shrink-0">
-        <Button size="sm" className="hw-btn-primary gap-1.5 text-xs">
-          {nextAction.label} <ArrowRight className="h-3 w-3" />
-        </Button>
-      </Link>
     </div>
   )
 }
@@ -193,10 +172,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   if (jobError || !job) notFound()
 
-  const [{ data: analysis }, { data: scores }, { data: userData }] = await Promise.all([
+  const [{ data: analysis }, { data: scores }, { data: userData }, { data: proveFitDecisions }] = await Promise.all([
     supabase
       .from("job_analyses")
-      .select("matched_skills, known_gaps, summary, qualifications_required, responsibilities, title, company, location")
+      .select("matched_skills, known_gaps, qualifications_required, responsibilities, title, company, location, strengths_json, gaps_json")
       .eq("job_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -210,11 +189,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .select("plan_type")
       .eq("id", user.id)
       .maybeSingle(),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision")
+      .eq("job_id", id)
+      .eq("user_id", user.id),
   ])
 
   // Merge analysis fields into job so workflow functions can read them.
-  // Priority: jobs row (backfilled by analyzeJobCore) > job_analyses join.
-  // Never use matched_skills as a proxy for qualifications_required.
   const jobWithAnalysis: Job = {
     ...job,
     title: job.role_title ?? job.title ?? analysis?.title ?? "Untitled role",
@@ -234,25 +216,56 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     score: scores?.overall_score ?? job.score ?? null,
   }
 
-  const workflow = getWorkflowState(jobWithAnalysis, id)
-
-  const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
-  const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
-  const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
-  const hasUrl = !!(job.job_url)
-  // isAnalyzed is true if the job has requirements extracted (either on the row or in job_analyses)
-  const isAnalyzed = !!(
+  // Authoritative "analysis really exists" signal — based on real artifacts
+  // (job_analyses / job_scores / extracted requirements), NOT a bare jobs.score.
+  const analysisPresent = !!(
     analysis ||
     scores ||
     (jobWithAnalysis.qualifications_required?.length ?? 0) > 0 ||
     (jobWithAnalysis.responsibilities?.length ?? 0) > 0
   )
+
+  const readiness = evaluateReadiness({
+    ...job,
+    analysis_present: analysisPresent,
+    prove_fit_decisions: proveFitDecisions ?? [],
+  })
+  const coachStep = getCoachStepState(job)
+
+  const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
+  const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
+  const strengths: FitStrength[] = Array.isArray(analysis?.strengths_json) ? (analysis.strengths_json as FitStrength[]) : []
+  const detectedGaps: DetectedGap[] = Array.isArray(analysis?.gaps_json) ? (analysis.gaps_json as DetectedGap[]) : []
+  const hasDocs = !!(job.generated_resume || job.generated_cover_letter)
+  const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
+  const isAnalyzed = analysisPresent
   const overallScore = scores?.overall_score ?? job.score ?? null
+  const scoreGaps: string[] = Array.isArray(job.score_gaps)
+    ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
+    : []
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
+  // One action at a time: while the journey's primary step is still Analyze or
+  // Prove Fit, don't surface the header "Re-analyze" as a competing action.
+  const inEarlyStageAction =
+    readiness.nextAction?.label === "Analyze job" ||
+    readiness.nextAction?.label === "Prove Fit"
+
+  // Phase 3 clarity surface — unresolved requirements derived via the canonical
+  // unresolved-requirements helper (same logic as GET /api/jobs/[id]/evidence-map),
+  // run server-side. Source of truth is prove_fit_decisions; evidence_map is cache.
+  const unresolvedRequirements =
+    isAnalyzed && readiness.outcome === "active"
+      ? await getUnresolvedRequirements({
+          supabase,
+          userId: user.id,
+          jobId: id,
+          evidenceMap: (job as Record<string, unknown>).evidence_map,
+        })
+      : []
 
   return (
-    <div className="hw-page max-w-3xl">
+    <div className="hw-page">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link href="/jobs" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -268,7 +281,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               {job.role_title ?? "Untitled role"}
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">{job.company_name ?? "—"}</p>
-            {job.job_url && (
+            {hasUrl && (
               <a
                 href={job.job_url}
                 target="_blank"
@@ -282,9 +295,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             <Badge
               variant="outline"
-              className={`text-[10px] font-medium ${STATUS_CLASS[job.status] ?? "status-draft"}`}
+              className={`text-[10px] font-medium ${readiness.displayClassName}`}
             >
-              {STATUS_LABEL[job.status] ?? job.status}
+              {readiness.displayLabel}
             </Badge>
             {job.fit && (
               <Badge
@@ -298,21 +311,47 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 {job.fit} fit
               </Badge>
             )}
-            {isAnalyzed && hasUrl && (
+            {isAnalyzed && hasUrl && !inEarlyStageAction && (
               <AnalyzeJobButton jobId={id} hasUrl={hasUrl} label="Re-analyze" size="sm" />
             )}
           </div>
         </div>
 
-        {/* Workflow progress strip */}
+        {/* Readiness progress strip */}
         <div className="mt-4 pt-4 border-t border-border">
-          <WorkflowProgress stage={workflow.stage} />
+          <ReadinessProgressStrip displayState={readiness.displayState} />
         </div>
       </div>
 
-      {/* NEXT STEP CTA — always visible, never a dead end */}
+      <div className="hw-workspace">
+        <div className="hw-workspace-main space-y-4">
+
+      {/* NEXT STEP — single command surface */}
       {!stillProcessing && (
-        <NextStepBanner workflow={workflow} jobId={id} hasDocs={hasDocs} />
+        <>
+          <ReadinessNextStepCard readiness={readiness} jobId={id} hasUrl={hasUrl} />
+          {unresolvedRequirements.length > 0 && (
+            <ClarityDrawerLauncher
+              jobId={id}
+              jobTitle={jobWithAnalysis.title ?? "this role"}
+              company={jobWithAnalysis.company ?? ""}
+              requirements={unresolvedRequirements}
+            />
+          )}
+          <ReadinessChecklist
+            checklist={readiness.checklist}
+            jobId={id}
+            nextAction={readiness.nextAction}
+          />
+          {/* Outcome Tracker — visible once applied or in active pipeline */}
+          {["applied", "interviewing", "offered", "rejected"].includes(job.status) && (
+            <OutcomeTracker
+              jobId={id}
+              currentOutcome={(job as Record<string, unknown>).outcome as string | null}
+              currentStatus={job.status}
+            />
+          )}
+        </>
       )}
 
       {/* Processing state */}
@@ -323,13 +362,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <p className="text-sm font-semibold">Analysis in progress</p>
             <p className="text-xs text-muted-foreground mt-1">This usually takes 15–30 seconds.</p>
           </div>
-          <Link href="">
-            <button
-              onClick={undefined}
-              className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </button>
+          <Link
+            href={`/jobs/${id}`}
+            className="inline-flex items-center gap-1.5 text-xs hw-card px-3 py-1.5 hover:border-primary/30 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Link>
         </div>
       )}
@@ -337,19 +374,57 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* Analysis results */}
       {!stillProcessing && isAnalyzed && (
         <>
-          {/* Fit scores */}
           {(overallScore !== null || scores?.skills_match || scores?.experience_relevance) && (
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="hw-section-label">Fit Analysis</h2>
                 {overallScore !== null && (
-                  <span className="text-2xl font-bold tabular-nums text-foreground">
-                    {Math.round(Number(overallScore))}
-                    <span className="text-sm font-normal text-muted-foreground">/100</span>
-                  </span>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold tabular-nums text-foreground">
+                      {Math.round(Number(overallScore))}
+                      <span className="text-sm font-normal text-muted-foreground">/100</span>
+                    </span>
+                  </div>
                 )}
               </div>
+              {overallScore !== null && (
+                <div className="mb-4 rounded-md border border-border bg-muted/30 px-3 py-2">
+                  {scoreGaps.length > 0 ? (
+                    <div>
+                      <p className="hw-section-label mb-2">Top gaps</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {scoreGaps.slice(0, 3).map((gap) => (
+                          <span
+                            key={gap}
+                            className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                          >
+                            {gap}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Score reflects how well your evidence covers this role&apos;s requirements.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-3">
+                {coachStep.evidenceCoverage != null && (
+                  <ScoreBar
+                    label="Evidence coverage"
+                    value={coachStep.evidenceCoverage}
+                    note="How much of the role is backed by proof in your Career Context."
+                  />
+                )}
+                {coachStep.strategicFit != null && (
+                  <ScoreBar
+                    label="Strategic fit"
+                    value={coachStep.strategicFit}
+                    note="How well your current evidence lines up with this job after weighting role signals."
+                  />
+                )}
                 {scores?.skills_match != null && (
                   <ScoreBar label="Skills match" value={Number(scores.skills_match)} />
                 )}
@@ -363,47 +438,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          {/* Summary */}
-          {analysis?.summary && (
-            <div className="hw-card px-6 py-5">
-              <h2 className="hw-section-label mb-3">Summary</h2>
-              <p className="text-sm text-foreground leading-relaxed">{analysis.summary}</p>
-            </div>
-          )}
+          <ReadinessReview
+            strengths={strengths}
+            detectedGaps={detectedGaps}
+            fitLabel={job.fit ?? null}
+            overallScore={overallScore !== null ? Number(overallScore) : null}
+            fallbackMatchedSkills={matchedSkills}
+            fallbackKnownGaps={knownGaps}
+          />
 
-          {/* Strengths + Gaps */}
-          {(matchedSkills.length > 0 || knownGaps.length > 0) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {matchedSkills.length > 0 && (
-                <div className="hw-card px-5 py-4">
-                  <h2 className="hw-section-label mb-3">What you bring</h2>
-                  <ul className="space-y-2">
-                    {matchedSkills.map((skill, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                        <span>{skill}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {knownGaps.length > 0 && (
-                <div className="hw-card px-5 py-4">
-                  <h2 className="hw-section-label mb-3">Gaps to address</h2>
-                  <ul className="space-y-2">
-                    {knownGaps.map((gap, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                        <span>{gap.replace(/^Gap:\s*/i, "")}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Documents section — only shown when no docs yet (has docs = CTA banner above) */}
           {!hasDocs && (
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-1">
@@ -413,7 +456,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 Generate a tailored resume and cover letter for this role.
               </p>
               <div className="space-y-2">
-                <GenerateButton jobId={job.id} />
+                <GenerateButton jobId={job.id} disabled={!readiness.canGenerate} disabledReason={readiness.nextAction?.description} />
                 {isFreePlan && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Lock className="h-3 w-3" />
@@ -444,6 +487,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       )}
+
+        </div>
+
+        <div className="hw-workspace-rail space-y-4">
+          <div className="hw-panel p-4">
+            <p className="hw-section-label mb-2">Job Snapshot</p>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Readiness</span>
+                <span className="font-semibold text-foreground">{readiness.displayLabel}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Fit Score</span>
+                <span className="font-semibold text-foreground tabular-nums">
+                  {overallScore !== null ? `${Math.round(Number(overallScore))}/100` : "Pending"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "HireWire: v0 live handoff watch",
+      "type": "shell",
+      "command": "npm run agent:v0-sync:watch",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "HireWire: v0 live handoff once",
+      "type": "shell",
+      "command": "npm run agent:v0-sync",
+      "problemMatcher": []
+    }
+  ]
+}

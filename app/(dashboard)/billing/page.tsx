@@ -56,7 +56,7 @@ export default function BillingPage() {
         .from("users")
         .select("subscription_status, current_period_end, stripe_subscription_id")
         .eq("id", user.id)
-        .single()
+        .maybeSingle()
       setUserData(data)
     }
     fetchUserData()
@@ -111,7 +111,7 @@ export default function BillingPage() {
     : null
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
+    <div className="hw-page max-w-3xl">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>

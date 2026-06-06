@@ -8,10 +8,10 @@
  * and this logic can be reused by future parse endpoints.
  */
 
-import { generateText, Output } from "ai"
+import { generateStructuredText } from "@/lib/ai/gateway"
 import { z } from "zod"
 import type { ParsedResume } from "./mapResumeToEvidence"
-import { CLAUDE_MODELS } from "./adapters/anthropic"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 // ── Zod schemas for structured extraction ─────────────────────────────────
 
@@ -71,16 +71,18 @@ const ParsedResumeSchema = z.object({
  * Uses Claude via AI Gateway for extraction.
  */
 export async function parseResumeText(resumeText: string): Promise<ParsedResume> {
-  const result = await generateText({
-    model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: ParsedResumeSchema }),
-    prompt: `Extract all structured information from the following resume text.
+  return generateStructuredText(
+    {
+      model: CLAUDE_MODELS.SONNET,
+      schema: ParsedResumeSchema,
+      schemaDescription: `{ "work_experience": [...], "education": [...], "skills": string[], "tools": string[], "domains": string[], "certifications": [...], "projects": [...], "full_name": string, "email": string, "phone": string, "location": string, "summary": string, "linkedin_url": string, "github_url": string, "website_url": string }`,
+      contextPrompt: `Extract all structured information from the following resume text.
 Be thorough and accurate. Do not invent information not present in the text.
 Return empty arrays for sections that are not present.
 
 RESUME TEXT:
 ${resumeText}`,
-  })
-
-  return result.experimental_output as ParsedResume
+    },
+    { route: "parse-resume-text" }
+  ) as Promise<ParsedResume>
 }

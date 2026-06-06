@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
+import { PremiumProvider } from '@/hooks/use-premium'
 
 export default async function DashboardLayout({
   children,
@@ -17,17 +18,29 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
+  const { data: profile } = await supabase
+    .from('user_profile')
+    .select('onboarding_complete')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!profile || profile.onboarding_complete === false) {
+    redirect('/onboarding')
+  }
+
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-12 items-center gap-2 border-b border-border px-4 bg-background">
-          <SidebarTrigger className="-ml-1" />
-        </header>
-        <main className="flex-1 p-6">
-          {children}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <PremiumProvider>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <header className="flex h-10 items-center gap-2 border-b border-border/60 px-4 bg-background/80 backdrop-blur-sm">
+            <SidebarTrigger className="-ml-1" />
+          </header>
+          <main className="flex-1 px-5 py-5">
+            {children}
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    </PremiumProvider>
   )
 }

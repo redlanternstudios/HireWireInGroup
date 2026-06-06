@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "name": "HireWire Autonomous Builder Policy",
+  "defaultAutonomy": "guarded",
+  "protectedPaths": [
+    {
+      "path": "lib/readiness/evaluator.ts",
+      "risk": "highest",
+      "reason": "Canonical readiness authority"
+    },
+    {
+      "path": "lib/actions/apply.ts",
+      "risk": "highest",
+      "reason": "Only apply mutation path"
+    },
+    {
+      "path": "app/(dashboard)/ready-to-apply/page.tsx",
+      "risk": "highest",
+      "reason": "Canonical apply gate"
+    },
+    {
+      "path": "app/api/generate-documents/route.ts",
+      "risk": "highest",
+      "reason": "Generation spine"
+    },
+    {
+      "path": "lib/supabase/middleware.ts",
+      "risk": "highest",
+      "reason": "Auth/session boundary"
+    },
+    {
+      "path": "lib/supabase/server.ts",
+      "risk": "highest",
+      "reason": "Server Supabase boundary"
+    },
+    {
+      "path": "lib/supabase/client.ts",
+      "risk": "highest",
+      "reason": "Client Supabase boundary"
+    },
+    {
+      "path": "lib/coach/claim-validator.ts",
+      "risk": "high",
+      "reason": "Claim safety"
+    },
+    {
+      "path": "lib/coach/drift-scorer.ts",
+      "risk": "high",
+      "reason": "Governance scoring"
+    },
+    {
+      "path": "lib/canonical-evidence.ts",
+      "risk": "high",
+      "reason": "Evidence source of truth"
+    },
+    {
+      "path": "lib/evidence/**",
+      "risk": "high",
+      "reason": "Evidence mapping and truth flow"
+    },
+    {
+      "path": "lib/domain-events/invalidation-map.ts",
+      "risk": "high",
+      "reason": "Downstream invalidation"
+    },
+    {
+      "path": "lib/domain-events/recompute-readiness.ts",
+      "risk": "high",
+      "reason": "Readiness recomputation"
+    },
+    {
+      "path": "lib/contracts/hirewire.ts",
+      "risk": "high",
+      "reason": "Billing/plan contract"
+    },
+    {
+      "path": "app/api/stripe/webhook/route.ts",
+      "risk": "high",
+      "reason": "Billing webhook"
+    },
+    {
+      "path": "app/(dashboard)/billing/**",
+      "risk": "high",
+      "reason": "Billing UI"
+    },
+    {
+      "path": "supabase/migrations/**",
+      "risk": "schema",
+      "reason": "Append-only schema changes"
+    }
+  ],
+  "approvalRequiredFor": [
+    "auth",
+    "rls",
+    "billing",
+    "readiness",
+    "apply",
+    "generation-spine",
+    "production-migration",
+    "data-deletion"
+  ],
+  "requiredVerification": [
+    "npm run typecheck",
+    "npm run lint",
+    "npm run build"
+  ],
+  "schemaRules": [
+    "New migrations must be append-only.",
+    "Do not edit existing migrations.",
+    "Use IF NOT EXISTS or IF EXISTS for idempotency."
+  ]
+}

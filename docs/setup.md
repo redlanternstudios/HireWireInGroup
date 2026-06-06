@@ -5,7 +5,7 @@
 - Node.js 18+
 - pnpm
 - Supabase project
-- Groq API key (free tier sufficient for development)
+- AI Gateway or OpenAI API key
 
 ## Quick Start
 
@@ -32,7 +32,8 @@ pnpm dev
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase Dashboard → Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key | Supabase Dashboard → Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side only) | Supabase Dashboard → Settings → API |
-| `GROQ_API_KEY` | Groq API key for all AI operations | [console.groq.com](https://console.groq.com) |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key for document generation | Vercel AI Gateway |
+| `OPENAI_API_KEY` | Optional direct OpenAI fallback if AI Gateway is not used | OpenAI Platform |
 
 > **Note**: There is no n8n dependency. All orchestration runs inside Next.js API routes.
 
@@ -52,7 +53,9 @@ supabase db push
 | `jobs` | Job listings, status, scores, generated resume + cover letter |
 | `user_profile` | Resume data — note: uses `full_name` column, not `name` |
 | `evidence_library` | Extracted resume bullet provenance per job |
-| `job_analyses` | Raw Groq analysis output per job |
+| `job_analyses` | Raw AI Gateway analysis output per job |
+| `generation_governance_runs` | Per-generation governance audit |
+| `governance_claim_verdicts` | Per-claim grounding verdicts |
 | `interview_prep` | STAR stories and angles per job |
 | `run_ledger` | Per-step observability log (created by script 009) |
 | `processing_events` | Legacy activity log (retained for compatibility) |

@@ -6,7 +6,7 @@ export type CoachBehaviorMode =
   | "analytical"
   | "concise"
   | "warning"
-  | "celebratory"
+  | "celebratory";
 
 export const COACH_BEHAVIOR_MODES: CoachBehaviorMode[] = [
   "operational",
@@ -16,4 +16,4 @@ export const COACH_BEHAVIOR_MODES: CoachBehaviorMode[] = [
   "concise",
   "warning",
   "celebratory",
-]
+];

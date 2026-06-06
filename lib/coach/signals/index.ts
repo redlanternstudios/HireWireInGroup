@@ -8,16 +8,16 @@ export type CoachSignalType =
   | "repeated_rejection"
   | "interview_momentum"
   | "inactivity"
-  | "workflow_confusion"
+  | "workflow_confusion";
 
 export interface CoachSignal {
-  type: CoachSignalType
-  payload: Record<string, any>
-  timestamp: string
+  type: CoachSignalType;
+  payload: Record<string, any>;
+  timestamp: string;
 }
 
 // Example signal detection stubs
 export function detectSignals(context: any): CoachSignal[] {
   // Implement detection logic per signal type
-  return []
+  return [];
 }

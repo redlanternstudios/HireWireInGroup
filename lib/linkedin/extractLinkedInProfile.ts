@@ -14,9 +14,9 @@
  *   - No data is invented — missing fields get status "missing", value null.
  */
 
-import { generateText, Output } from "ai"
+import { generateStructuredText } from "@/lib/ai/gateway"
 import { z } from "zod"
-import { CLAUDE_MODELS } from "@/lib/adapters/anthropic"
+import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 // ── Status label ──────────────────────────────────────────────────────────────
 
@@ -349,13 +349,15 @@ export async function extractLinkedInProfile(
 ${contextBlock}LINKEDIN PROFILE TEXT:
 ${cleanedText}`
 
-  const result = await generateText({
-    model: CLAUDE_MODELS.SONNET,
-    output: Output.object({ schema: LinkedInCaptureResultSchema }),
-    prompt,
-  })
-
-  const raw = result.experimental_output
+  const raw = await generateStructuredText(
+    {
+      model: CLAUDE_MODELS.SONNET,
+      schema: LinkedInCaptureResultSchema,
+      schemaDescription: `{ "full_name": string, "headline": string, "location": string, "summary": string, "work_experience": [...], "education": [...], "skills": string[], "certifications": [...], "languages": [...], "volunteer": [...] }`,
+      contextPrompt: prompt,
+    },
+    { route: "extract-linkedin-profile" }
+  )
 
   if (!raw || typeof raw !== "object") {
     throw new Error(

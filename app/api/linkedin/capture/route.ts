@@ -21,7 +21,6 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
 import { cleanProfileText } from "@/lib/linkedin/cleanProfileText"
 import {
   extractLinkedInProfile,
@@ -29,6 +28,8 @@ import {
 } from "@/lib/linkedin/extractLinkedInProfile"
 import { mapLinkedInToEvidence } from "@/lib/linkedin/mapLinkedInToEvidence"
 import { dedupeKey } from "@/lib/mapResumeToEvidence"
+import { detectEvidenceDuplicates } from "@/lib/evidence/duplicates"
+import { requireUser } from "@/lib/supabase/require-user"
 
 export const maxDuration = 60
 
@@ -52,19 +53,9 @@ const TEAM_VOICE_FLAG =
 export async function POST(request: NextRequest) {
   try {
     // ── 1. Auth check ────────────────────────────────────────────────────────
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      )
-    }
-
-    const userId = user.id
+    const auth = await requireUser()
+    if (!auth.ok) return auth.response
+    const { supabase, userId } = auth
 
     // ── 2. Validate input ────────────────────────────────────────────────────
     let body: unknown
@@ -152,7 +143,7 @@ export async function POST(request: NextRequest) {
     const { data: existing } = await supabase
       .from("evidence_library")
       .select(
-        "id, source_type, source_title, role_name, company_name, date_range, source_resume_id"
+        "id, source_type, source_title, role_name, company_name, date_range, responsibilities, tools_used, outcomes, proof_snippet, source_resume_id"
       )
       .eq("user_id", userId)
 
@@ -183,7 +174,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Filter: skip rows that match either dedup check
-    const rowsToInsert = candidateRows.filter((row) => {
+    let rowsToInsert = candidateRows.filter((row) => {
       if (existingMap.has(dedupeKey(row))) return false
       if (
         resumeSourcedSet.has(
@@ -197,6 +188,12 @@ export async function POST(request: NextRequest) {
         return false
       return true
     })
+
+    const duplicateCandidates = detectEvidenceDuplicates(rowsToInsert, existing ?? [])
+    const duplicateIndexes = new Set(
+      duplicateCandidates.map((candidate) => candidate.group_id.replace("evidence-duplicate-", ""))
+    )
+    rowsToInsert = rowsToInsert.filter((_row, index) => !duplicateIndexes.has(String(index)))
 
     const duplicatesSkipped = totalFound - rowsToInsert.length
 
@@ -284,6 +281,8 @@ export async function POST(request: NextRequest) {
       itemsExtracted: totalFound,
       newItemsAdded,
       duplicatesSkipped,
+      duplicates_found: duplicateCandidates.length,
+      duplicate_candidates: duplicateCandidates,
       fieldsUpdated,
       requiresReview,
       rewriteOpportunities,
