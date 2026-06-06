@@ -1250,6 +1250,56 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         .eq("user_id", userId)
     }
 
+    // ── WRITE generated_claims (one row per bullet) ───────────────────────
+    // Additive — jobs.generated_resume stays canonical, this table is queryable
+    {
+      const { error: deleteError } = await supabase
+        .from("generated_claims")
+        .delete()
+        .eq("job_id", job_id)
+        .eq("user_id", userId)
+      if (deleteError) {
+        console.error("[generated_claims] delete failed:", deleteError.message)
+        // Abort insert — stale claims better than duplicates
+      } else {
+      const claimRows = bulletProvenance.map((b, idx) => {
+        const verdicts = claimValidation.bulletVerdicts
+        const verdict = Array.isArray(verdicts)
+          ? (verdicts[idx] as { claim_grounded?: boolean; evidence_exists?: boolean } | undefined)
+          : undefined
+        const governanceVerdictText: "verified" | "unverified" | "contested" =
+          verdict?.claim_grounded === true ? "verified"
+          : verdict?.evidence_exists === false ? "contested"
+          : "unverified"
+        return {
+          job_id,
+          user_id: userId,
+          claim_text: b.bullet_text,
+          section: "experience",
+          position: idx,
+          evidence_ids: b.source_evidence_id ? [b.source_evidence_id] : [],
+          claim_grounded: verdict?.claim_grounded ?? false,
+          governance_verdict: governanceVerdictText,
+          provenance_ref: {
+            bullet_text: b.bullet_text,
+            source_evidence_id: b.source_evidence_id,
+            evidence_title: b.source_evidence_title,
+          },
+        }
+      })
+
+      if (claimRows.length > 0) {
+          const { error: insertError } = await supabase
+            .from("generated_claims")
+            .insert(claimRows)
+          if (insertError) {
+            console.warn("[generated_claims] non-blocking insert failed:", insertError.message)
+          }
+        }
+      } // end else (delete succeeded)
+    }
+    // ── END generated_claims ──────────────────────────────────────────────
+
     // Save quality check
     await supabase.from("generation_quality_checks").insert({
       user_id: userId,
