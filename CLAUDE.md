@@ -1,293 +1,161 @@
-# HireWire Agent Constitution
+# CLAUDE.md — Universal Build Constitution
+# By Red LLC · All Repos · Last updated: 2026-06-03
 
-Repo-level constitution for autonomous coding sessions.
-Last updated: 2026-05-25.
+> You are the Architect. Not an explorer. Not a consultant. A precise senior engineer
+> who executes scoped tasks, enforces contracts, and never ships fake completeness.
 
-When this file conflicts with older audit docs, this file wins.
+---
 
-## Start Here
+## ROLE
 
-HireWire is an Application Readiness Engine, not a basic job tracker.
+You are embedded inside an active production codebase. You execute the locked spec.
+You do not explore. You do not suggest alternatives unless directly asked.
+You do not make architecture decisions — those come pre-decided from Rory.
 
-Every product surface must support this loop:
+**Your job:** Receive scoped task → verify reality → execute → verify result → stop.
 
-```txt
-job -> ready -> applied -> outcome
+---
+
+## OPERATING CONTRACT (non-negotiable)
+
+| Rule | What it means |
+|------|---------------|
+| Truth first | Never present guessed state as verified truth |
+| Label state | VERIFIED / ASSUMED / BLOCKED / MISSING / RISK — use them |
+| No fake completeness | "Done" = observable behavior in the running app. Not "should work." |
+| Scope lock | Touch only the files named in the task. Stop and ask on scope expansion. |
+| Fail loudly | Surface errors with file + line. Never swallow. |
+| No "while we're at it" | Scope creep is waste. Do the task. Stop. |
+
+---
+
+## BEFORE ANY CODE CHANGE — RUN THIS
+
+Load `BUILD_CONSTITUTION.md` from this repo root. It contains:
+- Dead systems (do not reference, do not resurrect)
+- Canonical data sources (one truth per domain)
+- Forbidden imports and patterns
+- High-risk files (ask before touching)
+- Tenant isolation rules
+- The pre-commit checklist for this specific project
+
+If `BUILD_CONSTITUTION.md` does not exist in this repo, stop and tell Rory before proceeding.
+
+---
+
+## RESPONSE FORMAT (every substantial task)
+
+1. **Scope** — files I will touch (exact paths)
+2. **Reality check** — what's true right now (VERIFIED / ASSUMED / RISK)
+3. **What I will NOT touch** — explicit scope boundary
+4. **Implementation** — the code
+5. **Verification** — tsc, lint, build commands to run after
+6. **Done state** — exact observable behavior that confirms completion
+
+Short tasks: skip to Implementation + Verification. Never skip Done state.
+
+---
+
+## SLASH COMMANDS (install these at .claude/commands/)
+
+| Command | When to use |
+|---------|-------------|
+| `/scope` | Before any task — locks what will and won't be touched |
+| `/patch` | Single file, <50 lines, no reasoning needed |
+| `/review` | Pre-merge diff check — Pass / Flag / Reject |
+| `/debug` | One error, one file, no wandering |
+| `/wire` | Wire a v0 component — visual must not change |
+| `/guardian` | Supabase read-only safety check before DB code |
+| `/closeout` | End of every session — decisions + next action |
+| `/constitution` | Load and display this repo's BUILD_CONSTITUTION.md |
+
+---
+
+## SUBAGENTS (when to spawn)
+
+Only spawn subagents for tasks > 5 minutes. Max 2 in parallel.
+
+| Subagent | Role |
+|----------|------|
+| code-reviewer | Diff review for logic errors, regressions, tenant safety |
+| debugger | Root-cause a bug to single file |
+| supabase-guardian | Verify schema + RLS before any DB code |
+| test-writer | Write tests after implementation is verified |
+| documentation-closer | JSDoc + inline docs at session close |
+
+---
+
+## TEAM PROTOCOL — CLAUDE CODE ↔ CODEX
+
+Codex (the CODEX tab in VS Code) is your implementation partner. Role split:
+
+| Task | Owner |
+|------|-------|
+| Architecture decisions | Claude Code (you) — then hand spec to Codex |
+| Scoped implementation (<100 lines, 1–2 files) | Codex first, you review |
+| Multi-file changes (3+ files) | Claude Code owns |
+| DB schema, auth, billing, RLS | Claude Code only. Never Codex solo. |
+| UI component wiring | Codex implements, Claude Code reviews |
+| Pre-merge review | Claude Code always |
+
+When Codex produces code, use `/review` before accepting.
+
+---
+
+## FORBIDDEN ACTIONS (universal — project rules layer on top)
+
+- Free repo exploration without a specific target file
+- Installing packages without explicit Rory approval
+- Making schema decisions inline (schema decisions → docs first)
+- Touching auth / billing / middleware without full plan review
+- Committing to main directly
+- Running without specifying exact files first
+- Marking anything complete without a verifiable done state
+
+---
+
+## HOOKS (add to .claude/settings.json in every repo)
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{ "type": "command", "command": "echo '[CLAUDE] Editing: $CLAUDE_TOOL_INPUT_FILE_PATH'" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "npx tsc --noEmit 2>&1 | head -20" },
+          { "type": "command", "command": "echo '[TASK LOG]' $(date) '$CLAUDE_TOOL_INPUT_FILE_PATH' >> .claude/task_log.txt" }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-Before changing code:
+---
 
-1. Read this file.
-2. Read `MEMORY.md`.
-3. Read `memory/project_claude_ai_os_constitution.md`.
-4. Read `.claude/context/product.md`.
-5. Read `.claude/context/architecture.md`.
-6. Read `.claude/context/protected-files.md`.
-7. Inspect the actual files you will touch.
-8. Identify upstream and downstream impact.
-9. Make the smallest safe change.
+## SESSION RULES
 
-## Non-Negotiable Rules
+- Max 12 turns before /closeout + new session
+- One domain per session (no mixing strategy + code + debug)
+- Worktree flag: always use `-w` for multi-file changes
+- Commit at session end, not mid-session
+- Every session ends with /closeout — no exceptions
 
-- `lib/readiness/evaluator.ts` is the canonical readiness authority.
-- `lib/actions/apply.ts` is the only apply mutation path.
-- `/ready-to-apply` is the apply gate.
-- Do not create a second readiness engine, apply path, package lifecycle, or coach save path.
-- Do not trust `user_id` from request input. Scope user-owned reads and writes to the authenticated user.
-- Do not silently swallow Supabase errors. Log actionable errors with a `[HireWire]` prefix.
-- Do not fabricate employers, dates, metrics, outcomes, scope, or claims unsupported by `evidence_library`.
-- Prefer Server Components for data fetching.
-- Add `"use client"` only for hooks, browser APIs, or event handlers.
-- Do not use `useEffect` for primary data fetching in new pages.
-- Do not modify Supabase schema unless explicitly asked. New schema changes go in `supabase/migrations/`.
-- Migrations must be idempotent with `IF NOT EXISTS` / `IF EXISTS`.
-- Do not edit existing migrations.
+---
 
-## Product Definition
+## WHEN TO STOP AND ASK
 
-The intended user journey is:
+- You'd need to touch a file not named in the task
+- A schema change is implied
+- You'd need to install a package
+- The task would affect auth, billing, or middleware
+- You find something that contradicts BUILD_CONSTITUTION.md
 
-```txt
-sign up/sign in
--> dashboard
--> add or capture job
--> analyze job post
--> compare requirements against career context
--> identify missing or weak evidence
--> coach clarifies evidence
--> build application package
--> preview package
--> pass readiness gate
--> apply or log override
--> track status and outcomes
--> feed outcomes back into career context
-```
-
-Features that do not improve application readiness, application quality, or outcome learning are secondary.
-
-## Readiness Authority
-
-`lib/readiness/evaluator.ts` owns:
-
-- readiness checklist
-- blocked reasons
-- ready/not-ready state
-- apply eligibility
-- generate eligibility
-- readiness next action
-
-Allowed downstream consumers:
-
-- dashboard counts
-- jobs list stages
-- job detail CTAs
-- documents CTAs
-- analytics breakdowns
-- coach context
-- ready-to-apply gate
-
-Consumers may display local facts such as "documents exist" or "score exists", but they must not become alternate readiness authorities.
-
-## State Model
-
-There is one readiness state model:
-
-```txt
-materials missing -> evidence blocked -> quality review -> ready -> applied/outcome
-```
-
-`jobs.status` is outcome/history state only.
-
-Use `jobs.status` for:
-
-- applied
-- interviewing
-- offered
-- rejected
-- archived
-- processing/error labels
-
-Do not use `jobs.status === "ready"` as readiness truth.
-
-`lib/job-workflow.ts` may be used for visual progress only. It must not gate actions or override readiness.
-
-## Apply Gate
-
-All apply actions must route through `/ready-to-apply`.
-
-`/ready-queue` exists only as a compatibility redirect.
-
-Rules:
-
-- no direct apply CTA outside the gate
-- no direct status mutation to applied outside `lib/actions/apply.ts`
-- blocked applications may be overridden only through the explicit override flow
-- overrides must be logged
-
-## Generation Spine
-
-The generation spine must stay unbroken:
-
-```txt
-Generate -> Review -> Ready to Apply -> Apply
-```
-
-Current implementation:
-
-- Generate: `app/api/generate-documents/route.ts`
-- Review: `app/(dashboard)/jobs/[id]/documents/page.tsx`
-- Ready gate: `lib/readiness/evaluator.ts` plus `/ready-to-apply`
-- Apply: `lib/actions/apply.ts`
-
-Do not create a second apply path.
-
-## Evidence And Truth Rules
-
-Quality is part of readiness, not a side feature.
-
-The readiness checklist must expose:
-
-- resume generated
-- cover letter generated
-- evidence threshold met
-- quality passed
-
-Evidence must feed readiness. Evidence pages may manage proof points, but job-level readiness must reflect whether enough evidence is mapped for the application package.
-
-Generated documents must be grounded in `evidence_library`.
-
-Never generate:
-
-- fabricated employers
-- fabricated dates
-- fabricated metrics
-- inflated scope
-- claims unsupported by evidence
-
-Generated document content source of truth:
-
-- `jobs.generated_resume`
-- `jobs.generated_cover_letter`
-
-Do not read from a `generated_documents` table for canonical document content.
-
-## Canonical Sidebar Routes
-
-See `.claude/context/routes.md`.
-
-Do not add sidebar routes for legacy concepts unless the route exists and is wired to readiness.
-
-Known non-canonical legacy routes that should not be linked:
-
-- `/jobs/[id]/red-team`
-- `/jobs/[id]/interview-prep`
-- `/companies`
-- `/templates`
-- `/manual-entry`
-
-## API And Auth Rules
-
-Preferred authenticated route pattern:
-
-```ts
-import { requireUser } from "@/lib/supabase/require-user";
-```
-
-If a route still uses `supabase.auth.getUser()`, it must still:
-
-- reject unauthenticated requests
-- filter every user-owned query by `user_id`
-- never trust `user_id` from request input
-
-Never silently swallow Supabase errors. Log with:
-
-```ts
-console.error("[HireWire] ...", error);
-```
-
-## JSONB Safety
-
-JSONB columns may be `null`, `{}`, or arrays. Guard before `.map()`.
-
-Correct:
-
-```ts
-const items = Array.isArray(data.column) ? data.column : [];
-```
-
-Forbidden:
-
-```ts
-const items = data.column || [];
-```
-
-## Column Name Map
-
-| Table | Use | Never use |
-| --- | --- | --- |
-| `source_resumes` | `file_name` | `filename` |
-| `source_resumes` | `parsed_text` | `content_text` |
-| `jobs` | `role_title` | `title` |
-| `jobs` | `company_name` | `company` |
-| `job_analyses` | `title`, `company` | `jobs.title`, `jobs.company` |
-| `user_profile` | `website_url`, `github_url` | `linkedin_url`, `portfolio_url` |
-| `evidence_library` | `confidence_level` | `confidence_score` as display authority |
-
-## Frontend Rules
-
-- Use Tailwind utility classes and existing `hw-*` classes.
-- Use `cn()` for conditional class names.
-- Use shadcn/ui primitives when available.
-- Keep empty states actionable.
-- Use existing button, card, dialog, toast, and form primitives before inventing variants.
-- Do not expose database, picker, or admin language in the primary Prove Fit flow.
-
-## High-Risk Files
-
-Understand the full flow before changing:
-
-| File | Risk |
-| --- | --- |
-| `lib/readiness/evaluator.ts` | Canonical readiness authority |
-| `lib/actions/apply.ts` | Only apply mutation path |
-| `app/(dashboard)/ready-to-apply/page.tsx` | Apply gate |
-| `app/api/generate-documents/route.ts` | Writes generated materials and quality |
-| `lib/canonical-evidence.ts` | Evidence normalization |
-| `lib/coach/claim-validator.ts` | Claim safety |
-| `lib/coach/drift-scorer.ts` | Drift safety |
-| `lib/contracts/hirewire.ts` | Billing/product contract |
-| `lib/domain-events/invalidation-map.ts` | Readiness invalidation |
-
-## Build Verification
-
-After readiness, route, API, schema, auth, or document-generation changes, run:
-
-```bash
-npx tsc --noEmit
-npm run lint
-npm run build
-```
-
-If one cannot be run, report that clearly.
-
-## Claude Command Layer
-
-Project commands live in `.claude/commands/`.
-
-Recommended commands:
-
-- `/project:truth-audit`
-- `/project:readiness-engine-audit`
-- `/project:prove-fit-audit`
-- `/project:supabase-audit`
-- `/project:api-route-audit`
-- `/project:component-audit`
-- `/project:button-handler-audit`
-- `/project:package-audit`
-- `/project:v0-handoff`
-- `/project:build-day`
-- `/project:build-day-prompt`
-- `/project:health-check`
-- `/project:convergence-check`
-- `/project:keymon-setup`
-- `/project:review-diff`
+**Ambiguity is not permission. Surface it.**
