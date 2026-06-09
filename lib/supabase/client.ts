@@ -1,46 +1,53 @@
-import { createBrowserClient } from '@supabase/ssr'
-import type { SupabaseClient } from '@supabase/supabase-js'
-
-let supabaseClient: SupabaseClient | null = null
-
-function cleanEnvValue(value: string | undefined) {
-  return value?.replace(/[\u2028\u2029]/g, '').trim()
-}
-
-// Run polyfill immediately on module load (before any createClient calls)
-if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
-  try {
-    // Test if navigator.locks.request works properly
-    if (!navigator.locks || typeof navigator.locks.request !== 'function') {
-      throw new Error('navigator.locks not available')
-    }
-  } catch {
-    // Create a minimal polyfill that just executes the callback
-    Object.defineProperty(navigator, 'locks', {
-      value: {
-        request: async <T>(_name: string, callback: () => Promise<T>): Promise<T> => {
-          return callback()
-        },
-      },
-      writable: true,
-      configurable: true,
-    })
-  }
-}
+import { createClient } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
 
 /**
- * Creates a Supabase browser client for client-side operations.
- * Uses singleton pattern to prevent multiple client instances.
+ * Supabase client for browser-side use
+ * 
+ * Hard constraint (SEC-001):
+ * - NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY are browser-safe
+ * - NO service role key in browser. Service role key is server-only (app/api/* routes).
+ * - RLS policies on Supabase tables enforce user isolation at DB level
  */
-export function createClient(): SupabaseClient {
-  if (supabaseClient) {
-    return supabaseClient
-  }
 
-  supabaseClient = createBrowserClient(
-    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!
-  )
-  
-  return supabaseClient
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+/**
+ * Hook: useSupabase
+ * Returns authenticated Supabase client + current session
+ * All queries automatically respect RLS policies for logged-in user
+ */
+export function useSupabase() {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return {
+    supabase,
+    session,
+    loading,
+  };
 }
