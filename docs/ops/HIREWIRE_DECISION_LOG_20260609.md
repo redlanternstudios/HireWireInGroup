@@ -1,92 +1,72 @@
-# DECISION LOG — HIREWIRE BUILD DAY 30
+# HIREWIRE — DECISION LOG
 
 **Product:** HireWire  
-**Session:** Build Day 30 — Phase 1  
-**Date:** 2026-06-09  
-**Produced by:** TECHWRITER  
-**Classification:** KNOWLEDGE/DECISION
+**Date Range:** 2026-06-09  
+**Maintained By:** TECHWRITER  
+**Last Updated:** 2026-06-09T01:28:46Z
 
 ---
 
-## DEC-001 — n8n Owns ALL Business Logic
+## DECISION ENTRIES
+
+### DEC-001
 
 | Field | Value |
 |---|---|
-| **Date** | Pre-Day 30 (existing constraint) |
-| **Decision** | All business logic in HireWire lives in n8n. API routes in Next.js are thin receivers only (≤ 30 lines). |
-| **Made By** | Rory (via mission brief) |
-| **Rationale** | Single source of truth for logic. Prevents split-brain architecture. n8n provides visibility, retry, and orchestration. |
-| **Impact** | `app/api/coach/route.ts` (24,297 bytes) is a LIVE VIOLATION. Must be migrated or formally scoped as exception. |
-| **Supersedes** | Nothing — original constraint. |
-| **Status** | ⚠️ VIOLATED — OQ-006 decision required from Rory before coach route work proceeds. |
+| **Date** | 2026-06-09 |
+| **Decision** | n8n owns ALL business logic. No exceptions without explicit Rory sign-off. |
+| **Made By** | Rory (RedLantern Studios) |
+| **Rationale** | Single logic layer prevents drift, enables debugging, centralizes orchestration. |
+| **Impact** | All API routes must be thin receivers (≤30 lines). Any route containing business logic is a DEC-001 violation. |
+| **Status** | ACTIVE |
+| **Supersedes** | N/A |
 
 ---
 
-## DEC-002 — ZERO Hallucinated Experience
+### DEC-002
 
 | Field | Value |
 |---|---|
-| **Date** | Pre-Day 30 (existing constraint) |
-| **Decision** | Every resume claim must trace to user-provided, verified evidence. No AI invention of experience. |
-| **Made By** | Rory (via mission brief) |
-| **Rationale** | Legal/ethical risk of fabricated credentials. Product trust depends on evidence traceability. |
-| **Impact** | Hard gate required: `COUNT(coach_evidence_drafts WHERE status='confirmed' AND job_id=?) > 0` before any resume generation. Current implementation is soft-only (prompt instruction). |
-| **Supersedes** | Nothing — original constraint. |
-| **Status** | ⚠️ PARTIAL — Soft controls exist. Hard code-level gate NOT yet implemented. BACKEND must build before Screen 22. |
+| **Date** | 2026-06-09 |
+| **Decision** | Zero hallucinated experience. Resume generation requires verified evidence source for every claim. |
+| **Made By** | Rory (RedLantern Studios) |
+| **Rationale** | Product integrity — HireWire's value proposition is provable work history. Unverified claims defeat the product. |
+| **Impact** | `/api/resume/generate` must return HTTP 412 if `evidence_count = 0` or any claim lacks a verified source. Hard gate, no override. |
+| **Status** | ACTIVE — spec complete (HIREWIRE_DEC002_EVIDENCE_GATE.md), implementation PENDING |
+| **Supersedes** | N/A |
 
 ---
 
-## DEC-003 — Shared DB Isolation via RLS
+### DEC-003 (Phase 2 Kickoff)
 
 | Field | Value |
 |---|---|
-| **Date** | 2026-06-09 (Day 30) |
-| **Decision** | Supabase project `endovljmaudnxdzdapmf` is shared by Amina and HireWire. RLS (`auth.uid() = user_id`) is the only isolation layer. All HireWire tables must have RLS enabled before any data touches prod. |
-| **Made By** | ARCHITECT (HIREWIRE_ARCH_MAP.md v1.0.0) |
-| **Rationale** | Amina user data must never be readable by HireWire queries or vice versa. RLS is the enforcement boundary. |
-| **Impact** | SECURITY must audit all 110 tables before Phase 2. `jobs` table (R-001) is highest priority — unverified as of Day 30. |
-| **Supersedes** | Nothing. |
-| **Status** | ⚠️ PARTIAL — `evidence_library` + `job_scores` RLS verified. `jobs` and ~108 other tables unaudited. |
+| **Date** | 2026-06-09 |
+| **Decision** | Move to Phase 2 and beyond. |
+| **Made By** | Rory (RedLantern Studios) |
+| **Rationale** | Phase 1 artifacts complete. REVIEW gate closed. QA gate closed. Phase 1 exit criteria met. |
+| **Impact** | Build streams A (Evidence CRUD, Governance, Export) open immediately. Stream B (Coach, Resume) remains blocked on OQ-006 and OQ-005. Stream C (SEC fix) is pre-requisite. |
+| **Status** | ACTIVE |
+| **Supersedes** | N/A |
 
 ---
 
-## DEC-004 — Migration Chain Integrity (No Empty Base)
+## OPEN QUESTIONS (Not Yet Decisions)
 
-| Field | Value |
-|---|---|
-| **Date** | 2026-06-09 (Day 30) |
-| **Decision** | Do NOT modify base migration `20260510210753_remote_schema.sql` (0 bytes). Instead, run `supabase db dump` from prod and store as read-only reference artifact `supabase/schema_snapshot_20260609.sql`. Migration chain continues forward from Day 27 backfill. |
-| **Made By** | ARCHITECT (ADR-004 in HIREWIRE_ARCH_MAP.md) |
-| **Rationale** | Modifying history is risky. A canonical dump as reference artifact solves the reproducibility problem without touching the chain. |
-| **Impact** | DATA must run the dump. Unblocks local dev and CI schema validation. |
-| **Supersedes** | Nothing. New decision. |
-| **Status** | ⏳ PENDING — DATA must execute. |
-
----
-
-## DEC-005 — Governance Drift Threshold = 65
-
-| Field | Value |
-|---|---|
-| **Date** | Pre-Day 30 (verified in migration comments, Day 30) |
-| **Decision** | `drift_score >= 65` blocks document persistence. `drift_score < 65` = PASSED. |
-| **Made By** | Verified in `20260518120000_harden_generation_governance_persistence.sql` (ARCHITECT) |
-| **Rationale** | Canonical threshold for acceptable evidence-to-claim drift. |
-| **Impact** | Resume generation n8n flow must check this before persisting. Screen 25 displays drift_score with RED badge at >= 65. |
-| **Supersedes** | Nothing — pre-existing in schema. |
-| **Status** | ✅ VERIFIED AND CANONICAL — do not change without formal ADR update. |
-
----
-
-## OPEN QUESTIONS — REQUIRING RORY DECISION
-
-| ID | Question | Why It Blocks | Target |
+| ID | Question | Owner | Status |
 |---|---|---|---|
-| OQ-006 | DEC-001: Migrate `app/api/coach/route.ts` to n8n (RECOMMENDED) OR formally carve an exception? | ALL coach-related build. BACKEND cannot finalize API surface. ARCHITECT cannot complete data flow. FRONTEND cannot wire Screens 10–17. | Before Phase 2 |
-| OQ-005 | Provide n8n instance URL + webhook URLs (job-parser, lock-evidence, resume-generation) | Cannot wire any thin receivers without real webhook URLs | Within 48h |
+| OQ-006 | Coach route: migrate to n8n or formal DEC-001 exception? | Rory | OPEN — blocks Screens 10–17 |
+| OQ-005 | n8n webhook URLs (job-parser, lock-evidence, resume-generation) | Rory/Ops | OPEN — blocks resume gen |
+| OQ-003 | Base migration schema dump for fresh dev env | DATA/DEPLOY | PARTIALLY ANSWERED — migration file exists, DEPLOY to run supabase db dump |
+| R-001 | Jobs table RLS audit | SECURITY | IN PROGRESS — query provided by DATA |
 
 ---
 
-**Signed:** TECHWRITER  
-**Date:** 2026-06-09  
-**Next review:** After Rory decisions on OQ-006 + OQ-005
+## SECURITY FINDINGS (Active)
+
+| ID | Finding | File | Status |
+|---|---|---|---|
+| SEC-DAY30-001 | SERVICE_ROLE_KEY exposed, no auth check before mutation | app/api/coach/intake/route.ts | 🔴 LIVE ON MAIN — BACKEND fix pending |
+| SEC-DAY30-002 | SERVICE_ROLE_KEY misused in lock-evidence route | app/api/coach/lock-evidence/route.ts | 🔴 LIVE ON MAIN — BACKEND fix pending |
+
+Corrected code in workspace: `REVIEW_PHASE1_CORRECTED_COACH_ROUTES.md`
