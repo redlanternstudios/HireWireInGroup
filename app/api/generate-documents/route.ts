@@ -1,10 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateStructuredText } from "@/lib/ai/gateway";
-import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
-import { isAnthropicConfigured, CLAUDE_MODELS } from "@/lib/ai/gateway";
-import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake";
-import { requireUser } from "@/lib/supabase/require-user";
+import { NextRequest, NextResponse } from "next/server"
+import { generateText, generateObject } from "ai"
+import { z } from "zod"
+import { createAdminClient, createClient } from "@/lib/supabase/server"
+import { groq, isGroqConfigured, MODELS } from "@/lib/adapters/groq"
+import { GenerateDocumentsInputSchema } from "@/lib/schemas/job-intake"
 import {
   BANNED_PHRASES,
   detectBannedPhrases,
@@ -14,672 +13,152 @@ import {
   getEvidenceUsageRule,
   determineGenerationStrategy,
   analyzeBulletConcreteness,
-  buildConfirmedProofUsageReport,
-  truthSerumAuditBullet,
   hasMetrics,
   type GenerationStrategy,
   type BulletProvenance,
   type ParagraphProvenance,
-  type ConfirmedProofUsage,
-} from "@/lib/truthserum";
-import type { EvidenceIntelligencePacket } from "@/lib/evidence/types";
+} from "@/lib/truthserum"
 import {
   detectUnsafeMetrics,
   classifyQuantificationSafety,
   rewriteToQualitative,
   type QuantificationSafety,
-} from "@/lib/canonical-evidence";
-import type { EvidenceRecord } from "@/lib/types";
+} from "@/lib/canonical-evidence"
+import type { EvidenceRecord } from "@/lib/types"
 import {
   runPreGenerationEnhancement,
   generateProjectsSection,
-} from "@/lib/bullet-enhancer";
+} from "@/lib/bullet-enhancer"
 import {
   extractKnownProducts,
   buildProfileKnowledge,
-} from "@/lib/profile-knowledge-resolver";
-import { recommendResumeFormat } from "@/lib/resume-formats";
-import { sanitizeInput } from "@/lib/safety";
+} from "@/lib/profile-knowledge-resolver"
 import {
-  validateAllClaims,
-  scoreDrift,
-  type ClaimVerdict,
-  type GovernanceEvidence,
-} from "@/lib/coach";
-import { handleDomainEvent } from "@/lib/domain-events";
-import { extractVoiceProfile } from "@/lib/voice/extract-voice-profile";
-import { selectVoiceMode, type VoiceMode } from "@/lib/voice/select-voice-mode";
-import { checkVoiceDrift } from "@/lib/voice/voice-drift-check";
-import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
-import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
-import { evaluateReadiness } from "@/lib/readiness/evaluator";
-import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
-import { deriveMatchingComplete } from "@/lib/evidence/proofCoverage";
-import {
-  buildEvidenceFixHref,
-  listUnresolvedRequirements,
-} from "@/lib/evidence/unresolved-requirements";
-import {
-  buildEvidenceLibraryContext,
-  isContextEngineEnabled,
-  mirrorClaimVerdicts,
-  validateGeneratedClaims,
-} from "@/lib/context-engine";
-import { recordUsage } from "@/lib/paywall/usage";
-
-// Helper for retry with exponential backoff (handles 429 rate limits)
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-  baseDelayMs = 2000,
-): Promise<T> {
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: unknown) {
-      lastError = error as Error;
-      const errorMessage = lastError?.message || "";
-      const isRateLimited =
-        errorMessage.includes("429") || errorMessage.includes("rate limit");
-
-      if (isRateLimited && attempt < maxRetries) {
-        const delay = baseDelayMs * Math.pow(2, attempt); // 2s, 4s, 8s
-        console.error(
-          `[hirewire] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw lastError;
-}
-
-type SupabaseWriteError = {
-  message?: string;
-  details?: string;
-  hint?: string;
-  code?: string;
-};
-
-function logSupabaseWriteError(
-  action: string,
-  error: SupabaseWriteError | null | undefined,
-  metadata: Record<string, unknown> = {},
-) {
-  if (!error) return;
-
-  console.error("[hirewire:supabase-write]", {
-    action,
-    message: error.message,
-    details: error.details,
-    hint: error.hint,
-    code: error.code,
-    ...metadata,
-  });
-}
-
-function asUuidOrNull(value: string | null | undefined) {
-  if (!value) return null;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-    ? value
-    : null;
-}
-
-async function persistGovernanceClaimVerdicts(params: {
-  supabase: any;
-  runId: string | null;
-  userId: string;
-  jobId: string;
-  bulletVerdicts: ClaimVerdict[];
-  paragraphVerdicts: ClaimVerdict[];
-}) {
-  const { supabase, runId, userId, jobId, bulletVerdicts, paragraphVerdicts } =
-    params;
-  if (!runId) return;
-
-  const rows = [
-    ...bulletVerdicts.map((verdict) => ({
-      run_id: runId,
-      user_id: userId,
-      job_id: jobId,
-      document_type: "resume",
-      claim_text: verdict.claim_text,
-      cited_evidence_id: asUuidOrNull(verdict.cited_evidence_id),
-      evidence_exists: verdict.evidence_exists,
-      claim_grounded: verdict.claim_grounded,
-      metrics_traceable: verdict.metrics_traceable,
-      confidence: verdict.confidence,
-      failure_reason: verdict.failure_reason ?? null,
-    })),
-    ...paragraphVerdicts.map((verdict) => ({
-      run_id: runId,
-      user_id: userId,
-      job_id: jobId,
-      document_type: "cover_letter",
-      claim_text: verdict.claim_text,
-      cited_evidence_id: asUuidOrNull(verdict.cited_evidence_id),
-      evidence_exists: verdict.evidence_exists,
-      claim_grounded: verdict.claim_grounded,
-      metrics_traceable: verdict.metrics_traceable,
-      confidence: verdict.confidence,
-      failure_reason: verdict.failure_reason ?? null,
-    })),
-  ];
-
-  if (rows.length === 0) return;
-
-  const { error } = await supabase.from("governance_claim_verdicts").insert(rows);
-  logSupabaseWriteError("insert_governance_claim_verdicts", error, {
-    job_id: jobId,
-    user_id: userId,
-    governance_run_id: runId,
-    verdict_count: rows.length,
-  });
-}
+  suggestTemplate,
+  RESUME_TEMPLATES,
+  getTemplateGuidance,
+} from "@/lib/resume-templates"
+import { sanitizeInput } from "@/lib/safety"
 
 // Schema for evidence mapping
 const EvidenceMapSchema = z.object({
-  matched_skills: z
-    .array(z.string())
-    .describe("Skills from profile that match job requirements"),
-  matched_tools: z
-    .array(z.string())
-    .describe("Tools/technologies from profile that match"),
-  matched_experiences: z
-    .array(
-      z.object({
-        experience_title: z.string(),
-        company: z.string(),
-        relevance: z
-          .string()
-          .describe("How this experience relates to the job"),
-        key_achievements: z.array(z.string()),
-        evidence_id: z
-          .string()
-          .nullable()
-          .describe("ID of the source evidence if available"),
-      }),
-    )
-    .describe("Work experiences that are relevant to this job"),
-  matched_projects: z
-    .array(
-      z.object({
-        project_name: z.string(),
-        relevance: z.string(),
-        evidence_id: z.string().nullable(),
-      }),
-    )
-    .default([])
-    .describe("Projects that demonstrate relevant skills"),
-  gaps: z
-    .array(z.string())
-    .describe("Required qualifications the candidate may not have"),
+  matched_skills: z.array(z.string()).describe("Skills from profile that match job requirements"),
+  matched_tools: z.array(z.string()).describe("Tools/technologies from profile that match"),
+  matched_experiences: z.array(z.object({
+    experience_title: z.string(),
+    company: z.string(),
+    relevance: z.string().describe("How this experience relates to the job"),
+    key_achievements: z.array(z.string()),
+    evidence_id: z.string().optional().nullable().describe("ID of the source evidence if available"),
+  })).describe("Work experiences that are relevant to this job"),
+  matched_projects: z.array(z.object({
+    project_name: z.string(),
+    relevance: z.string(),
+    evidence_id: z.string().optional().nullable(),
+  })).describe("Projects that demonstrate relevant skills"),
+  gaps: z.array(z.string()).describe("Required qualifications the candidate may not have"),
   fit_score: z.number().min(0).max(100).describe("Overall fit score 0-100"),
-  fit_rationale: z
-    .string()
-    .describe("2-3 sentence explanation of the fit score"),
-  requirement_coverage: z
-    .number()
-    .min(0)
-    .max(100)
-    .describe("Percentage of required qualifications covered"),
-});
+  fit_rationale: z.string().describe("2-3 sentence explanation of the fit score"),
+  requirement_coverage: z.number().min(0).max(100).describe("Percentage of required qualifications covered"),
+})
 
 // Schema for structured resume with provenance
 const ResumeWithProvenanceSchema = z.object({
-  summary: z
-    .string()
-    .describe("2-3 sentence professional summary tailored to this role"),
-  experience_bullets: z
-    .array(
-      z.object({
-        bullet_text: z.string().describe("The achievement bullet point"),
-        source_evidence_id: z
-          .string()
-          .describe("ID of the evidence this bullet is based on"),
-        source_role: z.string().nullable().transform((value) => value ?? "").describe("Role title from the source evidence"),
-        source_company: z.string().nullable().transform((value) => value ?? "").describe("Company from the source evidence"),
-        matched_requirement: z
-          .string()
-          .nullable()
-          .describe("Which job requirement this bullet addresses"),
-        keywords_used: z
-          .array(z.string())
-          .describe("Job keywords incorporated in this bullet"),
-      }),
-    )
-    .describe("Resume bullets with provenance tracking"),
+  summary: z.string().describe("2-3 sentence professional summary tailored to this role"),
+  experience_bullets: z.array(z.object({
+    bullet_text: z.string().describe("The achievement bullet point"),
+    source_evidence_id: z.string().describe("ID of the evidence this bullet is based on"),
+    source_role: z.string().describe("Role title from the source evidence"),
+    source_company: z.string().describe("Company from the source evidence"),
+    matched_requirement: z.string().optional().describe("Which job requirement this bullet addresses"),
+    keywords_used: z.array(z.string()).describe("Job keywords incorporated in this bullet"),
+  })).describe("Resume bullets with provenance tracking"),
   skills_section: z.array(z.string()).describe("Relevant skills to list"),
-});
+})
 
 // Schema for cover letter with provenance
 const CoverLetterWithProvenanceSchema = z.object({
-  paragraphs: z
-    .array(
-      z.object({
-        paragraph_text: z.string().describe("The paragraph content"),
-        job_theme_addressed: z
-          .string()
-          .describe("Which aspect of the job this paragraph addresses"),
-        evidence_ids_used: z
-          .array(z.string())
-          .describe("IDs of evidence items referenced"),
-        claim_confidence: z
-          .enum(["high", "medium", "low"])
-          .describe("Confidence in claims made"),
-      }),
-    )
-    .describe("Cover letter paragraphs with provenance"),
-});
-
-type GeneratedResumeBullet = z.infer<
-  typeof ResumeWithProvenanceSchema
->["experience_bullets"][number];
-type GeneratedCoverLetterParagraph = z.infer<
-  typeof CoverLetterWithProvenanceSchema
->["paragraphs"][number];
-type ConcreteBulletAnalysis = ReturnType<typeof analyzeBulletConcreteness> & {
-  bullet: string;
-  has_metric: boolean;
-};
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function getCapabilityPackets(evidenceMap: unknown): EvidenceIntelligencePacket[] {
-  const map = asRecord(evidenceMap);
-  const packets = map?.capability_packets;
-  return Array.isArray(packets) ? packets as EvidenceIntelligencePacket[] : [];
-}
-
-function applyCoverageToEvidenceMap(
-  evidenceMap: unknown,
-  coverage: Awaited<ReturnType<typeof deriveMatchingComplete>>
-) {
-  const map = asRecord(evidenceMap) ?? {};
-  const decisionByRequirement = new Map(
-    coverage.requirementMatches.map((match) => [match.requirement_id, match.proof_decision])
-  );
-  const packets = Array.isArray(map.capability_packets)
-    ? (map.capability_packets as EvidenceIntelligencePacket[]).map((packet) => {
-        const requirementId = String(packet.packet_id ?? "").replace(/^pkt_/, "");
-        const proofDecision = decisionByRequirement.get(requirementId);
-        return proofDecision ? { ...packet, proofDecision } : packet;
-      })
-    : [];
-
-  return {
-    ...map,
-    requirement_matches: coverage.requirementMatches,
-    capability_packets: packets,
-    matching_complete: coverage.matchingComplete,
-  };
-}
-
-function getBlockedRequiredRequirements(
-  evidenceMap: unknown,
-  confirmedDecisionRequirementIds: string[],
-) {
-  return listUnresolvedRequirements({
-    evidence_map: evidenceMap,
-    prove_fit_decision_requirement_ids: confirmedDecisionRequirementIds,
-  }).filter((match) => match.priority === "required");
-}
-
-function packetsForResume(packets: EvidenceIntelligencePacket[]): EvidenceIntelligencePacket[] {
-  return packets.filter(packet =>
-    packet.matchStrength !== "weak" &&
-    packet.matchedEvidenceIds.length > 0 &&
-    (packet.allowedUsage === "resume_allowed" || packet.allowedUsage === "resume_allowed_with_reframe")
-  );
-}
-
-function buildPacketEvidenceMap(packets: EvidenceIntelligencePacket[]) {
-  const usable = packetsForResume(packets);
-  const required = packets.filter(packet => packet.priority === "required");
-  const coveredRequired = required.filter(packet => packet.matchStrength === "strong" || packet.matchStrength === "partial");
-  const matchedEvidenceIds = new Set(usable.flatMap(packet => packet.matchedEvidenceIds));
-  return {
-    matched_skills: Array.from(new Set(usable.map(packet => packet.normalized))).slice(0, 16),
-    matched_tools: Array.from(new Set(usable.flatMap(packet => packet.tools))).slice(0, 16),
-    matched_experiences: usable.slice(0, 8).map(packet => ({
-      experience_title: packet.roles[0] ?? packet.matchedEvidenceTitles[0] ?? packet.requirement,
-      company: packet.companies[0] ?? "Evidence library",
-      relevance: packet.matchReason,
-      key_achievements: [...packet.outcomes, ...packet.proofSnippets].slice(0, 4),
-      evidence_id: packet.matchedEvidenceIds[0] ?? null,
-    })),
-    matched_projects: [],
-    gaps: packets
-      .filter(packet => packet.priority === "required" && packet.matchStrength === "weak")
-      .map(packet => packet.requirement),
-    fit_score: required.length > 0 ? Math.round((coveredRequired.length / required.length) * 100) : 50,
-    fit_rationale: `${coveredRequired.length}/${required.length || 0} required requirements are covered by structured evidence packets.`,
-    requirement_coverage: required.length > 0 ? Math.round((coveredRequired.length / required.length) * 100) : 50,
-    selected_evidence_ids: Array.from(matchedEvidenceIds),
-  };
-}
-
-// Bias guard 2.4: dates normalized to durations in generation context
-function durationFromDates(
-  startDate: string | undefined | null,
-  endDate: string | undefined | null,
-): string {
-  const FALLBACK_YEAR = 2026;
-  if (!startDate) return "Unknown duration";
-
-  const parseYearMonth = (
-    dateStr: string,
-  ): { year: number; month: number } | null => {
-    if (!dateStr) return null;
-    // Try YYYY-MM or YYYY-MM-DD
-    const match = dateStr.match(/^(\d{4})[-/]?(\d{2})?/);
-    if (!match) return null;
-    return {
-      year: parseInt(match[1], 10),
-      month: match[2] ? parseInt(match[2], 10) : 1,
-    };
-  };
-
-  const start = parseYearMonth(startDate);
-  if (!start) return "Unknown duration";
-
-  const end = endDate
-    ? parseYearMonth(endDate) ?? { year: FALLBACK_YEAR, month: 1 }
-    : { year: FALLBACK_YEAR, month: 1 };
-
-  const totalMonths =
-    (end.year - start.year) * 12 + (end.month - start.month);
-  if (totalMonths <= 0) return "Less than 1 month";
-  if (totalMonths < 12) return `${totalMonths} month${totalMonths !== 1 ? "s" : ""}`;
-  const years = Math.round(totalMonths / 12);
-  return `${years} year${years !== 1 ? "s" : ""}`;
-}
-
-function formatGenerationPackets(packets: EvidenceIntelligencePacket[]) {
-  return packetsForResume(packets)
-    .map(packet => `
---- PACKET [${packet.packet_id}] ---
-Requirement: ${packet.requirement}
-Normalized Capability: ${packet.normalized}
-Priority: ${packet.priority}
-Match Strength: ${packet.matchStrength} (${packet.matchScore}/100)
-Evidence Strength: ${packet.evidenceStrength}
-Allowed Usage: ${packet.allowedUsage}
-Matched Evidence IDs: ${packet.matchedEvidenceIds.join(", ")}
-Matched Evidence Titles: ${packet.matchedEvidenceTitles.join(", ")}
-Systems: ${packet.systems.join(", ") || "None specified"}
-Tools: ${packet.tools.join(", ") || "None specified"}
-// Bias guard 2.3: company names anonymized in generation context
-Roles: ${packet.roles.join(", ") || "None specified"}
-Proof Snippets:
-${packet.proofSnippets.map(snippet => `- ${snippet}`).join("\n") || "- None"}
-Outcomes:
-${packet.outcomes.map(outcome => `- ${outcome}`).join("\n") || "- None"}
-Responsibilities:
-${packet.responsibilities.map(item => `- ${item}`).join("\n") || "- None"}
-Risk Flags: ${packet.riskFlags.join(", ") || "None"}
-Why Included: ${packet.whyIncluded}
-`)
-    .join("\n");
-}
-
-function findPacketForBullet(
-  bullet: GeneratedResumeBullet,
-  packets: EvidenceIntelligencePacket[]
-): EvidenceIntelligencePacket | undefined {
-  return packets.find(packet =>
-    packet.matchedEvidenceIds.includes(bullet.source_evidence_id) &&
-    (!bullet.matched_requirement ||
-      packet.requirement === bullet.matched_requirement ||
-      packet.normalized.includes(bullet.matched_requirement.toLowerCase()))
-  ) ?? packets.find(packet => packet.matchedEvidenceIds.includes(bullet.source_evidence_id));
-}
-
-function tokenSet(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9+#.]+/)
-      .filter(token => token.length > 2)
-  );
-}
-
-function scoreBulletPacketOverlap(bulletText: string, packet: EvidenceIntelligencePacket): number {
-  const bulletTokens = tokenSet(bulletText);
-  const packetTokens = tokenSet([
-    packet.requirement,
-    packet.normalized,
-    ...packet.proofSnippets,
-    ...packet.systems,
-    ...packet.tools,
-    ...packet.outcomes,
-    ...packet.responsibilities,
-    ...packet.companies,
-    ...packet.roles,
-  ].join(" "));
-  if (bulletTokens.size === 0 || packetTokens.size === 0) return 0;
-  return Array.from(bulletTokens).filter(token => packetTokens.has(token)).length / bulletTokens.size;
-}
-
-function resolvePacketForBullet(
-  bullet: { bullet_text: string; source_evidence_id?: string; matched_requirement?: string | null },
-  packets: EvidenceIntelligencePacket[]
-): EvidenceIntelligencePacket | undefined {
-  const direct = packets.find(packet =>
-    bullet.source_evidence_id &&
-    packet.matchedEvidenceIds.includes(bullet.source_evidence_id) &&
-    (!bullet.matched_requirement ||
-      packet.requirement === bullet.matched_requirement ||
-      packet.normalized.includes(bullet.matched_requirement.toLowerCase()))
-  );
-  if (direct) return direct;
-
-  return packetsForResume(packets)
-    .map(packet => ({ packet, score: scoreBulletPacketOverlap(bullet.bullet_text, packet) }))
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score)[0]?.packet;
-}
+  paragraphs: z.array(z.object({
+    paragraph_text: z.string().describe("The paragraph content"),
+    job_theme_addressed: z.string().describe("Which aspect of the job this paragraph addresses"),
+    evidence_ids_used: z.array(z.string()).describe("IDs of evidence items referenced"),
+    claim_confidence: z.enum(["high", "medium", "low"]).describe("Confidence in claims made"),
+  })).describe("Cover letter paragraphs with provenance"),
+})
 
 // Schema for quality check
 const QualityCheckSchema = z.object({
-  invented_claims: z
-    .array(z.string())
-    .describe(
-      "Any claims that seem fabricated or not supported by the source material",
-    ),
-  vague_bullets: z
-    .array(z.string())
-    .describe("Bullet points that are too generic or could apply to anyone"),
-  ai_filler: z
-    .array(z.string())
-    .describe("Phrases that sound like typical AI-generated filler"),
-  repeated_structures: z
-    .array(z.string())
-    .describe("Repetitive sentence patterns"),
-  unsupported_claims: z
-    .array(z.string())
-    .describe("Claims that cannot be verified from the evidence"),
-  overall_passed: z
-    .boolean()
-    .describe("Whether the document passes quality standards"),
-  improvement_suggestions: z
-    .array(z.string())
-    .describe("Specific suggestions to improve weak sections"),
-});
+  invented_claims: z.array(z.string()).describe("Any claims that seem fabricated or not supported by the source material"),
+  vague_bullets: z.array(z.string()).describe("Bullet points that are too generic or could apply to anyone"),
+  ai_filler: z.array(z.string()).describe("Phrases that sound like typical AI-generated filler"),
+  repeated_structures: z.array(z.string()).describe("Repetitive sentence patterns"),
+  unsupported_claims: z.array(z.string()).describe("Claims that cannot be verified from the evidence"),
+  overall_passed: z.boolean().describe("Whether the document passes quality standards"),
+  improvement_suggestions: z.array(z.string()).describe("Specific suggestions to improve weak sections"),
+})
 
-const EVIDENCE_MAP_SCHEMA_DESCRIPTION = `{
-  "matched_skills": string[],
-  "matched_tools": string[],
-  "matched_experiences": [
-    {
-      "experience_title": string,
-      "company": string,
-      "relevance": string,
-      "key_achievements": string[],
-      "evidence_id": string | null
-    }
-  ],
-  "matched_projects": [
-    {
-      "project_name": string,
-      "relevance": string,
-      "evidence_id": string | null
-    }
-  ],
-  "gaps": string[],
-  "fit_score": number,
-  "fit_rationale": string,
-  "requirement_coverage": number
-}`;
+async function loadUserProfile(supabase: ReturnType<typeof createAdminClient>, userId: string) {
+  const { data: profile, error } = await supabase
+    .from("user_profile")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle()
 
-const RESUME_WITH_PROVENANCE_SCHEMA_DESCRIPTION = `{
-  "summary": string,
-  "experience_bullets": [
-    {
-      "bullet_text": string,
-      "source_evidence_id": string,
-      "source_role": string,
-      "source_company": string,
-      "matched_requirement": string | null,
-      "keywords_used": string[]
-    }
-  ],
-  "skills_section": string[]
-}`;
-
-const COVER_LETTER_WITH_PROVENANCE_SCHEMA_DESCRIPTION = `{
-  "paragraphs": [
-    {
-      "paragraph_text": string,
-      "job_theme_addressed": string,
-      "evidence_ids_used": string[],
-      "claim_confidence": "high" | "medium" | "low"
-    }
-  ]
-}`;
-
-const QUALITY_CHECK_SCHEMA_DESCRIPTION = `{
-  "invented_claims": string[],
-  "vague_bullets": string[],
-  "ai_filler": string[],
-  "repeated_structures": string[],
-  "unsupported_claims": string[],
-  "overall_passed": boolean,
-  "improvement_suggestions": string[]
-}`;
-
-async function loadUserProfile(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-) {
-  const [profileResult, linksResult] = await Promise.all([
-    supabase
-      .from("user_profile")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle(),
-    supabase
-      .from("user_profile_links")
-      .select("id,link_type,url,is_primary")
-      .eq("user_id", userId)
-      .order("is_primary", { ascending: false }),
-  ]);
-
-  if (profileResult.error || !profileResult.data) {
-    return null;
+  if (error || !profile) {
+    return null
   }
 
-  // Attach canonical links array to profile (replaces legacy jsonb links column)
-  return {
-    ...profileResult.data,
-    links: Array.isArray(linksResult.data) ? linksResult.data : [],
-  };
+  return profile
 }
 
-async function loadEvidenceLibrary(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-) {
+async function loadEvidenceLibrary(supabase: ReturnType<typeof createAdminClient>, userId: string) {
   const { data: evidence, error } = await supabase
     .from("evidence_library")
     .select("*")
     .eq("user_id", userId)
     .eq("is_active", true)
-    .order("priority_rank", { ascending: false });
+    .order("priority_rank", { ascending: false })
 
   if (error) {
-    return [];
+    return []
   }
 
-  return Array.isArray(evidence) ? evidence : [];
+  return evidence || []
 }
 
-async function syncNormalizedJobScore(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  jobId: string,
-  score: number,
-) {
-  const { error } = await supabase
-    .from("job_scores")
-    .update({ overall_score: Math.round(score) })
-    .eq("job_id", jobId);
-
-  if (error) {
-    console.error("Failed to sync normalized job score:", error);
-  }
-}
-
-async function loadJobAnalysis(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  jobId: string,
-  userId: string,
-) {
+async function loadJobAnalysis(supabase: ReturnType<typeof createAdminClient>, jobId: string, userId: string) {
   const { data: job, error } = await supabase
     .from("jobs")
-    .select(
-      `
+    .select(`
       *,
       job_analyses (*),
       job_scores (
         overall_score,
         confidence_score
       )
-    `,
-    )
+    `)
     .eq("id", jobId)
     .eq("user_id", userId)
-    .is("deleted_at", null)
-    .single();
+    .single()
 
   if (error || !job) {
-    return null;
+    return null
   }
 
   // Transform to UI-expected format
-  const analyses = Array.isArray(job.job_analyses)
-    ? (job.job_analyses as Array<Record<string, unknown>>)
-    : [];
-  const scores = Array.isArray(job.job_scores)
-    ? (job.job_scores as Array<{ overall_score?: number }>)
-    : [];
-  const analysis = analyses[0] || {};
-  const score = scores[0]?.overall_score ?? null;
-
+  const analyses = (job.job_analyses as Array<Record<string, unknown>>) || []
+  const scores = (job.job_scores as Array<{ overall_score?: number }>) || []
+  const analysis = analyses[0] || {}
+  const score = scores[0]?.overall_score ?? null
+  
   // Derive fit from score
-  let fit: string | null = null;
+  let fit: string | null = null
   if (score !== null) {
-    if (score >= 75) fit = "HIGH";
-    else if (score >= 50) fit = "MEDIUM";
-    else fit = "LOW";
+    if (score >= 75) fit = "HIGH"
+    else if (score >= 50) fit = "MEDIUM"
+    else fit = "LOW"
   }
-
+  
   return {
     ...job,
     // Map normalized columns to legacy names
@@ -695,633 +174,35 @@ async function loadJobAnalysis(
     qualifications_required: analysis.qualifications_required || [],
     qualifications_preferred: analysis.qualifications_preferred || [],
     ats_keywords: analysis.ats_phrases || analysis.keywords || [],
-  };
+  }
 }
 
-async function loadSourceResume(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-) {
+async function loadSourceResume(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const { data: resume, error } = await supabase
     .from("source_resumes")
-    .select("id, file_name, parsed_text, parsed_data, created_at")
+    .select("*")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("is_primary", true)
+    .maybeSingle()
 
   if (error || !resume) {
-    return null;
+    return null
   }
 
-  return resume;
-}
-
-async function generateFallbackDocuments({
-  supabase,
-  job_id,
-  userId,
-  profile,
-  sourceResumeData,
-  allEvidence,
-  jobData,
-}: {
-  supabase: Awaited<ReturnType<typeof createClient>>;
-  job_id: string;
-  userId: string;
-  profile: Record<string, any> | null;
-  sourceResumeData?: Record<string, any> | null;
-  allEvidence: EvidenceRecord[];
-  jobData: Record<string, any>;
-}) {
-  const toText = (value: unknown): string =>
-    typeof value === "string" ? value.trim() : "";
-
-  const firstSentence = (value: unknown): string => {
-    const text = toText(value);
-    if (!text) return "";
-    const normalized = text.replace(/\s+/g, " ").trim();
-    const idx = normalized.search(/[.!?]/);
-    return idx >= 0 ? normalized.slice(0, idx + 1) : normalized;
-  };
-
-  const name = toText(profile?.full_name) || toText(profile?.name) || toText(sourceResumeData?.full_name);
-  const location = toText(profile?.location) || toText(sourceResumeData?.location);
-  const email = toText(profile?.email) || toText(sourceResumeData?.email);
-  const headline = toText(profile?.headline) || toText(profile?.title) || toText(sourceResumeData?.headline) || toText(sourceResumeData?.title);
-  const skills = Array.from(
-    new Set([
-      ...((profile?.skills as string[] | null) || []),
-      ...allEvidence.flatMap((item) => item.tools_used || []),
-    ]),
-  ).slice(0, 18);
-  const roleEvidence = allEvidence
-    .filter((item) => item.source_type === "work_experience")
-    .slice(0, 4);
-  const evidenceHighlights = roleEvidence
-    .flatMap((item) => [
-      ...(Array.isArray(item.approved_achievement_bullets)
-        ? item.approved_achievement_bullets
-        : []),
-      ...(Array.isArray(item.outcomes) ? item.outcomes : []),
-      ...(Array.isArray(item.responsibilities) ? item.responsibilities : []),
-    ])
-    .map((text) => firstSentence(text))
-    .filter(Boolean)
-    .slice(0, 2);
-
-  const summaryHeadline = headline || "Candidate";
-  const summary =
-    evidenceHighlights.length > 0
-      ? `${summaryHeadline} with evidence-backed experience. Highlights include ${evidenceHighlights.join(" ")}`
-      : `${summaryHeadline} with evidence-backed product and delivery experience.`;
-  const experienceSections = roleEvidence.map((item) => {
-    const bullets = [
-      ...(item.responsibilities || []),
-      ...(item.outcomes || []),
-      ...(item.approved_achievement_bullets || []),
-    ].slice(0, 3);
-
-    return [
-      `${item.role_name || item.source_title}${item.company_name ? `, ${item.company_name}` : ""}${item.date_range ? ` | ${item.date_range}` : ""}`,
-      ...bullets.map((bullet) => `- ${bullet}`),
-    ].join("\n");
-  });
-  const formattedResume = `${name ? String(name).toUpperCase() : "CANDIDATE"}
-${[location, email].filter(Boolean).join(" | ")}
-${headline || "Evidence-backed candidate"}
-
-SUMMARY
-${summary}
-
-CORE SKILLS
-${skills.join(", ")}
-
-EXPERIENCE
-${experienceSections.join("\n\n")}
-
-EDUCATION AND CERTIFICATIONS
-${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.length > 0
-  ? sourceResumeData.education
-      .map((edu: Record<string, unknown>) => [edu.degree, edu.school, edu.year].filter(Boolean).join(", "))
-      .filter(Boolean)
-      .join("\n")
-  : "Education and certifications omitted when not present in verified profile data."}`;
-  const coverLetterParagraphs = [
-    {
-      text: `I am applying for the ${jobData.title || jobData.role_title || "Product role"} at ${jobData.company || jobData.company_name || "your company"} with evidence-backed experience from my profile and work history.`,
-      cited_evidence_id: null as string | null,
-    },
-    ...roleEvidence.slice(0, 2).map((item) => {
-      const role = toText(item.role_name) || toText(item.source_title) || "my prior role";
-      const company = toText(item.company_name);
-      const lead =
-        firstSentence(item.approved_achievement_bullets?.[0]) ||
-        firstSentence(item.outcomes?.[0]) ||
-        firstSentence(item.responsibilities?.[0]) ||
-        "delivered measurable outcomes through cross-functional execution.";
-      const context =
-        firstSentence(item.responsibilities?.[0]) ||
-        firstSentence(item.outcomes?.[0]) ||
-        "";
-      const body = context && context !== lead ? `${lead} ${context}` : lead;
-      return {
-        text: `In ${role}${company ? ` at ${company}` : ""}, I ${body.charAt(0).toLowerCase()}${body.slice(1)}`,
-        cited_evidence_id: item.id,
-      };
-    }),
-    {
-      text: "I would bring the same evidence-backed approach to your team, and I can share concrete examples of ownership, collaboration, and measurable outcomes.",
-      cited_evidence_id: null as string | null,
-    },
-  ];
-
-  const formattedCoverLetter = `Dear Hiring Team,\n\n${coverLetterParagraphs
-    .map((paragraph) => paragraph.text)
-    .join("\n\n")}\n\nSincerely${name ? `,\n${name}` : ""}`;
-  const fitScore = Math.max(
-    75,
-    Math.min(92, 70 + Math.round(skills.length / 2)),
-  );
-  const evidenceMap = {
-    selected_evidence_ids: roleEvidence.map((item) => item.id),
-    matched_skills: skills.filter((skill) =>
-      /AI|LLM|API|cloud|SQL|KPI|Agile|SAP|Salesforce|Python|OpenAI/i.test(
-        skill,
-      ),
-    ),
-    matched_tools: skills.filter((skill) =>
-      /OpenAI|Python|SAP|Salesforce|SQL|Looker|AWS|Azure|Kubernetes|Terraform/i.test(
-        skill,
-      ),
-    ),
-    matched_experiences: roleEvidence.map((item) => ({
-      experience_title: item.role_name || item.source_title,
-      company: item.company_name || "",
-      relevance:
-        "Directly supports AI product, enterprise workflow, technical delivery, or KPI-driven product requirements.",
-      key_achievements: [
-        ...(item.responsibilities || []),
-        ...(item.outcomes || []),
-      ].slice(0, 3),
-      evidence_id: item.id,
-    })),
-    gaps: [],
-    fit_score: fitScore,
-    fit_rationale:
-      "Fallback generation used stored profile and evidence because AI Gateway is not configured.",
-    requirement_coverage: 82,
-  };
-
-  const governanceEvidence: GovernanceEvidence[] = allEvidence.map(
-    (e: EvidenceRecord) => ({
-      id: e.id,
-      source_title: e.source_title,
-      source_type: e.source_type,
-      confidence_level: e.confidence_level,
-      responsibilities: Array.isArray(e.responsibilities) ? e.responsibilities : [],
-      outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
-      tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
-      team_size: (e as any).team_size ?? null,
-      budget_scope: (e as any).budget_scope ?? null,
-      user_impact_scale: (e as any).user_impact_scale ?? null,
-      what_not_to_overstate: e.what_not_to_overstate ?? null,
-      approved_achievement_bullets: Array.isArray(e.approved_achievement_bullets)
-        ? e.approved_achievement_bullets
-        : [],
-    }),
-  );
-  const bulletClaimInputs = roleEvidence.flatMap((item) =>
-    [
-      ...(item.responsibilities || []),
-      ...(item.outcomes || []),
-      ...(item.approved_achievement_bullets || []),
-    ]
-      .slice(0, 3)
-      .map((text) => ({
-        text,
-        cited_evidence_id: item.id,
-      })),
-  );
-  const paragraphClaimInputs = coverLetterParagraphs
-    .map((paragraph) => ({
-      text: paragraph.text,
-      cited_evidence_id: paragraph.cited_evidence_id,
-    }))
-    .filter((paragraph) => paragraph.text.length > 40);
-  const claimValidation = validateAllClaims(
-    bulletClaimInputs,
-    paragraphClaimInputs,
-    governanceEvidence,
-  );
-  const driftResult = scoreDrift({
-    bulletTexts: bulletClaimInputs.map((claim) => ({
-      text: claim.text,
-      evidence_id: claim.cited_evidence_id,
-    })),
-    paragraphTexts: paragraphClaimInputs.map((claim) => ({
-      text: claim.text,
-      evidence_id: claim.cited_evidence_id,
-    })),
-    bulletVerdicts: claimValidation.bulletVerdicts,
-    paragraphVerdicts: claimValidation.paragraphVerdicts,
-    evidenceSet: governanceEvidence,
-  });
-
-  // Fallback mode allows generation even with governance flags, logging them for audit
-  // but not blocking. Fallback uses only stored evidence, so drift/fabrication risk is lower.
-  if (claimValidation.hasFabricated) {
-    const blockReason = `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
-
-    const blockedGovernanceRunInsert = await supabase
-      .from("generation_governance_runs")
-      .insert({
-        user_id: userId,
-        job_id,
-        strategy: "direct_match",
-        strategy_decision: {
-          strategy: "direct_match",
-          requirement_coverage: evidenceMap.requirement_coverage,
-          evidence_quality_pct: 100,
-          reasoning: evidenceMap.fit_rationale,
-          fallback: true,
-        },
-        bullet_verdicts: claimValidation.bulletVerdicts,
-        paragraph_verdicts: claimValidation.paragraphVerdicts,
-        fabricated_count: claimValidation.fabricatedCount,
-        low_confidence_count: claimValidation.lowConfidenceCount,
-        drift_score: driftResult.score,
-        drift_is_blocking: false,
-        drift_flags: driftResult.flags,
-        drift_summary: driftResult.summary,
-        governance_passed: false,
-        failed_at_phase: "claim_validation",
-        governance_version: "1.0.0",
-      })
-      .select("id")
-      .maybeSingle();
-    logSupabaseWriteError(
-      "insert_fallback_blocked_generation_governance_run",
-      blockedGovernanceRunInsert.error,
-      { job_id, user_id: userId },
-    );
-
-    const blockedGovernanceRunId = blockedGovernanceRunInsert.data?.id ?? null;
-    await persistGovernanceClaimVerdicts({
-      supabase,
-      runId: blockedGovernanceRunId,
-      userId,
-      jobId: job_id,
-      bulletVerdicts: claimValidation.bulletVerdicts,
-      paragraphVerdicts: claimValidation.paragraphVerdicts,
-    });
-
-    const blockedUpdate = await supabase
-      .from("jobs")
-      .update({
-        generation_status: "failed",
-        generation_error: blockReason,
-        governance_version: "1.0.0",
-        governance_passed: false,
-        governance_drift_score: driftResult.score,
-        last_governance_run_id: blockedGovernanceRunId,
-      })
-      .eq("id", job_id)
-      .eq("user_id", userId);
-    logSupabaseWriteError("mark_fallback_governance_blocked", blockedUpdate.error, {
-      job_id,
-      user_id: userId,
-    });
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: "governance_blocked",
-        user_message:
-          "Generation was blocked because the draft made claims that could not be grounded in your verified evidence.",
-        detail: blockReason,
-        governance: {
-          passed: false,
-          run_id: blockedGovernanceRunId,
-          drift_score: driftResult.score,
-          drift_summary: driftResult.summary,
-          fabricated_count: claimValidation.fabricatedCount,
-          low_confidence_count: claimValidation.lowConfidenceCount,
-        },
-      },
-      { status: 400 },
-    );
-  }
-
-  const fallbackResumeBannedPhrases = detectBannedPhrases(formattedResume);
-  const fallbackCoverLetterBannedPhrases = detectBannedPhrases(formattedCoverLetter);
-  const fallbackBannedPhrases = Array.from(new Set([
-    ...fallbackResumeBannedPhrases,
-    ...fallbackCoverLetterBannedPhrases,
-  ]));
-  const fallbackVaguePatterns = detectVaguePatterns(formattedResume);
-  const fallbackBulletAnalysis = bulletClaimInputs.map((claim) => ({
-    bullet: claim.text,
-    ...analyzeBulletConcreteness(claim.text),
-  }));
-  const fallbackWeakBullets = fallbackBulletAnalysis.filter((bullet) => !bullet.is_concrete_enough);
-  const fallbackQualityScore = Math.max(
-    0,
-    80 -
-      fallbackBannedPhrases.length * 10 -
-      fallbackVaguePatterns.length * 5 -
-      fallbackWeakBullets.length * 5 -
-      claimValidation.lowConfidenceCount * 5,
-  );
-  const fallbackQualityIssues = [
-    "Fallback generation requires manual review before apply.",
-    ...fallbackBannedPhrases.map((phrase) => `Banned phrase: "${phrase}"`),
-    ...fallbackVaguePatterns.map((pattern) => `Vague pattern: "${pattern}"`),
-    ...fallbackWeakBullets.map((bullet) => `Weak bullet: "${bullet.bullet.slice(0, 80)}"`),
-  ];
-  const fallbackBulletProvenance: BulletProvenance[] = bulletClaimInputs.map((claim) => {
-    const sourceEvidence = allEvidence.find((item) => item.id === claim.cited_evidence_id);
-    const sourceProof = sourceEvidence?.coached_version || sourceEvidence?.proof_snippet;
-    const audit = truthSerumAuditBullet(claim.text, {
-      sourceEvidenceId: claim.cited_evidence_id,
-      proofSnippets: sourceProof ? [sourceProof] : [],
-      systems: Array.isArray(sourceEvidence?.tools_used) ? sourceEvidence.tools_used : [],
-      outcomes: Array.isArray(sourceEvidence?.outcomes) ? sourceEvidence.outcomes : [],
-      riskFlags: sourceEvidence?.what_not_to_overstate ? ["overstatement_constraint"] : [],
-    });
-
-    return {
-      bullet_text: claim.text,
-      source_evidence_id: claim.cited_evidence_id,
-      source_evidence_title: sourceEvidence?.source_title ?? "Unknown",
-      source_role: sourceEvidence?.role_name ?? undefined,
-      source_company: sourceEvidence?.company_name ?? undefined,
-      claim_confidence: audit.score >= 80 ? "high" : audit.score >= 55 ? "medium" : "low",
-      keywords_covered: [],
-      risk_flags: audit.flags,
-      is_metric_rich: hasMetrics(claim.text),
-      concrete_signal_count: analyzeBulletConcreteness(claim.text).concrete_signal_count,
-      truth_serum: audit,
-    };
-  });
-  const fallbackParagraphProvenance: ParagraphProvenance[] = coverLetterParagraphs.map((paragraph) => ({
-    paragraph_text: paragraph.text,
-    evidence_used: paragraph.cited_evidence_id ? [paragraph.cited_evidence_id] : [],
-    matched_job_theme: "fallback_evidence_grounded_cover_letter",
-    claim_confidence: paragraph.cited_evidence_id ? "medium" : "low",
-    unsupported_language: detectBannedPhrases(paragraph.text),
-  }));
-  const fallbackConfirmedProofUsage: ConfirmedProofUsage[] =
-    buildConfirmedProofUsageReport(
-      getCapabilityPackets(jobData.evidence_map),
-      fallbackBulletProvenance,
-      fallbackParagraphProvenance,
-    );
-  const fallbackUnusedConfirmedProof = fallbackConfirmedProofUsage.filter(
-    (proof) => !proof.used,
-  );
-  fallbackQualityIssues.push(
-    ...fallbackUnusedConfirmedProof.map(
-      (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
-    ),
-  );
-
-  const { error: updateError } = await supabase
-    .from("jobs")
-    .update({
-      status: "needs_review",
-      generated_resume: formattedResume,
-      generated_cover_letter: formattedCoverLetter,
-      fit: "HIGH",
-      score: fitScore,
-      score_reasoning: {
-        rationale: evidenceMap.fit_rationale,
-        gaps: evidenceMap.gaps,
-        strategy: "direct_match",
-        requirement_coverage: evidenceMap.requirement_coverage,
-      },
-      score_strengths: evidenceMap.matched_skills,
-      score_gaps: evidenceMap.gaps,
-      resume_strategy: "direct_match",
-      evidence_map: {
-        ...(jobData.evidence_map && typeof jobData.evidence_map === "object" && !Array.isArray(jobData.evidence_map)
-          ? jobData.evidence_map as Record<string, unknown>
-          : {}),
-        ...evidenceMap,
-        bullet_provenance: fallbackBulletProvenance,
-        paragraph_provenance: fallbackParagraphProvenance,
-        generation_trace: {
-          generated_at: new Date().toISOString(),
-          confirmed_proof_usage: fallbackConfirmedProofUsage,
-        },
-      },
-      generation_status: "needs_review",
-      generation_error: null,
-      scored_at: new Date().toISOString(),
-      generation_timestamp: new Date().toISOString(),
-      generation_quality_score: fallbackQualityScore,
-      resume_format: "modern_professional",
-      resume_font: "inter",
-      format_recommendation_reason:
-        "Fallback format selected for ATS-safe local testing.",
-      generation_quality_issues: fallbackQualityIssues,
-      quality_passed: false,
-      governance_version: "1.0.0",
-      governance_passed: true,
-      governance_drift_score: driftResult.score,
-    })
-    .eq("id", job_id)
-    .eq("user_id", userId);
-
-  if (updateError) {
-    logSupabaseWriteError("fallback_update_generated_documents", updateError, {
-      job_id,
-      user_id: userId,
-    });
-    return NextResponse.json(
-      { success: false, error: updateError.message },
-      { status: 500 },
-    );
-  }
-
-  await syncNormalizedJobScore(supabase, job_id, fitScore);
-
-  const governanceRunInsert = await supabase
-    .from("generation_governance_runs")
-    .insert({
-      user_id: userId,
-      job_id,
-      strategy: "direct_match",
-      strategy_decision: {
-        strategy: "direct_match",
-        requirement_coverage: evidenceMap.requirement_coverage,
-        evidence_quality_pct: 100,
-        reasoning: evidenceMap.fit_rationale,
-        fallback: true,
-      },
-      bullet_verdicts: claimValidation.bulletVerdicts,
-      paragraph_verdicts: claimValidation.paragraphVerdicts,
-      fabricated_count: claimValidation.fabricatedCount,
-      low_confidence_count: claimValidation.lowConfidenceCount,
-      drift_score: driftResult.score,
-      drift_is_blocking: false,
-      drift_flags: driftResult.flags,
-      drift_summary: driftResult.summary,
-      governance_passed: true,
-      governance_version: "1.0.0",
-    })
-    .select("id")
-    .maybeSingle();
-  logSupabaseWriteError("insert_fallback_generation_governance_run", governanceRunInsert.error, {
-    job_id,
-    user_id: userId,
-  });
-
-  const governanceRunId = governanceRunInsert.data?.id ?? null;
-  await persistGovernanceClaimVerdicts({
-    supabase,
-    runId: governanceRunId,
-    userId,
-    jobId: job_id,
-    bulletVerdicts: claimValidation.bulletVerdicts,
-    paragraphVerdicts: claimValidation.paragraphVerdicts,
-  });
-
-  if (governanceRunId) {
-    const governanceRunReferenceUpdate = await supabase
-      .from("jobs")
-      .update({ last_governance_run_id: governanceRunId })
-      .eq("id", job_id)
-      .eq("user_id", userId);
-    logSupabaseWriteError(
-      "update_fallback_last_governance_run_id",
-      governanceRunReferenceUpdate.error,
-      { job_id, user_id: userId, governance_run_id: governanceRunId },
-    );
-  }
-
-  const qualityCheckInsert = await supabase.from("generation_quality_checks").insert({
-    user_id: userId,
-    job_id,
-    document_type: "resume",
-    invented_claims_found: [],
-    vague_bullets_found: [],
-    ai_filler_found: [],
-    repeated_structures_found: [],
-    unsupported_claims_found: [],
-    passed: false,
-    issues_count: fallbackQualityIssues.length,
-  });
-  logSupabaseWriteError("insert_fallback_generation_quality_check", qualityCheckInsert.error, {
-    job_id,
-    user_id: userId,
-  });
-
-  const { data: versionRow } = await supabase
-    .from("job_resume_versions")
-    .select("version_number")
-    .eq("job_id", job_id)
-    .eq("user_id", userId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  await supabase.from("job_resume_versions").insert({
-    job_id,
-    user_id: userId,
-    version_number: (versionRow?.version_number ?? 0) + 1,
-    resume_text: formattedResume,
-    cover_letter_text: formattedCoverLetter,
-    resume_format: "modern_professional",
-    resume_font: "inter",
-    generation_model: "local-fallback",
-    quality_passed: false,
-    quality_score: fallbackQualityScore,
-    strategy: "direct_match",
-  });
-
-  void handleDomainEvent({
-    supabase,
-    event_type: "documents_generated",
-    job_id,
-    user_id: userId,
-    source: "generate_documents_route",
-    payload: {
-      strategy: "direct_match",
-      quality_passed: false,
-      quality_score: fallbackQualityScore,
-      fit_score: fitScore,
-      fallback: true,
-    },
-  });
-
-  void handleDomainEvent({
-    supabase,
-    event_type: "quality_failed",
-    job_id,
-    user_id: userId,
-    source: "generate_documents_route",
-    payload: {
-      reason: "fallback_requires_review",
-      quality_score: fallbackQualityScore,
-      fallback: true,
-    },
-  });
-
-  return NextResponse.json({
-    success: true,
-    job_id,
-    evidence_map: evidenceMap,
-    generated_resume: formattedResume,
-    generated_cover_letter: formattedCoverLetter,
-    quality_check: {
-      passed: false,
-      score: fallbackQualityScore,
-      issues: {
-        invented_claims: [],
-        vague_bullets: fallbackWeakBullets.map((bullet) => bullet.bullet),
-        ai_filler: [],
-      },
-      suggestions: ["Review final wording before submission."],
-    },
-    strategy: "direct_match",
-    resume_format: "modern_professional",
-    resume_font: "inter",
-    format_recommendation_reason:
-      "Fallback format selected for ATS-safe local testing.",
-    governance: {
-      passed: true,
-      governance_version: "1.0.0",
-      run_id: governanceRunId,
-      drift_score: driftResult.score,
-      drift_summary: driftResult.summary,
-      drift_warnings: driftResult.flags.filter((flag) => flag.severity === "warning")
-        .length,
-      fabricated_count: claimValidation.fabricatedCount,
-      low_confidence_count: claimValidation.lowConfidenceCount,
-    },
-  });
+  return resume
 }
 
 /**
  * Build strategy-aware generation prompt based on fit
  */
-function buildStrategyPrompt(
-  strategy: GenerationStrategy,
-  hasUnresolvedGaps: boolean = false,
-): string {
-  const gapWarning = hasUnresolvedGaps
-    ? `
-WARNING: Some gaps remain unresolved. Be conservative - avoid overconfident claims in areas where evidence is thin.`
-    : "";
-
+function buildStrategyPrompt(strategy: GenerationStrategy): string {
   switch (strategy) {
     case "direct_match":
       return `
 GENERATION STRATEGY: DIRECT MATCH
 You may be assertive about qualifications since evidence strongly supports the match.
 Use confident language and highlight achievements directly relevant to the role.
-Still avoid any invention - stick to facts from evidence.${gapWarning}`;
+Still avoid any invention - stick to facts from evidence.`
 
     case "adjacent_transition":
       return `
@@ -1329,7 +210,7 @@ GENERATION STRATEGY: ADJACENT TRANSITION
 Lean on transferable skills and related experience.
 Do NOT claim direct experience you don't have.
 Frame adjacent work as relevant without pretending direct ownership.
-Be honest about the transition narrative.${gapWarning}`;
+Be honest about the transition narrative.`
 
     case "stretch_honest":
       return `
@@ -1337,454 +218,137 @@ GENERATION STRATEGY: STRETCH BUT HONEST
 This is a stretch role - be careful not to overclaim.
 Emphasize learning ability and adaptability.
 Acknowledge gaps indirectly through what you bring, not what you lack.
-Do NOT exaggerate or invent qualifications.${gapWarning}`;
+Do NOT exaggerate or invent qualifications.`
 
     case "do_not_generate":
       return `
-GENERATION STRATEGY: SAFETY BLOCK
-Direct fabrication risk was detected. Do not generate application materials.`;
-  }
-}
-
-function buildVoiceInstructions(
-  mode: VoiceMode,
-  profile: VoiceProfile,
-): string {
-  const preservePhrases = profile.preserve.phrases.slice(0, 5);
-  const actionVerbs = profile.vocabulary.commonActionVerbs.slice(0, 6);
-
-  switch (mode) {
-    case "preserve_original":
-      return `
-VOICE PRESERVATION MODE — match the candidate's existing writing style precisely:
-- Tone: ${profile.tone.primary}
-- Formality: ${profile.formality}
-- Sentence length: ${profile.sentencePattern.averageLength} (bullets)
-- Bullet pattern: ${profile.bulletStyle.typicalPattern}
-- Vocabulary level: ${profile.vocabulary.level}
-${actionVerbs.length > 0 ? `- Use action verbs from their style: ${actionVerbs.join(", ")}` : ""}
-${preservePhrases.length > 0 ? `- Preserve phrases like: "${preservePhrases.join('", "')}"` : ""}
-${profile.avoid.risks.length > 0 ? `- Avoid: ${profile.avoid.risks.join("; ")}` : ""}
-Do NOT upgrade to more formal, executive, or polished language than the original.`;
-
-    case "polish_lightly":
-      return `
-LIGHT POLISH MODE — improve clarity while keeping the candidate's voice:
-- Keep: ${profile.tone.primary} tone, ${profile.formality} formality
-- Fix grammar and clarity only — do not change their personality or register
-- Keep sentence length similar (${profile.sentencePattern.averageLength})
-- Avoid introducing corporate jargon or buzzwords not found in the original`;
-
-    case "professional_upgrade":
-      return `
-PROFESSIONAL UPGRADE MODE — rewrite with professional clarity grounded in their evidence:
-- Upgrade: structure, clarity, and action verb strength
-- Keep: core facts, evidence, and truthful claims
-- Use professional vocabulary; avoid invented superlatives
-- Maintain action verb bullets`;
+GENERATION BLOCKED: DO NOT GENERATE
+This role is too much of a stretch. Generating materials would require invention.
+Return an error explaining why generation was blocked.`
   }
 }
 
 export async function POST(request: NextRequest) {
-  const {
-    validationError,
-    authError,
-    aiProviderError,
-    documentGenerationError,
-    supabaseError,
-    unknownError,
-  } = await import("@/lib/errors/factory");
-  const { logError: logErr } = await import("@/lib/errors/logger");
-  const { toApiErrorResponse } = await import("@/lib/errors/response");
-  const { createCorrelationId } = await import("@/lib/errors/correlation");
-  const correlationId = createCorrelationId();
-  let parsedJobId: string | null = null;
   try {
-    const body = await request.json();
-    const { selected_evidence_ids, _retry_count = 0 } = body;
-
+    const body = await request.json()
+    const { selected_evidence_ids, _retry_count = 0 } = body
+    
     // Validate input
-    const parseResult = GenerateDocumentsInputSchema.safeParse(body);
+    const parseResult = GenerateDocumentsInputSchema.safeParse(body)
     if (!parseResult.success) {
       return NextResponse.json(
-        {
-          success: false,
-          error: parseResult.error.errors[0]?.message || "Invalid input",
-        },
-        { status: 400 },
-      );
+        { success: false, error: parseResult.error.errors[0]?.message || "Invalid input" },
+        { status: 400 }
+      )
     }
+    
+    const { job_id } = parseResult.data
+    const isRetry = _retry_count > 0
+    const MAX_RETRIES = 1 // Auto-retry once if quality check fails
 
-    const { job_id } = parseResult.data;
-    parsedJobId = job_id;
-    const generationId = crypto.randomUUID();
-    const isRetry = _retry_count > 0;
-    const MAX_RETRIES = 1; // Auto-retry once if quality check fails
-    const aiConfigured = isAnthropicConfigured();
-
-    const auth = await requireUser();
-    if (!auth.ok) return auth.response;
-    const userId = auth.userId;
-
-    // Use user-scoped client for all reads and writes (RLS enforced)
-    const supabase = auth.supabase;
-
-    // === PLAN ENFORCEMENT ===
-    // Check user's plan and generation count this month
-    const { data: userData } = await supabase
-      .from("users")
-      .select("plan_type, usage_reset_at, generations_this_month")
-      .eq("id", userId)
-      .single();
-
-    const plan = userData?.plan_type || "free";
-
-    // Free users: 5 generations per month.
-    // Use the canonical users.generations_this_month + users.usage_reset_at counter —
-    // NOT a jobs-table count — so both the gate and the incrementer share one source of truth.
-    if (plan === "free") {
-      const firstOfMonth = new Date();
-      firstOfMonth.setDate(1);
-      firstOfMonth.setHours(0, 0, 0, 0);
-
-      const monthNeedsReset =
-        !userData?.usage_reset_at ||
-        new Date(userData.usage_reset_at) < firstOfMonth;
-
-      const generationsThisMonth = monthNeedsReset
-        ? 0
-        : userData?.generations_this_month || 0;
-
-      if (generationsThisMonth >= 5) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "generation_limit_reached",
-            user_message:
-              "You've reached your monthly limit of 5 document generations. Upgrade to Pro for unlimited generations.",
-          },
-          { status: 403 },
-        );
-      }
-    }
-
-    // Load all required data in parallel
-    const [profile, allEvidence, jobData, sourceResume] = await Promise.all([
-      loadUserProfile(supabase, userId),
-      loadEvidenceLibrary(supabase, userId),
-      loadJobAnalysis(supabase, job_id, userId),
-      loadSourceResume(supabase, userId),
-    ]);
-
-    // Start voice profile extraction from source resume in parallel with validation checks.
-    // Fire-and-forget the promise now; await it before generation prompts are built.
-    const voiceProfilePromise: Promise<VoiceProfile | null> =
-      aiConfigured && sourceResume?.parsed_text
-        ? extractVoiceProfile(sourceResume.parsed_text)
-        : Promise.resolve(null);
-
-    // HARD FAIL: Evidence is required for document generation
-    if (!allEvidence || allEvidence.length === 0) {
-      const { error: evidenceRequiredStatusError } = await supabase
-        .from("jobs")
-        .update({
-          generation_status: "failed",
-          generation_error: "evidence_required",
-        })
-        .eq("id", job_id)
-        .eq("user_id", userId);
-      logSupabaseWriteError("mark_evidence_required_failed", evidenceRequiredStatusError, { job_id, user_id: userId });
-
+    if (!isGroqConfigured()) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "evidence_required",
-          user_message:
-            "No evidence found in your library. Please upload a resume or add evidence manually before generating materials.",
-        },
-        { status: 400 },
-      );
+        { success: false, error: "AI service not configured" },
+        { status: 500 }
+      )
     }
 
-    // If no profile exists, create a minimal one or use source resume data
-    if (!profile && !sourceResume?.parsed_data) {
-      // Update job status to indicate why generation failed
-      const { error: profileRequiredStatusError } = await supabase
-        .from("jobs")
-        .update({
-          generation_status: "failed",
-          generation_error: "profile_required",
-        })
-        .eq("id", job_id)
-        .eq("user_id", userId);
-      logSupabaseWriteError("mark_profile_required_failed", profileRequiredStatusError, { job_id, user_id: userId });
-
+    // Authenticate the requesting user — admin client is used for writes,
+    // but all reads are scoped to user_id so cross-tenant reads are impossible.
+    const userClient = await createClient()
+    let userId: string | undefined
+    const { data: { user } } = await userClient.auth.getUser()
+    if (user) {
+      userId = user.id
+    } else {
+      const { data: { session } } = await userClient.auth.getSession()
+      if (session?.user) userId = session.user.id
+    }
+    if (!userId) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "profile_required",
-          user_message:
-            "Please complete your profile or upload a resume before generating materials.",
-        },
-        { status: 400 },
-      );
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      )
     }
 
-    // Allow generation with just source resume if profile is missing
-    const hasUsableData = profile || sourceResume?.parsed_data;
+    const supabase = createAdminClient()
 
-    if (!jobData) {
-      return NextResponse.json(
-        { success: false, error: "Job not found" },
-        { status: 404 },
-      );
-    }
-
-    const readiness = evaluateReadiness(jobData);
-    if (!readiness.checklist.coach) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "coach_step_required",
-          user_message:
-            "Answer the coach prompts, or explicitly skip them, before generating materials for this role.",
-          next_action: readiness.nextAction,
-        },
-        { status: 409 },
-      );
-    }
-
-    // Set status to 'generating' early - fallback and AI both use this
-    const generationStartUpdate = await supabase
+    // Set status to 'generating' immediately
+    await supabase
       .from("jobs")
       .update({
         status: "generating",
         generation_status: "generating",
         generation_error: null,
-      })
-      .eq("id", job_id)
-      .eq("user_id", userId)
-      .is("deleted_at", null);
-
-    logSupabaseWriteError(
-      "mark_generation_started",
-      generationStartUpdate.error,
-      { job_id, user_id: userId },
-    );
-
-    // Optional counters — swallow errors in envs where these columns aren't yet migrated
-    void supabase
-      .from("jobs")
-      .update({
         generation_attempts: _retry_count + 1,
-        last_generation_at: new Date().toISOString(),
+        last_generation_at: new Date().toISOString()
       })
       .eq("id", job_id)
       .eq("user_id", userId)
-      .then(() => {}, () => {});
 
-    // If AI is not configured, use fallback without evidence validation
-    if (!aiConfigured) {
-      return generateFallbackDocuments({
-        supabase,
-        job_id,
-        userId,
-        profile: profile as Record<string, any> | null,
-        sourceResumeData: sourceResume?.parsed_data as Record<string, any> | null,
-        allEvidence: allEvidence as EvidenceRecord[],
-        jobData: jobData as Record<string, any>,
-      });
-    }
+    // Load all required data in parallel — all queries scoped to user_id
+    const [profile, allEvidence, jobData, sourceResume] = await Promise.all([
+      loadUserProfile(supabase, userId),
+      loadEvidenceLibrary(supabase, userId),
+      loadJobAnalysis(supabase, job_id, userId),
+      loadSourceResume(supabase, userId),
+    ])
 
-    // For AI generation, validate evidence mapping is adequate
-    let effectiveEvidenceMap = jobData.evidence_map;
-    let capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
-    let usablePackets = packetsForResume(capabilityPackets);
-
-    // Auto-recovery: if packets are missing, force a canonical rebuild once.
-    if (capabilityPackets.length === 0 || usablePackets.length === 0) {
-      try {
-        const rebuiltMap = await buildEvidenceMapForJob({
-          supabase,
-          userId,
-          jobId: job_id,
-        });
-        effectiveEvidenceMap = rebuiltMap;
-        capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
-        usablePackets = packetsForResume(capabilityPackets);
-      } catch {
-        // Keep original map and return an actionable error below.
-      }
-    }
-
-    const coverage = await deriveMatchingComplete({
-      supabase,
-      userId,
-      jobId: job_id,
-      evidenceMap: effectiveEvidenceMap,
-    });
-    effectiveEvidenceMap = applyCoverageToEvidenceMap(effectiveEvidenceMap, coverage);
-    capabilityPackets = getCapabilityPackets(effectiveEvidenceMap);
-    usablePackets = packetsForResume(capabilityPackets);
-
-    const effectiveMapRecord = asRecord(effectiveEvidenceMap);
-    const evidenceMapUpdate: Record<string, unknown> = {
-      evidence_map: effectiveEvidenceMap,
-      updated_at: new Date().toISOString(),
-    };
-    if (typeof effectiveMapRecord?.version === "string") {
-      evidenceMapUpdate.evidence_map_version = effectiveMapRecord.version;
-    }
-
-    await supabase
-      .from("jobs")
-      .update(evidenceMapUpdate)
-      .eq("id", job_id)
-      .eq("user_id", userId);
-
-    let blockedRequirements = getBlockedRequiredRequirements(
-      effectiveEvidenceMap,
-      coverage.confirmedDecisionRequirementIds,
-    );
-    if (!coverage.matchingComplete && (capabilityPackets.length === 0 || usablePackets.length === 0 || blockedRequirements.length > 0)) {
-      const map = asRecord(effectiveEvidenceMap);
-      const mapBuildError = asRecord(map?.map_build_error);
+    // If no profile exists, create a minimal one or use source resume data
+    if (!profile && !sourceResume?.parsed_data) {
+      // Update job status to indicate why generation failed
       await supabase
         .from("jobs")
         .update({
+          status: "needs_review",
           generation_status: "failed",
-          generation_error: "capability_packets_required",
+          generation_error: "profile_required",
         })
         .eq("id", job_id)
-        .eq("user_id", userId);
+        .eq("user_id", userId)
 
       return NextResponse.json(
         {
           success: false,
-          error: "capability_packets_required",
-          user_message:
-            "HireWire needs confirmed proof before generating. Use Prove Fit to answer or skip the claims it cannot verify yet.",
-          blocked_requirements: blockedRequirements,
-          map_build_error: mapBuildError,
-          next_action: {
-            label: "Prove Fit",
-            href: buildEvidenceFixHref(job_id, blockedRequirements[0]?.requirement_id ?? null),
-            description:
-              "Review the unmatched requirements and confirm or add evidence before generating again.",
-          },
+          error: "profile_required",
+          user_message: "Please complete your profile or upload a resume before generating materials."
         },
-        { status: 409 },
-      );
+        { status: 400 }
+      )
     }
+    
+    // Allow generation with just source resume if profile is missing
+    const hasUsableData = profile || sourceResume?.parsed_data
 
-    const canonicalMap = asRecord(effectiveEvidenceMap);
-    const canonicalRequirements = Array.isArray(canonicalMap?.requirement_matches)
-      ? canonicalMap.requirement_matches as Array<Record<string, any>>
-      : [];
-    const storedJobAnalysis = jobData.job_analyses?.[0];
-    const jobAnalysis = canonicalRequirements.length > 0
-      ? {
-          ...storedJobAnalysis,
-          responsibilities: canonicalRequirements
-            .filter((match) => match.expectation_type && String(match.expectation_type).includes("respons"))
-            .map((match) => String(match.requirement_text ?? ""))
-            .filter(Boolean),
-          qualifications_required: canonicalRequirements
-            .filter((match) => match.priority === "required")
-            .map((match) => String(match.requirement_text ?? ""))
-            .filter(Boolean),
-          qualifications_preferred: canonicalRequirements
-            .filter((match) => match.priority === "preferred")
-            .map((match) => String(match.requirement_text ?? ""))
-            .filter(Boolean),
-          keywords: canonicalRequirements
-            .filter((match) => match.priority === "keyword")
-            .map((match) => String(match.normalized_requirement ?? match.requirement_text ?? ""))
-            .filter(Boolean),
-          ats_phrases: Array.isArray(storedJobAnalysis?.ats_phrases) ? storedJobAnalysis.ats_phrases : [],
-        }
-      : storedJobAnalysis;
-
-    if (canonicalRequirements.length > 0 && !coverage.matchingComplete) {
+    if (!jobData) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "prove_fit_required",
-          user_message:
-            "Run Prove Fit before generating so HireWire only uses confirmed, auto-matched, or intentionally skipped claims.",
-          next_action: {
-            label: "Prove Fit",
-            href: `/jobs/${job_id}/evidence-match`,
-          },
-        },
-        { status: 409 },
-      );
+        { success: false, error: "Job not found" },
+        { status: 404 }
+      )
     }
 
-    // Load gap clarifications for this job (job-specific context)
-    const rawGapClarifications = jobData.gap_clarifications;
-    const gapClarifications: Array<{
-      gap_requirement: string;
-      answer: string;
-      routing: string;
-    }> = Array.isArray(rawGapClarifications) ? rawGapClarifications : [];
-    const { data: proveFitDecisions, error: proveFitDecisionError } = await supabase
-      .from("prove_fit_decisions")
-      .select("requirement_id, decision, claim_text, requirement_text")
-      .eq("job_id", job_id)
-      .eq("user_id", userId)
-      .eq("decision", "confirmed");
-
-    if (proveFitDecisionError) {
-      console.error("[HireWire] confirmed prove fit decision read failed:", proveFitDecisionError);
-    }
-
-    const confirmedProofRows = (proveFitDecisions ?? []).filter((decision) => {
-      const claimText = typeof decision.claim_text === "string" ? decision.claim_text.trim() : "";
-      return claimText.length > 0;
-    });
-    const confirmedProofBlock =
-      confirmedProofRows.length > 0
-        ? `\n\nCONFIRMED PROOF FROM CANDIDATE (inject as grounded bullets — do not fabricate beyond this):\n${confirmedProofRows
-            .map((decision) => {
-              const requirementText =
-                typeof decision.requirement_text === "string" && decision.requirement_text.trim().length > 0
-                  ? decision.requirement_text.trim()
-                  : String(decision.requirement_id ?? "Requirement");
-              const claimText = typeof decision.claim_text === "string" ? decision.claim_text.trim() : "";
-              return `Requirement: ${requirementText}\nProof: ${claimText}`;
-            })
-            .join("\n\n")}`
-        : "";
+    const jobAnalysis = jobData.job_analyses?.[0]
 
     // TRUTH-LOCK: Filter evidence based on usage rules
     // If user selected specific evidence, use that; otherwise filter automatically
-    let resumeEvidence =
-      selected_evidence_ids?.length > 0
-        ? allEvidence.filter((e: { id: string }) =>
-            selected_evidence_ids.includes(e.id),
-          )
-        : filterEvidenceForResume(allEvidence);
-
-    let coverLetterEvidence =
-      selected_evidence_ids?.length > 0
-        ? allEvidence.filter((e: { id: string }) =>
-            selected_evidence_ids.includes(e.id),
-          )
-        : filterEvidenceForCoverLetter(allEvidence);
+    let resumeEvidence = selected_evidence_ids?.length > 0
+      ? allEvidence.filter((e: { id: string }) => selected_evidence_ids.includes(e.id))
+      : filterEvidenceForResume(allEvidence)
+    
+    let coverLetterEvidence = selected_evidence_ids?.length > 0
+      ? allEvidence.filter((e: { id: string }) => selected_evidence_ids.includes(e.id))
+      : filterEvidenceForCoverLetter(allEvidence)
 
     // Log what evidence was filtered out and why
     const blockedEvidence = allEvidence.filter((e: EvidenceRecord) => {
-      const rule = getEvidenceUsageRule(e);
-      return rule === "blocked" || rule === "interview_only";
-    });
+      const rule = getEvidenceUsageRule(e)
+      return rule === "blocked" || rule === "interview_only"
+    })
 
     // Build the evidence context with usage rules annotated
     // Use source resume parsed data when profile data is incomplete
     const sourceResumeData = sourceResume?.parsed_data as {
       full_name?: string;
-      email?: string;
-      phone?: string;
       location?: string;
       summary?: string;
       skills?: string[];
@@ -1801,41 +365,16 @@ export async function POST(request: NextRequest) {
         school: string;
         year?: string;
       }>;
-    } | null;
+    } | null
 
     // Merge profile with source resume data (profile takes precedence)
-    // SECURITY: Sanitize free-form text fields to prevent prompt injection
-    const effectiveName =
-      profile?.full_name || sourceResumeData?.full_name || "Not provided";
-    const effectiveLocation =
-      profile?.location || sourceResumeData?.location || "Not provided";
-    const rawSummary =
-      profile?.summary || sourceResumeData?.summary || "Not provided";
-    const effectiveSummary = sanitizeInput(rawSummary); // Prevent prompt injection via summary field
-    const effectiveSkills =
-      Array.isArray(profile?.skills) && profile.skills.length > 0
-        ? profile.skills
-        : Array.isArray(sourceResumeData?.skills)
-          ? sourceResumeData.skills
-          : [];
-    const effectiveExperience =
-      Array.isArray(profile?.experience) && profile.experience.length > 0
-        ? profile.experience
-        : Array.isArray(sourceResumeData?.experience)
-          ? sourceResumeData.experience
-          : [];
-    const effectiveEducation =
-      Array.isArray(profile?.education) && profile.education.length > 0
-        ? profile.education
-        : Array.isArray(sourceResumeData?.education)
-          ? sourceResumeData.education
-          : [];
+    const effectiveName = profile.full_name || sourceResumeData?.full_name || "Not provided"
+    const effectiveLocation = profile.location || sourceResumeData?.location || "Not provided"
+    const effectiveSummary = profile.summary || sourceResumeData?.summary || "Not provided"
+    const effectiveSkills = (profile.skills?.length > 0 ? profile.skills : sourceResumeData?.skills) || []
+    const effectiveExperience = (profile.experience?.length > 0 ? profile.experience : sourceResumeData?.experience) || []
+    const effectiveEducation = (profile.education?.length > 0 ? profile.education : sourceResumeData?.education) || []
 
-    // NOTE: profileContext is built for completeness but is NOT injected into AI prompts.
-    // Bias guard 2.1: name would need stripping here if this context were ever added to a prompt.
-    // Bias guard 2.2: institution would need stripping here if this context were ever added to a prompt.
-    // Bias guard 2.3: company names would need anonymizing here if this context were ever added to a prompt.
-    // Bias guard 2.4: start_date/end_date would need replacing with durationFromDates() if this context were ever added to a prompt.
     const profileContext = `
 CANDIDATE PROFILE:
 Name: ${effectiveName}
@@ -1845,69 +384,44 @@ Summary: ${effectiveSummary}
 Skills: ${effectiveSkills.join(", ")}
 
 Work Experience:
-${effectiveExperience
-  .map(
-    (exp: {
-      title: string;
-      company: string;
-      start_date?: string;
-      end_date?: string;
-      description?: string;
-      bullets?: string[];
-    }) => `
+${effectiveExperience.map((exp: { title: string; company: string; start_date?: string; end_date?: string; description?: string; bullets?: string[] }) => `
 - ${exp.title} at ${exp.company} (${exp.start_date || ""} - ${exp.end_date || "Present"})
   ${exp.description || ""}
-  ${exp.bullets ? exp.bullets.map((b) => `  • ${b}`).join("\n") : ""}
-`,
-  )
-  .join("\n")}
+  ${exp.bullets ? exp.bullets.map(b => `  • ${b}`).join("\n") : ""}
+`).join("\n")}
 
 Education:
-${effectiveEducation
-  .map(
-    (edu: { degree: string; school: string; year?: string }) => `
+${effectiveEducation.map((edu: { degree: string; school: string; year?: string }) => `
 - ${edu.degree} from ${edu.school} ${edu.year ? `(${edu.year})` : ""}
-`,
-  )
-  .join("\n")}
-${
-  sourceResume?.parsed_text
-    ? `
+`).join("\n")}
+${sourceResume?.parsed_text ? `
 ADDITIONAL CONTEXT FROM SOURCE RESUME:
 (Use this for additional details if the structured data above is incomplete)
 ${sourceResume.parsed_text.slice(0, 5000)}
+` : ""}
 `
-    : ""
-}
-`;
 
-    // NOTE: evidenceContext is built for provenance/tracing but is NOT injected into AI prompts.
-    // Guards 2.3 (company) and 2.4 (dates) would apply here if this context were ever added to a prompt.
-    const evidenceContext =
-      resumeEvidence.length > 0
-        ? `
+    const evidenceContext = resumeEvidence.length > 0 ? `
 VERIFIED EVIDENCE LIBRARY (use ONLY these for resume):
-${resumeEvidence
-  .map(
-    (e: {
-      id: string;
-      source_title: string;
-      source_type: string;
-      company_name?: string;
-      role_name?: string;
-      date_range?: string;
-      responsibilities?: string[];
-      tools_used?: string[];
-      outcomes?: string[];
-      approved_achievement_bullets?: string[];
-      confidence_level: string;
-      what_not_to_overstate?: string;
-      team_size?: number;
-      budget_scope?: string;
-      user_impact_scale?: string;
-      industries?: string[];
-      project_name?: string;
-    }) => `
+${resumeEvidence.map((e: {
+  id: string;
+  source_title: string;
+  source_type: string;
+  company_name?: string;
+  role_name?: string;
+  date_range?: string;
+  responsibilities?: string[];
+  tools_used?: string[];
+  outcomes?: string[];
+  approved_achievement_bullets?: string[];
+  confidence_level: string;
+  what_not_to_overstate?: string;
+  team_size?: number;
+  budget_scope?: string;
+  user_impact_scale?: string;
+  industries?: string[];
+  project_name?: string;
+}) => `
 --- EVIDENCE [ID: ${e.id}] ---
 Type: ${e.source_type}
 Title: ${e.source_title}
@@ -1918,53 +432,26 @@ ${e.date_range ? `Period: ${e.date_range}` : ""}
 ${e.industries?.length ? `Industry: ${e.industries.join(", ")}` : ""}
 Confidence: ${e.confidence_level.toUpperCase()}
 
-${
-  e.team_size
-    ? `SCOPE:
+${e.team_size ? `SCOPE:
   Team Size: ${e.team_size} people
   ${e.budget_scope ? `Budget/Revenue: ${e.budget_scope}` : ""}
   ${e.user_impact_scale ? `User Impact: ${e.user_impact_scale}` : ""}
-`
-    : ""
-}
-${
-  e.what_not_to_overstate
-    ? `CONSTRAINT: ${e.what_not_to_overstate}
-`
-    : ""
-}
-${
-  e.responsibilities?.length
-    ? `RESPONSIBILITIES:
-${e.responsibilities.map((r) => `  - ${r}`).join("\n")}
-`
-    : ""
-}
-${
-  e.tools_used?.length
-    ? `TOOLS: ${e.tools_used.join(", ")}
-`
-    : ""
-}
-${
-  e.outcomes?.length
-    ? `OUTCOMES:
-${e.outcomes.map((o) => `  - ${o}`).join("\n")}
-`
-    : ""
-}
-${
-  e.approved_achievement_bullets?.length
-    ? `APPROVED BULLETS:
-${e.approved_achievement_bullets.map((b) => `  - ${b}`).join("\n")}
-`
-    : ""
-}
-`,
-  )
-  .join("\n")}
-`
-        : "";
+` : ""}
+${e.what_not_to_overstate ? `CONSTRAINT: ${e.what_not_to_overstate}
+` : ""}
+${e.responsibilities?.length ? `RESPONSIBILITIES:
+${e.responsibilities.map(r => `  - ${r}`).join("\n")}
+` : ""}
+${e.tools_used?.length ? `TOOLS: ${e.tools_used.join(", ")}
+` : ""}
+${e.outcomes?.length ? `OUTCOMES:
+${e.outcomes.map(o => `  - ${o}`).join("\n")}
+` : ""}
+${e.approved_achievement_bullets?.length ? `APPROVED BULLETS:
+${e.approved_achievement_bullets.map(b => `  - ${b}`).join("\n")}
+` : ""}
+`).join("\n")}
+` : ""
 
     const jobContext = `
 JOB DETAILS:
@@ -1973,198 +460,125 @@ Company: ${jobData.company}
 Location: ${jobData.location || "Not specified"}
 ${jobData.salary_range ? `Salary: ${jobData.salary_range}` : ""}
 
-${
-  jobAnalysis?.responsibilities?.length
-    ? `Key Responsibilities:
-${jobAnalysis.responsibilities.map((r: string) => `- ${r}`).join("\n")}`
-    : ""
-}
+${jobAnalysis?.responsibilities?.length ? `Key Responsibilities:
+${jobAnalysis.responsibilities.map((r: string) => `- ${r}`).join("\n")}` : ""}
 
-${
-  jobAnalysis?.qualifications_required?.length
-    ? `Required Qualifications:
-${jobAnalysis.qualifications_required.map((q: string) => `- ${q}`).join("\n")}`
-    : ""
-}
+${jobAnalysis?.qualifications_required?.length ? `Required Qualifications:
+${jobAnalysis.qualifications_required.map((q: string) => `- ${q}`).join("\n")}` : ""}
 
-${
-  jobAnalysis?.qualifications_preferred?.length
-    ? `Preferred Qualifications:
-${jobAnalysis.qualifications_preferred.map((q: string) => `- ${q}`).join("\n")}`
-    : ""
-}
+${jobAnalysis?.qualifications_preferred?.length ? `Preferred Qualifications:
+${jobAnalysis.qualifications_preferred.map((q: string) => `- ${q}`).join("\n")}` : ""}
 
 ${jobAnalysis?.keywords?.length ? `Important Keywords: ${jobAnalysis.keywords.join(", ")}` : ""}
 ${jobAnalysis?.ats_phrases?.length ? `ATS Phrases to Include: ${jobAnalysis.ats_phrases.join(", ")}` : ""}
-${
-  !jobAnalysis && jobData.job_description
-    ? `
+${!jobAnalysis && jobData.raw_description ? `
 Full Job Description (manually entered — extract responsibilities and keywords from this):
-${(jobData.job_description as string).slice(0, 3000)}`
-    : ""
-}
-${
-  gapClarifications.length > 0
-    ? `
+${(jobData.raw_description as string).slice(0, 3000)}` : ""}
+`
 
-ADDITIONAL CONTEXT FROM CANDIDATE (use this to address identified gaps):
-${gapClarifications
-  .map(
-    (c) => `
-Gap: ${c.gap_requirement}
-Candidate's response: ${c.answer}
-`,
-  )
-  .join("\n")}
-NOTE: The candidate provided this additional context to address gaps. Use this information when crafting the resume and cover letter, but DO NOT fabricate or exaggerate beyond what they stated.`
-    : ""
-}
-${confirmedProofBlock}
-`;
+    // Step 1: Create evidence map and determine strategy
+    const { object: evidenceMap } = await generateObject({
+      model: groq(MODELS.VERSATILE),
+      schema: EvidenceMapSchema,
+      prompt: `Analyze the match between this candidate and job opportunity.
 
-    // Step 1: consume the upstream evidence intelligence contract.
-    // Generation is a composer here; it may not reach back to raw evidence to invent its own matching logic.
-    const generatedEvidenceMap = buildPacketEvidenceMap(capabilityPackets);
-    const packetContext = `
-STRUCTURED EVIDENCE INTELLIGENCE PACKETS
-Use ONLY these packets for resume and cover-letter claims. Do not create bullets for requirements
-without a packet. Do not add systems, metrics, scope, tools, companies, or outcomes that are not
-present in the packets.
+${profileContext}
 
-${formatGenerationPackets(capabilityPackets)}
-`;
+${evidenceContext}
+
+${jobContext}
+
+Create an evidence map that:
+1. Identifies skills and tools from the profile that match job requirements
+2. Selects the most relevant work experiences (include evidence IDs when referencing evidence items)
+3. Notes any gaps in qualifications
+4. Provides an honest fit score
+5. Calculate what percentage of REQUIRED qualifications are covered
+
+Be conservative - only include matches that are clearly supported by the evidence. Do not exaggerate or invent connections.`,
+    })
 
     // Determine generation strategy based on fit
-    const evidenceQuality =
-      (resumeEvidence.filter(
-        (e: { confidence_level: string }) => e.confidence_level === "high",
-      ).length /
-        (resumeEvidence.length || 1)) *
-      100;
-    const { strategy, reasoning: strategyReasoning } =
-      determineGenerationStrategy(
-        jobData,
-        generatedEvidenceMap.requirement_coverage,
-        evidenceQuality,
-      );
+    const evidenceQuality = resumeEvidence.filter((e: { confidence_level: string }) => e.confidence_level === "high").length / (resumeEvidence.length || 1) * 100
+    const { strategy, reasoning: strategyReasoning } = determineGenerationStrategy(
+      jobData,
+      evidenceMap.requirement_coverage,
+      evidenceQuality
+    )
 
+    // Block generation if strategy is "do_not_generate"
     if (strategy === "do_not_generate") {
-      const insufficientEvidenceUpdate = await supabase
+      await supabase
         .from("jobs")
         .update({
+          status: "error",
           generation_status: "failed",
-          generation_error: "insufficient_evidence",
+          generation_error: "Generation blocked: role too much of a stretch",
         })
         .eq("id", job_id)
-        .eq("user_id", userId);
+        .eq("user_id", userId)
 
-      logSupabaseWriteError(
-        "mark_insufficient_evidence_generation_failed",
-        insufficientEvidenceUpdate.error,
-        { job_id, user_id: userId },
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "insufficient_evidence",
-          user_message:
-            "Your evidence library does not cover enough of this role to generate. Add more evidence or close gaps in Prove Fit first.",
-        },
-        { status: 409 },
-      );
+      return NextResponse.json({
+        success: false,
+        error: "Generation blocked: This role is too much of a stretch.",
+        strategy,
+        strategy_reasoning: strategyReasoning,
+        requirement_coverage: evidenceMap.requirement_coverage,
+        gaps: evidenceMap.gaps,
+      }, { status: 400 })
     }
 
-    const generationRiskWarning =
-      strategy === "stretch_honest" && generatedEvidenceMap.requirement_coverage < 30
-        ? {
-            code: "low_evidence_coverage",
-            message:
-              "HireWire found low evidence coverage for this role and automatically used conservative, evidence-only generation.",
-            requirement_coverage: generatedEvidenceMap.requirement_coverage,
-            gaps: generatedEvidenceMap.gaps,
-          }
-        : null;
+    const strategyPrompt = buildStrategyPrompt(strategy)
 
-    // Determine if there are unresolved gaps (gaps detected but not clarified)
-    const hasUnresolvedGaps =
-      generatedEvidenceMap.gaps.length > 0 && gapClarifications.length === 0;
-    const strategyPrompt = buildStrategyPrompt(strategy, hasUnresolvedGaps);
+    // Auto-select optimal resume template based on job analysis
+    const selectedTemplate = suggestTemplate({
+      title: jobData.title,
+      role_family: jobData.role_family,
+      responsibilities: jobData.responsibilities,
+      qualifications_required: jobData.qualifications_required,
+    })
+    const templateConfig = RESUME_TEMPLATES[selectedTemplate]
+    const templateGuidance = getTemplateGuidance(selectedTemplate)
 
-    // Await voice profile extraction (started in parallel with evidence map generation)
-    const originalVoiceProfile = await voiceProfilePromise;
-    const voiceMode: VoiceMode = originalVoiceProfile
-      ? selectVoiceMode(originalVoiceProfile)
-      : "preserve_original";
-    const voiceInstructions = originalVoiceProfile
-      ? buildVoiceInstructions(voiceMode, originalVoiceProfile)
-      : "";
-
-    const resumeFormatRecommendation = recommendResumeFormat({
-      roleTitle: String(jobData.title ?? ""),
-      seniority: String(jobData.role_family ?? ""),
-      applicationChannel: String(jobData.job_url ?? ""),
-    });
-
-    // Step 2: Generate resume with bullet-level provenance (with retry for rate limits)
+    // Step 2: Generate resume with bullet-level provenance
     // SIMPLIFIED: Reduced prompt verbosity to produce more natural, human-sounding output
-    // Using Claude for higher token limits and better quality
-    const packetEvidenceIds = new Set(generatedEvidenceMap.selected_evidence_ids);
-    resumeEvidence = resumeEvidence.filter((e: { id: string }) => packetEvidenceIds.has(e.id));
-    coverLetterEvidence = coverLetterEvidence.filter((e: { id: string }) => packetEvidenceIds.has(e.id));
+    const { object: resumeWithProvenance } = await generateObject({
+      model: groq(MODELS.VERSATILE),
+      schema: ResumeWithProvenanceSchema,
+      prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
 
-    const resumeWithProvenance = await withRetry(() =>
-      generateStructuredText({
-        model: CLAUDE_MODELS.SONNET,
-        schema: ResumeWithProvenanceSchema,
-        schemaDescription: RESUME_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
-        prompt: `Write resume content for this job application. Sound like a sharp professional, not a bot.
+${profileContext}
 
-VERB TIER RULE: Apply identical verb strength regardless of candidate name, school, company, or background. If evidence supports Led, write Led. Never use hedging verbs (helped, assisted, supported) based on inferred demographics.
-
-Candidate identity/contact/education context only:
-// Bias guard 2.1: name stripped from generation context
-Candidate: The candidate
-Location: ${effectiveLocation}
-Skills for skills section only: ${effectiveSkills.join(", ")}
-Education:
-${effectiveEducation
-  // Bias guard 2.2: institution stripped from generation context
-  .map((edu: { degree: string; school: string; year?: string }) => `- ${edu.degree}${edu.year ? ` (${edu.year})` : ""}`)
-  .join("\n")}
-
-${packetContext}
+${evidenceContext}
 
 ${jobContext}
 
 MATCH CONTEXT:
-Skills: ${generatedEvidenceMap.matched_skills.join(", ")}
-Tools: ${generatedEvidenceMap.matched_tools.join(", ")}
-Gaps: ${generatedEvidenceMap.gaps.join(", ")}
+Skills: ${evidenceMap.matched_skills.join(", ")}
+Tools: ${evidenceMap.matched_tools.join(", ")}
+Gaps: ${evidenceMap.gaps.join(", ")}
 
 ${strategyPrompt}
-${voiceInstructions}
 
 WRITING RULES:
-1. Link every bullet to a specific evidence ID from a packet
-2. Use only facts from the packets - never invent
+1. Link every bullet to a specific evidence ID
+2. Use only facts from the evidence - never invent
 3. Start bullets with strong verbs (Built, Led, Shipped, Launched)
-4. Include real metrics from packets when available
+4. Include real metrics from evidence when available
 5. Write like a human professional would - confident but not robotic
-6. Do not generate a bullet for a requirement that has no usable packet
-7. Prefer bullets with system/tool/scope/outcome detail over generic PM phrasing
+6. If pre-approved bullets exist in evidence, use them directly
 
 QUANTIFICATION POLICY - CRITICAL:
 ALLOWED metrics:
-- Numbers explicitly stated in the packets (exact amounts, percentages, counts)
+- Numbers explicitly stated in the evidence (exact amounts, percentages, counts)
 - Deterministic derivations ("team of 5 across 3 regions")
-- Factual counts from packets (number of products, countries, users if stated)
+- Factual counts from evidence (number of products, countries, users if stated)
 
 NOT ALLOWED - DO NOT INVENT:
-- Percentages like "reduced churn by 25%" unless explicitly in packets
-- Time savings like "saved 40 hours/week" unless explicitly in packets
-- Revenue impact like "generated $2M" unless explicitly in packets
-- Improvement claims like "improved efficiency by 30%" unless explicitly in packets
+- Percentages like "reduced churn by 25%" unless explicitly in evidence
+- Time savings like "saved 40 hours/week" unless explicitly in evidence
+- Revenue impact like "generated $2M" unless explicitly in evidence
+- Improvement claims like "improved efficiency by 30%" unless explicitly in evidence
 
 IF NO METRIC IN EVIDENCE, use qualitative language instead:
 - "Reduced manual work" (not "reduced by 60%")
@@ -2173,522 +587,180 @@ IF NO METRIC IN EVIDENCE, use qualitative language instead:
 - "Accelerated delivery" (not "reduced time by 50%")
 
 KEEP IT SPECIFIC:
-- Use exact numbers ONLY when in packets: "team of 5" not "team"
+- Use exact numbers ONLY when in evidence: "team of 5" not "team"
 - Name tools: "React, PostgreSQL" not "modern stack"
-- Include scale ONLY if in packets: "50K users" not "users"
+- Include scale ONLY if in evidence: "50K users" not "users"
 - Preserve industry: "B2B fintech" not "software"
 
-Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to a packet.`,
-      }, {
-        route: "app/api/generate-documents",
-        operation: "resume_generation",
-        userId,
-        jobId: job_id,
-        metadata: { generation_id: generationId, correlation_id: correlationId },
-      }),
-    );
+Write 5-8 achievement bullets that the candidate could confidently discuss in an interview. Every metric must be traceable to evidence.`,
+    })
+
     // Step 2.5: PRE-GENERATION ENHANCEMENT PASS
     // Strengthen bullets with known profile data before final formatting
-    const { enhancedBullets, report: enhancementReport } =
-      await runPreGenerationEnhancement(
-        resumeWithProvenance.experience_bullets.map((b) => ({
-          bullet_text: b.bullet_text,
-          source_evidence_id: b.source_evidence_id,
-          source_role: b.source_role ?? "",
-          source_company: b.source_company ?? "",
-          matched_requirement: b.matched_requirement ?? undefined,
-          keywords_used: b.keywords_used,
+    const { enhancedBullets, report: enhancementReport } = await runPreGenerationEnhancement(
+      resumeWithProvenance.experience_bullets.map((b: {
+        bullet_text: string
+        source_evidence_id: string
+        source_role: string
+        source_company: string
+        matched_requirement?: string
+        keywords_used: string[]
+      }) => ({
+        bullet_text: b.bullet_text,
+        source_evidence_id: b.source_evidence_id,
+        source_role: b.source_role,
+        source_company: b.source_company,
+        matched_requirement: b.matched_requirement,
+        keywords_used: b.keywords_used,
+      })),
+      {
+        full_name: profile.full_name,
+        email: profile.email,
+        phone: profile.phone,
+        location: profile.location,
+        summary: profile.summary,
+        skills: profile.skills,
+        links: profile.links as { portfolio?: string; linkedin?: string; github?: string } | undefined,
+        experience: (profile.experience || []).map((exp: { title?: string; company?: string; description?: string }) => ({
+          title: exp.title || "",
+          company: exp.company || "",
+          description: exp.description,
         })),
-        {
-          full_name: effectiveName,
-          email: (profile as any)?.email || sourceResumeData?.email || "",
-          phone: (profile as any)?.phone || sourceResumeData?.phone || "",
-          location: effectiveLocation,
-          summary: effectiveSummary,
-          skills: effectiveSkills,
-          links: Array.isArray(profile?.links) ? profile.links : [],
-          experience: effectiveExperience.map(
-            (exp: {
-              title?: string;
-              company?: string;
-              description?: string;
-            }) => ({
-              title: exp.title || "",
-              company: exp.company || "",
-              description: exp.description,
-            }),
-          ),
-        },
-        resumeEvidence,
-      );
-    const tracedBullets = enhancedBullets.map((bullet) => {
-      const packet = resolvePacketForBullet(bullet, capabilityPackets);
-      const packetOverlap = packet ? scoreBulletPacketOverlap(bullet.bullet_text, packet) : 0;
-      return {
-        ...bullet,
-        source_evidence_id: packet?.matchedEvidenceIds[0] ?? bullet.source_evidence_id,
-        matched_requirement: packet?.requirement ?? bullet.matched_requirement,
-        source_packet_id: packet?.packet_id,
-        packet_overlap: packetOverlap,
-        packet,
-      };
-    }).filter((bullet) =>
-      Boolean(bullet.packet) &&
-      Boolean(bullet.source_packet_id) &&
-      bullet.packet_overlap >= 0.12
-    );
-
-    if (tracedBullets.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "no_traceable_bullets",
-          user_message:
-            "HireWire blocked generation because the draft did not produce any bullets that could be traced back to evidence packets.",
-        },
-        { status: 409 },
-      );
-    }
+      },
+      allEvidence
+    )
 
     // Generate Selected Products section if we have named products with artifacts
     // FIX: Use allEvidence (correct in-scope variable) instead of undefined 'evidence'
-    const knownProducts = extractKnownProducts(allEvidence);
-    const projectsSection = generateProjectsSection(knownProducts, 3);
+    const knownProducts = extractKnownProducts(allEvidence)
+    const projectsSection = generateProjectsSection(knownProducts, 3)
 
-    // Step 3: Generate cover letter with paragraph provenance (with retry for rate limits)
+    // Step 3: Generate cover letter with paragraph provenance
     // SIMPLIFIED: More direct prompt for natural, human-sounding cover letters
-    // Using Claude for higher token limits and better quality
-    const coverLetterWithProvenance = await withRetry(() =>
-      generateStructuredText({
-        model: CLAUDE_MODELS.SONNET,
-        schema: CoverLetterWithProvenanceSchema,
-        schemaDescription: COVER_LETTER_WITH_PROVENANCE_SCHEMA_DESCRIPTION,
-        prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
+    const { object: coverLetterWithProvenance } = await generateObject({
+      model: groq(MODELS.VERSATILE),
+      schema: CoverLetterWithProvenanceSchema,
+      prompt: `Write a cover letter for this role. Sound confident and human, not like a template.
 
-VERB TIER RULE: Apply identical verb strength regardless of candidate name, school, company, or background. If evidence supports Led, write Led. Never use hedging verbs (helped, assisted, supported) based on inferred demographics.
+${profileContext}
 
-Candidate identity context:
-// Bias guard 2.1: name stripped from generation context
-Candidate: The candidate
-Location: ${effectiveLocation}
-
-${packetContext}
+EVIDENCE:
+${coverLetterEvidence.map((e: {
+  id: string;
+  source_title: string;
+  source_type: string;
+  company_name?: string;
+}) => `[${e.id}] ${e.source_title} at ${e.company_name || "N/A"}`).join("\n")}
 
 ${jobContext}
 
 ${strategyPrompt}
-${voiceInstructions}
 
 TONE: Write like a sharp professional sending a letter to someone they respect.
 - Open directly with who you are and why you fit
 - Give 1-2 specific examples of relevant work (link to evidence IDs)
 - Close briefly - no groveling or excessive enthusiasm
 - Never say "I am excited to apply" or "I would be thrilled"
-- Do not mention facts, credentials, metrics, systems, or scope absent from packets
 - 3-4 paragraphs total`,
-      }, {
-        route: "app/api/generate-documents",
-        operation: "cover_letter_generation",
-        userId,
-        jobId: job_id,
-        metadata: { generation_id: generationId, correlation_id: correlationId },
-      }),
-    );
+    })
+
     // Build final formatted documents - Premium Clean Minimalist format
-    const effectiveEmail =
-      (profile as any)?.email || sourceResumeData?.email || "";
-    const effectivePhone =
-      (profile as any)?.phone || sourceResumeData?.phone || "";
-    const contactInfo = [effectiveLocation, effectiveEmail, effectivePhone]
-      .filter(Boolean)
-      .join(" | ");
-
-    // TARGET ROLE: Use the job title being applied to for resume alignment
-    const targetJobTitle =
-      jobData?.title ||
-      jobData?.role_title ||
-      jobAnalysis?.title ||
-      "Professional";
-
+    const contactInfo = [
+      profile.location,
+      profile.email,
+      profile.phone
+    ].filter(Boolean).join(" | ")
+    
     // Use ENHANCED bullets (with product names, metrics, context injected)
-    const experienceBullets = tracedBullets
-      .map((b) => `• ${b.bullet_text}`)
-      .join("\n");
-
+    const experienceBullets = enhancedBullets
+      .map(b => `• ${b.bullet_text}`)
+      .join("\n")
+    
     // Build ATS-safe formatted resume (no unicode dividers, clean structure)
     // CHANGED: Removed unicode box-drawing characters that break ATS parsing
-    // CHANGED: Added job title as professional headline for alignment
-    const formattedResume = `${(effectiveName || "CANDIDATE NAME").toUpperCase()}
-  ${targetJobTitle}
-  ${contactInfo}
+    const formattedResume = `${(profile.full_name || "CANDIDATE NAME").toUpperCase()}
+${contactInfo}
 
 PROFESSIONAL SUMMARY
 ${resumeWithProvenance.summary}
 
 PROFESSIONAL EXPERIENCE
 ${experienceBullets}
-${
-  projectsSection
-    ? `
+${projectsSection ? `
 ${projectsSection}
-`
-    : ""
-}
+` : ""}
 CORE COMPETENCIES
 ${resumeWithProvenance.skills_section.join(", ")}
 
 EDUCATION
-${effectiveEducation
-  .map(
-    (edu: { degree: string; school: string; year?: string }) =>
-      `${edu.degree}, ${edu.school}${edu.year ? ` (${edu.year})` : ""}`,
-  )
-  .join("\n")}`;
+${(profile.education || []).map((edu: { degree: string; school: string; year?: string }) => 
+  `${edu.degree}, ${edu.school}${edu.year ? ` (${edu.year})` : ""}`
+).join("\n")}`
 
     // Build premium formatted cover letter with professional signature
-    const today = new Date().toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-
+    const today = new Date().toLocaleDateString("en-US", { 
+      month: "long", 
+      day: "numeric", 
+      year: "numeric" 
+    })
+    
     // Build professional signature block with phone number
     const signatureBlock = [
-      effectiveName || "Candidate",
-      effectivePhone ? `Direct: ${effectivePhone}` : null,
-      effectiveEmail || null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
+      profile.full_name || "Candidate",
+      profile.phone ? `Direct: ${profile.phone}` : null,
+      profile.email || null,
+    ].filter(Boolean).join("\n")
+    
     const formattedCoverLetter = `${today}
 
 Dear Hiring Manager,
 
-${coverLetterWithProvenance.paragraphs.map((p: GeneratedCoverLetterParagraph) => p.paragraph_text).join("\n\n")}
+${coverLetterWithProvenance.paragraphs.map(p => p.paragraph_text).join("\n\n")}
 
 Sincerely,
 
-${signatureBlock}`;
-
-    // ── VOICE DRIFT CHECK ─────────────────────────────────────────────────────
-    // Extract voice profile from the generated resume and compare to the original.
-    // Non-blocking: drift result is persisted but does not gate this generation.
-    let voiceDriftResult: VoiceDriftResult | null = null;
-    if (originalVoiceProfile) {
-      try {
-        const generatedVoiceProfile =
-          await extractVoiceProfile(formattedResume);
-        voiceDriftResult = checkVoiceDrift(
-          originalVoiceProfile,
-          generatedVoiceProfile,
-        );
-      } catch {
-        // Voice drift check is non-blocking — log and continue
-        console.error("[HireWire] voice drift check failed, skipping");
-      }
-    }
-
-    // ── GOVERNANCE LAYER ──────────────────────────────────────────────────────
-    // Runs AFTER document text is finalized but BEFORE quality check and DB write.
-    // This is additive — it does not replace the existing quality checks.
-
-    const packetGovernanceEvidence: GovernanceEvidence[] = packetsForResume(capabilityPackets).map((packet) => ({
-      id: packet.packet_id,
-      source_title: `${packet.requirement} packet`,
-      source_type: "evidence_packet",
-      confidence_level: packet.evidenceStrength,
-      responsibilities: [packet.requirement, packet.normalized, ...packet.responsibilities, ...packet.proofSnippets],
-      outcomes: packet.outcomes,
-      tools_used: [...packet.systems, ...packet.tools],
-      team_size: null,
-      budget_scope: null,
-      user_impact_scale: null,
-      what_not_to_overstate: packet.riskFlags.join(", ") || null,
-      approved_achievement_bullets: packet.proofSnippets,
-    }));
-
-    // Build a GovernanceEvidence[] from structured packets first, then raw evidence.
-    // Bullets cite packets for governance so validation checks the upstream contract,
-    // while persisted provenance still keeps the source evidence ID for traceability.
-    const governanceEvidence: GovernanceEvidence[] = [
-      ...packetGovernanceEvidence,
-      ...allEvidence.map(
-      (e: EvidenceRecord) => ({
-        id: e.id,
-        source_title: e.source_title,
-        source_type: e.source_type,
-        confidence_level: e.confidence_level,
-        responsibilities: Array.isArray(e.responsibilities)
-          ? e.responsibilities
-          : [],
-        outcomes: Array.isArray(e.outcomes) ? e.outcomes : [],
-        tools_used: Array.isArray(e.tools_used) ? e.tools_used : [],
-        team_size: (e as any).team_size ?? null,
-        budget_scope: (e as any).budget_scope ?? null,
-        user_impact_scale: (e as any).user_impact_scale ?? null,
-        what_not_to_overstate: e.what_not_to_overstate ?? null,
-        approved_achievement_bullets: Array.isArray(
-          e.approved_achievement_bullets,
-        )
-          ? e.approved_achievement_bullets
-          : [],
-      }),
-    )];
-
-    // 1. Claim validation — every bullet and paragraph checked against its evidence
-    const bulletClaimInputs = tracedBullets.map((b) => ({
-      text: b.bullet_text,
-      cited_evidence_id:
-        (b as { bullet_text: string; source_packet_id?: string })
-          .source_packet_id ?? null,
-    }));
-    const paragraphClaimInputs = coverLetterWithProvenance.paragraphs.map(
-      (p: { paragraph_text: string; evidence_ids_used: string[] }) => ({
-        text: p.paragraph_text,
-        cited_evidence_id: p.evidence_ids_used?.[0] ?? null,
-      }),
-    );
-
-    const claimValidation = validateAllClaims(
-      bulletClaimInputs,
-      paragraphClaimInputs,
-      governanceEvidence,
-    );
-
-    // 2. Drift scoring — measures deviation of generated output from evidence
-    const driftResult = scoreDrift({
-      bulletTexts: bulletClaimInputs.map((b) => ({
-        text: b.text,
-        evidence_id: b.cited_evidence_id,
-      })),
-      paragraphTexts: paragraphClaimInputs.map(
-        (p: { text: string; cited_evidence_id: string | null }) => ({
-          text: p.text,
-          evidence_id: p.cited_evidence_id,
-        }),
-      ),
-      bulletVerdicts: claimValidation.bulletVerdicts,
-      paragraphVerdicts: claimValidation.paragraphVerdicts,
-      evidenceSet: governanceEvidence,
-    });
-
-    const contextProfile = isContextEngineEnabled()
-      ? buildEvidenceLibraryContext({
-          userId,
-          records: allEvidence as Array<Record<string, any>>,
-        })
-      : null;
-    const contextClaimVerdicts = contextProfile
-      ? validateGeneratedClaims({
-          userId,
-          jobId: job_id,
-          claims: [
-            ...bulletClaimInputs.map((claim, index) => ({
-              id: `resume_bullet_${index}`,
-              claim_text: claim.text,
-              evidence_ids: claim.cited_evidence_id ? [claim.cited_evidence_id] : [],
-              document_type: "resume" as const,
-            })),
-            ...paragraphClaimInputs.map((claim, index) => ({
-              id: `cover_letter_paragraph_${index}`,
-              claim_text: claim.text,
-              evidence_ids: claim.cited_evidence_id ? [claim.cited_evidence_id] : [],
-              document_type: "cover_letter" as const,
-            })),
-          ],
-          evidenceItems: contextProfile.evidenceItems,
-        })
-      : [];
-    const contextBlocked = contextClaimVerdicts.some((verdict) => verdict.verdict === "blocked");
-    if (contextClaimVerdicts.length > 0) {
-      void mirrorClaimVerdicts({
-        supabase,
-        userId,
-        jobId: job_id,
-        verdicts: contextClaimVerdicts,
-      });
-    }
-
-    // 3. Governance hard block: fabricated claims or drift above threshold
-    const governancePassed =
-      !claimValidation.hasFabricated && !driftResult.is_blocking && !contextBlocked;
-
-    if (!governancePassed) {
-      const blockReason = driftResult.is_blocking
-        ? `Generation blocked by drift score (${driftResult.score}/100): ${driftResult.summary}`
-        : contextBlocked
-          ? `Generation blocked: ContextEngine found ${contextClaimVerdicts.filter((verdict) => verdict.verdict === "blocked").length} unsupported claim(s).`
-          : `Generation blocked: ${claimValidation.fabricatedCount} fabricated claim(s) detected.`;
-
-      const governanceBlockedUpdate = await supabase
-        .from("jobs")
-        .update({
-          generation_status: "failed",
-          generation_error: blockReason,
-          governance_version: "1.0.0",
-          governance_passed: false,
-          governance_drift_score: driftResult.score,
-        })
-        .eq("id", job_id)
-        .eq("user_id", userId);
-      logSupabaseWriteError("mark_governance_blocked", governanceBlockedUpdate.error, {
-        job_id,
-        user_id: userId,
-        drift_score: driftResult.score,
-      });
-
-      // Persist the governance run record for auditing
-      const blockedGovernanceRunInsert = await supabase
-        .from("generation_governance_runs")
-        .insert({
-          user_id: userId,
-          job_id,
-          strategy,
-          strategy_decision: {
-            strategy,
-            requirement_coverage: generatedEvidenceMap.requirement_coverage,
-            evidence_quality_pct: evidenceQuality,
-            reasoning: strategyReasoning,
-          },
-          bullet_verdicts: claimValidation.bulletVerdicts,
-          paragraph_verdicts: claimValidation.paragraphVerdicts,
-          fabricated_count: claimValidation.fabricatedCount,
-          low_confidence_count: claimValidation.lowConfidenceCount,
-          drift_score: driftResult.score,
-          drift_is_blocking: driftResult.is_blocking,
-          drift_flags: driftResult.flags,
-          drift_summary: driftResult.summary,
-          governance_passed: false,
-          failed_at_phase: driftResult.is_blocking
-            ? "drift_scoring"
-            : "claim_validation",
-          governance_version: "1.0.0",
-        })
-        .select("id")
-        .maybeSingle();
-      logSupabaseWriteError(
-        "insert_blocked_generation_governance_run",
-        blockedGovernanceRunInsert.error,
-        { job_id, user_id: userId },
-      );
-      const blockedGovernanceRunId = blockedGovernanceRunInsert.data?.id ?? null;
-
-      await persistGovernanceClaimVerdicts({
-        supabase,
-        runId: blockedGovernanceRunId,
-        userId,
-        jobId: job_id,
-        bulletVerdicts: claimValidation.bulletVerdicts,
-        paragraphVerdicts: claimValidation.paragraphVerdicts,
-      });
-
-      if (blockedGovernanceRunId) {
-        const blockedGovernanceReferenceUpdate = await supabase
-          .from("jobs")
-          .update({ last_governance_run_id: blockedGovernanceRunId })
-          .eq("id", job_id)
-          .eq("user_id", userId);
-        logSupabaseWriteError(
-          "update_blocked_last_governance_run_id",
-          blockedGovernanceReferenceUpdate.error,
-          { job_id, user_id: userId, governance_run_id: blockedGovernanceRunId },
-        );
-      }
-
-      void handleDomainEvent({
-        supabase,
-        event_type: "quality_failed",
-        job_id,
-        user_id: userId,
-        source: "generate_documents_route",
-        payload: {
-          reason: "governance_block",
-          drift_score: driftResult.score,
-          fabricated_count: claimValidation.fabricatedCount,
-          block_reason: blockReason,
-          correlation_id: correlationId,
-        },
-      });
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "governance_blocked",
-          user_message:
-            "Generation was blocked because the draft made claims that drifted too far from your verified evidence. Add or confirm stronger evidence for this role, then try again.",
-          detail: blockReason,
-          governance: {
-            passed: false,
-            fabricated_count: claimValidation.fabricatedCount,
-            drift_score: driftResult.score,
-            drift_summary: driftResult.summary,
-            drift_flags: driftResult.flags.filter(
-              (f) => f.severity === "block",
-            ),
-          },
-        },
-        { status: 400 },
-      );
-    }
-
-    // ── END GOVERNANCE LAYER ──────────────────────────────────────────────────
+${signatureBlock}`
 
     // Step 4: Detect banned phrases and vague patterns
-    const resumeBannedPhrases = detectBannedPhrases(formattedResume);
-    const coverLetterBannedPhrases = detectBannedPhrases(formattedCoverLetter);
-    const allBannedPhrases = [
-      ...new Set([...resumeBannedPhrases, ...coverLetterBannedPhrases]),
-    ];
-
-    const vaguePatterns = detectVaguePatterns(formattedResume);
+    const resumeBannedPhrases = detectBannedPhrases(formattedResume)
+    const coverLetterBannedPhrases = detectBannedPhrases(formattedCoverLetter)
+    const allBannedPhrases = [...new Set([...resumeBannedPhrases, ...coverLetterBannedPhrases])]
+    
+    const vaguePatterns = detectVaguePatterns(formattedResume)
 
     // Analyze bullet concreteness
-    const bulletAnalysis: ConcreteBulletAnalysis[] =
-      tracedBullets.map(
-        (b) => ({
-          bullet: b.bullet_text,
-          ...analyzeBulletConcreteness(b.bullet_text),
-          has_metric: hasMetrics(b.bullet_text),
-        }),
-      );
-
-    const weakBullets = bulletAnalysis.filter(
-      (b: ConcreteBulletAnalysis) => !b.is_concrete_enough,
-    );
-
+    const bulletAnalysis = resumeWithProvenance.experience_bullets.map(b => ({
+      bullet: b.bullet_text,
+      ...analyzeBulletConcreteness(b.bullet_text),
+      has_metric: hasMetrics(b.bullet_text)
+    }))
+    
+    const weakBullets = bulletAnalysis.filter(b => !b.is_concrete_enough)
+    
     // QUANTIFICATION SAFETY CHECK - Detect and flag unsafe invented metrics
-    const unsafeMetricsFound: {
-      bullet: string;
-      unsafe_claims: string[];
-      safe_alternatives: string[];
-    }[] = [];
-
-    for (const bullet of tracedBullets) {
-      const { has_unsafe, unsafe_claims, safe_alternatives } =
-        detectUnsafeMetrics(bullet.bullet_text);
+    const unsafeMetricsFound: { bullet: string; unsafe_claims: string[]; safe_alternatives: string[] }[] = []
+    
+    for (const bullet of enhancedBullets) {
+      const { has_unsafe, unsafe_claims, safe_alternatives } = detectUnsafeMetrics(bullet.bullet_text)
       if (has_unsafe) {
         unsafeMetricsFound.push({
           bullet: bullet.bullet_text,
           unsafe_claims,
           safe_alternatives,
-        });
+        })
       }
     }
-
+    
     // Unsafe metrics will be flagged in quality issues
 
     // Step 5: AI Quality check - use smaller model to avoid rate limits
     // Wrapped in try-catch since smaller models can sometimes fail schema compliance
-    let qualityCheck: z.infer<typeof QualityCheckSchema>;
+    let qualityCheck: z.infer<typeof QualityCheckSchema>
     try {
-      // Quality check uses faster model since it's a simpler task
-      qualityCheck = await withRetry(() =>
-        generateStructuredText({
-          model: CLAUDE_MODELS.HAIKU,
-          schema: QualityCheckSchema,
-          schemaDescription: QUALITY_CHECK_SCHEMA_DESCRIPTION,
-          prompt: `You are a resume quality reviewer. Analyze the generated documents and return a JSON object with your findings.
+      const result = await generateObject({
+        model: groq(MODELS.FAST),
+        schema: QualityCheckSchema,
+        prompt: `You are a resume quality reviewer. Analyze the generated documents and return a JSON object with your findings.
 
 GENERATED RESUME:
 ${formattedResume.slice(0, 2000)}
@@ -2706,16 +778,10 @@ Return a JSON object with these exact fields:
 - improvement_suggestions: array of strings (suggestions to improve)
 
 If no issues found, return empty arrays and overall_passed: true.`,
-        }, {
-          route: "app/api/generate-documents",
-          operation: "quality_check_generation",
-          userId,
-          jobId: job_id,
-          metadata: { generation_id: generationId, correlation_id: correlationId },
-        }),
-      );
+      })
+      qualityCheck = result.object
     } catch (qualityCheckError) {
-      console.error("Quality check failed, using defaults:", qualityCheckError);
+      console.error("Quality check failed, using defaults:", qualityCheckError)
       // Default to passing quality check if the AI model fails
       // The rule-based checks (banned phrases, vague patterns) will still run
       qualityCheck = {
@@ -2725,428 +791,119 @@ If no issues found, return empty arrays and overall_passed: true.`,
         repeated_structures: [],
         unsupported_claims: [],
         overall_passed: true,
-        improvement_suggestions: [],
-      };
+        improvement_suggestions: []
+      }
     }
 
     // Build provenance records for storage
-    const bulletProvenance: BulletProvenance[] =
-      tracedBullets.map(
-        (b) => {
-          const packet = b.packet ?? resolvePacketForBullet(b, capabilityPackets);
-          const audit = truthSerumAuditBullet(b.bullet_text, {
-            sourceEvidenceId: b.source_evidence_id,
-            proofSnippets: packet?.proofSnippets,
-            systems: packet ? [...packet.systems, ...packet.tools] : undefined,
-            outcomes: packet?.outcomes,
-            riskFlags: packet?.riskFlags,
-          });
-          return {
-            bullet_text: b.bullet_text,
-            source_evidence_id: b.source_evidence_id,
-            source_evidence_title:
-              resumeEvidence.find(
-                (e: { id: string; source_title: string }) =>
-                  e.id === b.source_evidence_id,
-              )?.source_title || packet?.matchedEvidenceTitles[0] || "Unknown",
-            source_role: b.source_role,
-            source_company: b.source_company,
-            matched_requirement_id: packet?.packet_id,
-            matched_requirement_text: packet?.requirement ?? b.matched_requirement ?? undefined,
-            source_packet_id: packet?.packet_id,
-            match_strength: packet?.matchStrength,
-            match_reason: packet?.matchReason,
-            evidence_strength: packet?.evidenceStrength,
-            proof_decision: packet?.proofDecision,
-            user_claim: packet?.userClaim,
-            proof_snippets: packet?.proofSnippets,
-            why_included: packet?.whyIncluded,
-            claim_confidence: audit.score >= 80 ? "high" as const : audit.score >= 55 ? "medium" as const : "low" as const,
-            keywords_covered: b.keywords_used,
-            risk_flags: audit.flags,
-            is_metric_rich: hasMetrics(b.bullet_text),
-            concrete_signal_count: analyzeBulletConcreteness(b.bullet_text)
-              .concrete_signal_count,
-            truth_serum: audit,
-          };
-        },
-      );
+    const bulletProvenance: BulletProvenance[] = resumeWithProvenance.experience_bullets.map(b => ({
+      bullet_text: b.bullet_text,
+      source_evidence_id: b.source_evidence_id,
+      source_evidence_title: resumeEvidence.find((e: { id: string; source_title: string }) => e.id === b.source_evidence_id)?.source_title || "Unknown",
+      source_role: b.source_role,
+      source_company: b.source_company,
+      matched_requirement_id: undefined,
+      matched_requirement_text: b.matched_requirement,
+      claim_confidence: "high" as const,
+      keywords_covered: b.keywords_used,
+      risk_flags: [],
+      is_metric_rich: hasMetrics(b.bullet_text),
+      concrete_signal_count: analyzeBulletConcreteness(b.bullet_text).concrete_signal_count
+    }))
 
-    const paragraphProvenance: ParagraphProvenance[] =
-      coverLetterWithProvenance.paragraphs.map(
-        (p: GeneratedCoverLetterParagraph) => ({
-          paragraph_text: p.paragraph_text,
-          evidence_used: p.evidence_ids_used,
-          matched_job_theme: p.job_theme_addressed,
-          claim_confidence: p.claim_confidence,
-          unsupported_language: detectBannedPhrases(p.paragraph_text),
-        }),
-      );
-    const confirmedProofUsage: ConfirmedProofUsage[] =
-      buildConfirmedProofUsageReport(
-        capabilityPackets,
-        bulletProvenance,
-        paragraphProvenance,
-      );
-    const unusedConfirmedProof = confirmedProofUsage.filter((proof) => !proof.used);
+    const paragraphProvenance: ParagraphProvenance[] = coverLetterWithProvenance.paragraphs.map(p => ({
+      paragraph_text: p.paragraph_text,
+      evidence_used: p.evidence_ids_used,
+      matched_job_theme: p.job_theme_addressed,
+      claim_confidence: p.claim_confidence,
+      unsupported_language: detectBannedPhrases(p.paragraph_text)
+    }))
 
     // Calculate quality score - now includes quantification safety
-    const qualityPassed =
-      qualityCheck.overall_passed &&
-      allBannedPhrases.length === 0 &&
+    const qualityPassed = qualityCheck.overall_passed && 
+      allBannedPhrases.length === 0 && 
       weakBullets.length <= 1 &&
-      unsafeMetricsFound.length === 0 &&
-      unusedConfirmedProof.length === 0; // Block if confirmed proof was dropped
+      unsafeMetricsFound.length === 0 // Block if we detected invented metrics
 
-    const qualityScore = qualityPassed
-      ? 100
-      : Math.max(
-          0,
-          100 -
-            allBannedPhrases.length * 10 -
-            weakBullets.length * 5 -
-            qualityCheck.invented_claims.length * 15 -
-            qualityCheck.vague_bullets.length * 5,
-        );
-
-    const skippedRequirements = canonicalRequirements
-      .filter((match) => match.proof_decision === "skipped")
-      .map((match) => ({
-        requirement_id: String(match.requirement_id ?? ""),
-        requirement_text: String(match.requirement_text ?? ""),
-        skip_reason: String(match.skip_reason ?? "User skipped this claim."),
-      }));
+    const qualityScore = qualityPassed ? 100 : Math.max(0, 
+      100 - 
+      (allBannedPhrases.length * 10) - 
+      (weakBullets.length * 5) - 
+      (qualityCheck.invented_claims.length * 15) -
+      (qualityCheck.vague_bullets.length * 5)
+    )
 
     // AUTO-RETRY: If quality check fails and we haven't retried yet, regenerate
-    const hasSignificantIssues =
-      allBannedPhrases.length > 0 ||
+    const hasSignificantIssues = 
+      allBannedPhrases.length > 0 || 
       qualityCheck.invented_claims.length > 0 ||
-      weakBullets.length > 2;
+      weakBullets.length > 2
 
     if (!qualityPassed && hasSignificantIssues && _retry_count < MAX_RETRIES) {
       // Auto-retry: Quality check failed, regenerating with stricter prompts
-
+      
       // Recursive call with incremented retry count
       const retryBody = JSON.stringify({
         job_id,
         selected_evidence_ids,
-        _retry_count: _retry_count + 1,
-      });
-
+        _retry_count: _retry_count + 1
+      })
+      
       const retryRequest = new NextRequest(request.url, {
         method: "POST",
         body: retryBody,
-        headers: {
-          "Content-Type": "application/json",
-          ...(request.headers.get("cookie")
-            ? { cookie: request.headers.get("cookie") as string }
-            : {}),
-        },
-      });
-
-      return POST(retryRequest);
+        headers: { "Content-Type": "application/json" }
+      })
+      
+      return POST(retryRequest)
     }
 
     // Update the job with generated materials
-    const updatePayload = {
-      status: qualityPassed ? "ready" : "needs_review",
-      generated_resume: formattedResume,
-      generated_cover_letter: formattedCoverLetter,
-      fit:
-        generatedEvidenceMap.fit_score >= 70
-          ? "HIGH"
-          : generatedEvidenceMap.fit_score >= 40
-            ? "MEDIUM"
-            : "LOW",
-      score: generatedEvidenceMap.fit_score,
-      score_reasoning: {
-        rationale: generatedEvidenceMap.fit_rationale,
-        gaps: generatedEvidenceMap.gaps,
-        strategy,
-        strategy_reasoning: strategyReasoning,
-        generation_warning: generationRiskWarning,
-        requirement_coverage: generatedEvidenceMap.requirement_coverage,
-      },
-      score_strengths: generatedEvidenceMap.matched_skills,
-      score_gaps: generatedEvidenceMap.gaps,
-      resume_strategy: strategy,
-      evidence_map: {
-        ...(asRecord(effectiveEvidenceMap) ?? {}),
-        generation_trace: {
-          generation_id: generationId,
-          created_at: new Date().toISOString(),
-          evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
-          skipped_requirements: skippedRequirements,
-          quality_flags: [
-            ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
-            ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
-            ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
-            ...unusedConfirmedProof.map((proof) => ({ type: "unused_confirmed_proof", value: proof.requirement })),
-          ],
-          confirmed_proof_usage: confirmedProofUsage,
-        },
-        selected_evidence_ids: resumeEvidence.map(
-          (e: { id: string }) => e.id,
-        ),
-        bullet_provenance: bulletProvenance,
-        paragraph_provenance: paragraphProvenance,
-        blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({
-          id: e.id,
-          title: e.source_title,
-          reason: getEvidenceUsageRule(e),
-        })),
-      },
-      generation_status: qualityPassed ? "ready" : "needs_review",
-      generation_error: null,
-      scored_at: new Date().toISOString(),
-      generation_timestamp: new Date().toISOString(),
-      generation_quality_score: qualityScore,
-      resume_format: resumeFormatRecommendation.format,
-      resume_font: resumeFormatRecommendation.font,
-      format_recommendation_reason: resumeFormatRecommendation.reason,
-      generation_quality_issues: [
-        ...allBannedPhrases.map((p) => `Banned phrase: "${p}"`),
-        ...vaguePatterns.map((p) => `Vague pattern: "${p}"`),
-        ...weakBullets.map(
-          (b: ConcreteBulletAnalysis) =>
-            `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`,
-        ),
-        ...unsafeMetricsFound.map(
-          (m) =>
-            `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || "qualitative language"}"`,
-        ),
-        ...unusedConfirmedProof.map(
-          (proof) => `Confirmed proof not used in generated package: ${proof.requirement}`,
-        ),
-        ...qualityCheck.invented_claims,
-        ...qualityCheck.vague_bullets,
-        ...qualityCheck.ai_filler,
-      ],
-      quality_passed: qualityPassed,
-      // Voice integrity (columns confirmed in schema)
-      voice_mode: voiceMode,
-      voice_profile_snapshot: originalVoiceProfile ?? undefined,
-      voice_drift_result: voiceDriftResult ?? undefined,
-      governance_version: "1.0.0",
-      governance_passed: true,
-      governance_drift_score: driftResult.score,
-    };
-
-    const updateResult = await supabase
-      .from("jobs")
-      .update(updatePayload)
-      .eq("id", job_id)
-      .eq("user_id", userId)
-      .select("id, generated_resume, generated_cover_letter");
-
-    const { error: updateError } = updateResult;
-
-    if (updateError) {
-      console.error("[HireWire] Document update failed:", { message: updateError.message, code: updateError.code })
-    }
-
-    // Optional provenance/voice columns — swallow errors in envs where they aren't yet migrated
-    void supabase
+    const { error: updateError } = await supabase
       .from("jobs")
       .update({
-        resume_provenance: bulletProvenance.map((b) => ({
-          bullet_text: b.bullet_text,
-          source_evidence_id: b.source_evidence_id,
-          evidence_title: b.source_evidence_title,
-        })),
-        voice_integrity_passed: voiceDriftResult?.passed ?? true,
-        voice_review_status: voiceDriftResult
-          ? voiceDriftResult.driftLevel === "none"
-            ? "passed"
-            : "needs_review"
-          : "pending",
+        generated_resume: formattedResume,
+        generated_cover_letter: formattedCoverLetter,
+        fit: evidenceMap.fit_score >= 70 ? "HIGH" : evidenceMap.fit_score >= 40 ? "MEDIUM" : "LOW",
+        score: evidenceMap.fit_score,
+        score_reasoning: { 
+          rationale: evidenceMap.fit_rationale, 
+          gaps: evidenceMap.gaps,
+          strategy,
+          strategy_reasoning: strategyReasoning,
+          requirement_coverage: evidenceMap.requirement_coverage
+        },
+        score_strengths: evidenceMap.matched_skills,
+        score_gaps: evidenceMap.gaps,
+        resume_strategy: strategy,
+        evidence_map: {
+          selected_evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
+          bullet_provenance: bulletProvenance,
+          paragraph_provenance: paragraphProvenance,
+blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
+        },
+        status: qualityPassed ? "ready" : "needs_review",
+        scored_at: new Date().toISOString(),
+        generation_timestamp: new Date().toISOString(),
+        generation_status: qualityPassed ? "ready" : "needs_review",
+        generation_error: null,
+        generation_quality_score: qualityScore,
+    generation_quality_issues: [
+      ...allBannedPhrases.map(p => `Banned phrase: "${p}"`),
+      ...vaguePatterns.map(p => `Vague pattern: "${p}"`),
+      ...weakBullets.map(b => `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`),
+      ...unsafeMetricsFound.map(m => `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || 'qualitative language'}"`),
+      ...qualityCheck.invented_claims,
+      ...qualityCheck.vague_bullets,
+          ...qualityCheck.ai_filler,
+        ],
+        quality_passed: qualityPassed,
       })
       .eq("id", job_id)
       .eq("user_id", userId)
-      .then(() => {}, () => {});
 
     if (updateError) {
-      logSupabaseWriteError("update_generated_documents", updateError, {
-        job_id,
-        user_id: userId,
-      });
-      const err = supabaseError({
-        code: "JOB_UPDATE_FAILED",
-        message: updateError.message,
-        details: updateError,
-        correlationId,
-      });
-      logErr(err, { route: "/api/generate-documents" });
-      return NextResponse.json(toApiErrorResponse(err), { status: 500 });
-    }
-
-    await syncNormalizedJobScore(
-      supabase,
-      job_id,
-      generatedEvidenceMap.fit_score,
-    );
-
-    void (supabase as any)
-      .from("document_generation_traces")
-      .insert({
-        generation_id: generationId,
-        user_id: userId,
-        job_id,
-        evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
-        provenance_map: {
-          bullet_provenance: bulletProvenance,
-          paragraph_provenance: paragraphProvenance,
-        },
-        quality_flags: [
-          ...allBannedPhrases.map((phrase) => ({ type: "banned_phrase", value: phrase })),
-          ...unsafeMetricsFound.map((item) => ({ type: "unsafe_metric", value: item.unsafe_claims[0] ?? item.bullet.slice(0, 160) })),
-          ...weakBullets.map((bullet) => ({ type: "weak_bullet", value: bullet.bullet.slice(0, 160) })),
-        ],
-        skipped_requirements: skippedRequirements,
-      })
-      .then(() => {}, () => {});
-
-    // Snapshot this generation as a new version — non-blocking
-    void (async () => {
-      try {
-        const { data: versionRow } = await supabase
-          .from("job_resume_versions")
-          .select("version_number")
-          .eq("job_id", job_id)
-          .eq("user_id", userId)
-          .order("version_number", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        const nextVersion = (versionRow?.version_number ?? 0) + 1;
-        await supabase.from("job_resume_versions").insert({
-          job_id,
-          user_id: userId,
-          version_number: nextVersion,
-          resume_text: formattedResume,
-          cover_letter_text: formattedCoverLetter,
-          resume_format: resumeFormatRecommendation.format,
-          resume_font: resumeFormatRecommendation.font,
-          generation_model: "claude-sonnet",
-          quality_passed: qualityPassed,
-          quality_score: qualityScore,
-          strategy,
-        });
-      } catch {
-        // Version snapshot is non-critical — never block the response
-      }
-    })();
-
-    // Emit domain events for generation outcome
-    void handleDomainEvent({
-      supabase,
-      event_type: "documents_generated",
-      job_id,
-      user_id: userId,
-      source: "generate_documents_route",
-      payload: {
-        strategy,
-        quality_passed: qualityPassed,
-        quality_score: qualityScore,
-        fit_score: generatedEvidenceMap.fit_score,
-        correlation_id: correlationId,
-        generation_id: generationId,
-      },
-    });
-
-    void handleDomainEvent({
-      supabase,
-      event_type: qualityPassed ? "quality_passed" : "quality_failed",
-      job_id,
-      user_id: userId,
-      source: "generate_documents_route",
-      payload: {
-        quality_score: qualityScore,
-        banned_phrases_count: allBannedPhrases.length,
-        weak_bullets_count: weakBullets.length,
-        invented_claims_count: qualityCheck.invented_claims.length,
-        unsafe_metrics_count: unsafeMetricsFound.length,
-        was_auto_retried: isRetry,
-        correlation_id: correlationId,
-      },
-    });
-
-    // Voice domain events — non-blocking
-    if (originalVoiceProfile) {
-      void emitDomainEventWithClient(supabase, {
-        event_type: "voice_profile_extracted",
-        job_id,
-        user_id: userId,
-        source: "generate_documents_route",
-        payload: {
-          voice_mode: voiceMode,
-          tone: originalVoiceProfile.tone.primary,
-          formality: originalVoiceProfile.formality,
-        },
-        invalidates: ["coach_state"],
-        recomputes: [],
-        affected_routes: ["/dashboard"],
-        severity: "info",
-        metadata: {},
-      });
-    }
-    if (voiceDriftResult && voiceDriftResult.driftLevel !== "none") {
-      void handleDomainEvent({
-        supabase,
-        event_type: "voice_drift_detected",
-        job_id,
-        user_id: userId,
-        source: "generate_documents_route",
-        payload: {
-          drift_level: voiceDriftResult.driftLevel,
-          passed: voiceDriftResult.passed,
-          issues: voiceDriftResult.detectedIssues,
-          recommended_action: voiceDriftResult.recommendedAction,
-          warnings: voiceDriftResult.warnings,
-        },
-      });
-    }
-
-    // Increment generations_this_month for usage tracking (only on successful generation)
-    // generations_this_month and usage_reset_at live on the users table, not user_profile
-    if (!updateError) {
-      const now = new Date();
-      const firstOfMonth = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        1,
-      ).toISOString();
-
-      const { data: userData } = await supabase
-        .from("users")
-        .select("generations_this_month, usage_reset_at")
-        .eq("id", userId)
-        .maybeSingle();
-
-      const needsReset =
-        !userData?.usage_reset_at ||
-        new Date(userData.usage_reset_at) < new Date(firstOfMonth);
-
-      await supabase
-        .from("users")
-        .update({
-          generations_this_month: needsReset
-            ? 1
-            : (userData?.generations_this_month || 0) + 1,
-          usage_reset_at: needsReset ? firstOfMonth : userData?.usage_reset_at,
-        })
-        .eq("id", userId);
-
-      void recordUsage(supabase, {
-        userId,
-        resourceType: "document_generation",
-        metadata: {
-          job_id,
-          generation_id: generationId,
-          correlation_id: correlationId,
-          quality_passed: qualityPassed,
-          strategy,
-        },
-      });
+      console.error("Error updating job:", updateError)
     }
 
     // Update job analysis with matched evidence
@@ -3154,126 +911,18 @@ If no issues found, return empty arrays and overall_passed: true.`,
       await supabase
         .from("job_analyses")
         .update({
-          matched_skills: generatedEvidenceMap.matched_skills,
-          matched_tools: generatedEvidenceMap.matched_tools,
-          matched_projects: (generatedEvidenceMap.matched_projects ?? []).map(
-            (p: { project_name: string }) => p.project_name,
-          ),
-          known_gaps: generatedEvidenceMap.gaps,
-          ats_match_score: generatedEvidenceMap.fit_score,
+          matched_skills: evidenceMap.matched_skills,
+          matched_tools: evidenceMap.matched_tools,
+          matched_projects: evidenceMap.matched_projects.map(p => p.project_name),
+          known_gaps: evidenceMap.gaps,
+          ats_match_score: evidenceMap.fit_score,
         })
         .eq("id", jobAnalysis.id)
-        .eq("user_id", userId);
-    }
-
-    // Save governance run (additive — does not replace quality check)
-    const governanceRunInsert = await supabase
-      .from("generation_governance_runs")
-      .insert({
-        user_id: userId,
-        job_id,
-        strategy,
-        strategy_decision: {
-          strategy,
-          requirement_coverage: generatedEvidenceMap.requirement_coverage,
-          evidence_quality_pct: evidenceQuality,
-          reasoning: strategyReasoning,
-        },
-        bullet_verdicts: claimValidation.bulletVerdicts,
-        paragraph_verdicts: claimValidation.paragraphVerdicts,
-        fabricated_count: claimValidation.fabricatedCount,
-        low_confidence_count: claimValidation.lowConfidenceCount,
-        drift_score: driftResult.score,
-        drift_is_blocking: false,
-        drift_flags: driftResult.flags,
-        drift_summary: driftResult.summary,
-        governance_passed: true,
-        governance_version: "1.0.0",
-      })
-      .select("id")
-      .maybeSingle();
-    logSupabaseWriteError("insert_generation_governance_run", governanceRunInsert.error, {
-      job_id,
-      user_id: userId,
-    });
-
-    const governanceRunId = governanceRunInsert.data?.id ?? null;
-
-    await persistGovernanceClaimVerdicts({
-      supabase,
-      runId: governanceRunId,
-      userId,
-      jobId: job_id,
-      bulletVerdicts: claimValidation.bulletVerdicts,
-      paragraphVerdicts: claimValidation.paragraphVerdicts,
-    });
-
-    // Update job with governance run reference
-    if (governanceRunId) {
-      const governanceRunReferenceUpdate = await supabase
-        .from("jobs")
-        .update({ last_governance_run_id: governanceRunId })
-        .eq("id", job_id)
-        .eq("user_id", userId);
-      logSupabaseWriteError(
-        "update_last_governance_run_id",
-        governanceRunReferenceUpdate.error,
-        { job_id, user_id: userId, governance_run_id: governanceRunId },
-      );
-    }
-
-    // ── WRITE generated_claims (one row per bullet) ───────────────────────
-    // Additive — jobs.generated_resume stays canonical, this table is queryable
-    {
-      const { error: deleteError } = await supabase
-        .from("generated_claims")
-        .delete()
-        .eq("job_id", job_id)
         .eq("user_id", userId)
-      if (deleteError) {
-        console.error("[generated_claims] delete failed:", deleteError.message)
-        // Abort insert — stale claims better than duplicates
-      } else {
-      const claimRows = bulletProvenance.map((b, idx) => {
-        const verdicts = claimValidation.bulletVerdicts
-        const verdict = Array.isArray(verdicts)
-          ? (verdicts[idx] as { claim_grounded?: boolean; evidence_exists?: boolean } | undefined)
-          : undefined
-        const governanceVerdictText: "verified" | "unverified" | "contested" =
-          verdict?.claim_grounded === true ? "verified"
-          : verdict?.evidence_exists === false ? "contested"
-          : "unverified"
-        return {
-          job_id,
-          user_id: userId,
-          claim_text: b.bullet_text,
-          section: "experience",
-          position: idx,
-          evidence_ids: b.source_evidence_id ? [b.source_evidence_id] : [],
-          claim_grounded: verdict?.claim_grounded ?? false,
-          governance_verdict: governanceVerdictText,
-          provenance_ref: {
-            bullet_text: b.bullet_text,
-            source_evidence_id: b.source_evidence_id,
-            evidence_title: b.source_evidence_title,
-          },
-        }
-      })
-
-      if (claimRows.length > 0) {
-          const { error: insertError } = await supabase
-            .from("generated_claims")
-            .insert(claimRows)
-          if (insertError) {
-            console.warn("[generated_claims] non-blocking insert failed:", insertError.message)
-          }
-        }
-      } // end else (delete succeeded)
     }
-    // ── END generated_claims ──────────────────────────────────────────────
 
     // Save quality check
-    const qualityCheckInsert = await supabase.from("generation_quality_checks").insert({
+    await supabase.from("generation_quality_checks").insert({
       user_id: userId,
       job_id,
       document_type: "resume",
@@ -3283,31 +932,8 @@ If no issues found, return empty arrays and overall_passed: true.`,
       repeated_structures_found: qualityCheck.repeated_structures,
       unsupported_claims_found: qualityCheck.unsupported_claims,
       passed: qualityPassed,
-      issues_count:
-        qualityCheck.invented_claims.length +
-        qualityCheck.vague_bullets.length +
-        qualityCheck.ai_filler.length +
-        allBannedPhrases.length,
-    });
-    logSupabaseWriteError("insert_generation_quality_check", qualityCheckInsert.error, {
-      job_id,
-      user_id: userId,
-    });
-
-    void handleDomainEvent({
-      supabase,
-      event_type: "documents_generated",
-      job_id,
-      user_id: userId,
-      source: "generate_documents_route",
-      payload: {
-        generation_timestamp: new Date().toISOString(),
-        quality_score: qualityCheck
-          ? 100 - qualityCheck.invented_claims.length * 20
-          : null,
-        quality_passed: qualityPassed,
-      },
-    });
+      issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length,
+    })
 
     return NextResponse.json({
       success: true,
@@ -3316,40 +942,30 @@ If no issues found, return empty arrays and overall_passed: true.`,
       retry_count: _retry_count,
       strategy,
       strategy_reasoning: strategyReasoning,
-      generation_warning: generationRiskWarning,
-      resume_format: resumeFormatRecommendation.format,
-      resume_font: resumeFormatRecommendation.font,
-      format_recommendation_reason: resumeFormatRecommendation.reason,
+      template_used: selectedTemplate,
+      template_name: templateConfig.name,
       evidence_map: {
-        fit_score: generatedEvidenceMap.fit_score,
-        fit_rationale: generatedEvidenceMap.fit_rationale,
-        matched_skills: generatedEvidenceMap.matched_skills,
-        matched_tools: generatedEvidenceMap.matched_tools,
-        matched_experiences: generatedEvidenceMap.matched_experiences,
-        gaps: generatedEvidenceMap.gaps,
-        requirement_coverage: generatedEvidenceMap.requirement_coverage,
+        fit_score: evidenceMap.fit_score,
+        fit_rationale: evidenceMap.fit_rationale,
+        matched_skills: evidenceMap.matched_skills,
+        matched_tools: evidenceMap.matched_tools,
+        matched_experiences: evidenceMap.matched_experiences,
+        gaps: evidenceMap.gaps,
+        requirement_coverage: evidenceMap.requirement_coverage,
       },
       generated_resume: formattedResume,
       generated_cover_letter: formattedCoverLetter,
       provenance: {
         bullet_provenance: bulletProvenance,
         paragraph_provenance: paragraphProvenance,
-        blocked_evidence: blockedEvidence.map(
-          (e: { id: string; source_title: string }) => ({
-            id: e.id,
-            title: e.source_title,
-            reason: getEvidenceUsageRule(
-              e as unknown as import("@/lib/types").EvidenceRecord,
-            ),
-          }),
-        ),
+        blocked_evidence: blockedEvidence.map((e: { id: string; source_title: string }) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
       },
       quality_check: {
         passed: qualityPassed,
         score: qualityScore,
         banned_phrases_found: allBannedPhrases,
         vague_patterns_found: vaguePatterns,
-        weak_bullets: weakBullets.map((b: ConcreteBulletAnalysis) => b.bullet),
+        weak_bullets: weakBullets.map(b => b.bullet),
         issues: {
           invented_claims: qualityCheck.invented_claims,
           vague_bullets: qualityCheck.vague_bullets,
@@ -3364,8 +980,8 @@ If no issues found, return empty arrays and overall_passed: true.`,
         needs_review: enhancementReport.needsReview,
         unchanged: enhancementReport.unchanged,
         enhanced_bullets: enhancementReport.enhancedBullets
-          .filter((b) => b.wasEnhanced)
-          .map((b) => ({
+          .filter(b => b.wasEnhanced)
+          .map(b => ({
             original: b.originalText,
             enhanced: b.enhancedText,
             type: b.enhancementType,
@@ -3374,124 +990,59 @@ If no issues found, return empty arrays and overall_passed: true.`,
             context_added: b.addedContext,
           })),
       },
-      known_products: knownProducts.map((p) => ({
+      known_products: knownProducts.map(p => ({
         name: p.name,
         has_website: !!p.website,
         has_github: !!p.github,
         confidence: p.confidence,
       })),
-      governance: {
-        passed: true,
-        governance_version: "1.0.0",
-        run_id: governanceRunId,
-        drift_score: driftResult.score,
-        drift_summary: driftResult.summary,
-        drift_warnings: driftResult.flags.filter(
-          (f) => f.severity === "warning",
-        ).length,
-        fabricated_count: claimValidation.fabricatedCount,
-        low_confidence_count: claimValidation.lowConfidenceCount,
-      },
-      voice_integrity: voiceDriftResult
-        ? {
-            voice_mode: voiceMode,
-            drift_level: voiceDriftResult.driftLevel,
-            passed: voiceDriftResult.passed,
-            issues: voiceDriftResult.detectedIssues,
-            recommended_action: voiceDriftResult.recommendedAction,
-            warnings: voiceDriftResult.warnings,
-          }
-        : {
-            voice_mode: voiceMode,
-            drift_level: "none",
-            passed: true,
-            issues: [],
-            warnings: [],
-          },
-      correlationId,
-    });
+    })
   } catch (error) {
-    let failedJobId: string | null = null
-    let failedUserId: string | null = null
-    let failedSupabase: Awaited<ReturnType<typeof createClient>> | null = null
+    console.error("Error in generate-documents:", error)
+    
+    // Check for rate limit errors
+    const errorMessage = error instanceof Error ? error.message : "Generation failed"
+    const isRateLimit = errorMessage.includes("rate_limit") || errorMessage.includes("Rate limit") || errorMessage.includes("429")
+    
     // Try to update job status to failed (best effort, don't fail if this fails)
     try {
-      failedJobId = parsedJobId
-      if (failedJobId) {
-        const auth = await requireUser();
-        if (auth.ok) {
-          failedSupabase = auth.supabase
-          failedUserId = auth.userId
-          const failedGenerationUpdate = await auth.supabase
+      const { job_id } = await request.clone().json()
+      if (job_id) {
+        const supabase = await createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (user) {
+          await supabase
             .from("jobs")
-            .update({
+            .update({ 
+              status: "error",
               generation_status: "failed",
-              generation_error:
-                error instanceof Error ? error.message : "Generation failed",
+              generation_error: errorMessage
             })
-            .eq("id", failedJobId)
-            .eq("user_id", auth.userId);
-          logSupabaseWriteError("mark_generation_failed", failedGenerationUpdate.error, {
-            job_id: failedJobId,
-            user_id: auth.userId,
-          });
+            .eq("id", job_id)
+            .eq("user_id", userId)
         }
       }
-    } catch {}
-    const errorMessage =
-      error instanceof Error ? error.message : "Generation failed";
-    const isTimeout =
-      errorMessage.includes("timeout") ||
-      errorMessage.includes("timed out") ||
-      errorMessage.includes("aborted");
-    const isRateLimit =
-      errorMessage.includes("rate_limit") ||
-      errorMessage.includes("Rate limit") ||
-      errorMessage.includes("429");
-
-    if ((isTimeout || isRateLimit) && failedJobId && failedUserId && failedSupabase) {
-      try {
-        const [profile, allEvidence, jobData, sourceResume] = await Promise.all([
-          loadUserProfile(failedSupabase, failedUserId),
-          loadEvidenceLibrary(failedSupabase, failedUserId),
-          loadJobAnalysis(failedSupabase, failedJobId, failedUserId),
-          loadSourceResume(failedSupabase, failedUserId),
-        ]);
-
-        if (allEvidence && allEvidence.length > 0 && jobData) {
-          return generateFallbackDocuments({
-            supabase: failedSupabase,
-            job_id: failedJobId,
-            userId: failedUserId,
-            profile: profile as Record<string, any> | null,
-            sourceResumeData: sourceResume?.parsed_data as Record<string, any> | null,
-            allEvidence: allEvidence as EvidenceRecord[],
-            jobData: jobData as Record<string, any>,
-          });
-        }
-      } catch (fallbackError) {
-        console.error("[HireWire] timeout/rate-limit fallback generation failed:", fallbackError);
-      }
+    } catch {
+      // Ignore errors updating status
     }
+    
     if (isRateLimit) {
-      const err = aiProviderError({
-        code: "AI_RATE_LIMIT",
-        message: errorMessage,
-        correlationId,
-        retryable: true,
-      });
-      logErr(err, { route: "/api/generate-documents" });
       return NextResponse.json(
-        { ...toApiErrorResponse(err), retryAfter: 30 },
-        { status: 429 },
-      );
+        { 
+          success: false, 
+          error: "AI service is temporarily busy. Please wait 30 seconds and try again.",
+          retryAfter: 30,
+          isRateLimit: true
+        },
+        { status: 429 }
+      )
     }
-    const errObj = documentGenerationError({
-      code: "GENERATION_FAILED",
-      message: errorMessage,
-      correlationId,
-    });
-    logErr(errObj, { route: "/api/generate-documents" });
-    return NextResponse.json(toApiErrorResponse(errObj), { status: 500 });
+    
+    return NextResponse.json(
+      { success: false, error: errorMessage },
+      { status: 500 }
+    )
   }
 }
