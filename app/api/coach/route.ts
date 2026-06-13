@@ -1,435 +1,878 @@
-import { streamText } from "@/lib/ai/gateway"
-import { CLAUDE_MODELS, isAnthropicConfigured } from "@/lib/ai/gateway"
-import { COACH_SYSTEM_PROMPT } from "@/lib/ai/prompts/coach"
-import { buildCoachContext } from "@/lib/coach/context/build-context"
-import { detectCoachSignals } from "@/lib/coach/signals/engine"
-import { createCoachMemory } from "@/lib/coach/context/memory"
-import { generateRecommendations } from "@/lib/coach/recommendations"
-import { evaluateReadiness } from "@/lib/readiness/evaluator"
-import { emitCoachSignals } from "@/lib/coach/signals/emit-signals"
-import { isEvidenceMapMetadataKey } from "@/lib/coach-step"
-import { buildEvidenceLibraryContext, isContextEngineEnabled } from "@/lib/context-engine"
-import { COACH_TOOLS } from "@/lib/coach/tools"
-import { routeToolCall, formatToolResultForStream } from "@/lib/coach/tool-router"
-import { buildCoachSystemPrompt } from "@/lib/coach/buildCoachPrompt"
-import { stepCountIs } from "ai"
-import { requireUser } from "@/lib/supabase/require-user"
+/**
+ * POST /api/coach
+ *
+ * Minimal HireWire AI Coach endpoint — Phase 1 plumbing.
+ *
+ * Scope for this pass:
+ *   - Groq streaming confirmed working
+ *   - Read evidence and profile for context
+ *   - saveEvidence maps through an approved source_type enum before any DB write
+ *   - No advanced memory system
+ *   - No gaps workflow (deferred)
+ *
+ * saveEvidence mapping rule:
+ *   The AI returns a human-readable category label.
+ *   An internal mapping layer converts it to an approved source_type before insert.
+ *   Free-text category values never reach the database directly.
+ */
+
+import { NextRequest } from "next/server"
+import { createGroq } from "@ai-sdk/groq"
+import { streamText, tool } from "ai"
+import { z } from "zod"
+import { createClient } from "@/lib/supabase/server"
+
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
+
+// ── Approved source_type values (must match DB constraint) ────────────────
+const APPROVED_SOURCE_TYPES = [
+  "work_experience",
+  "project",
+  "portfolio_entry",
+  "shipped_product",
+  "live_site",
+  "achievement",
+  "certification",
+  "publication",
+  "open_source",
+  "education",
+  "skill",
+] as const
+
+type ApprovedSourceType = (typeof APPROVED_SOURCE_TYPES)[number]
+
+// Maps AI-friendly category labels → approved source_type values.
+// The AI uses these labels in its tool call; the mapping layer normalizes before insert.
+const CATEGORY_TO_SOURCE_TYPE: Record<string, ApprovedSourceType> = {
+  // Work / experience variants
+  "work experience": "work_experience",
+  "work_experience": "work_experience",
+  "job": "work_experience",
+  "employment": "work_experience",
+  "role": "work_experience",
+  "position": "work_experience",
+  // Project variants
+  "project": "project",
+  "side project": "project",
+  "personal project": "project",
+  // Product variants
+  "portfolio": "portfolio_entry",
+  "portfolio entry": "portfolio_entry",
+  "shipped product": "shipped_product",
+  "product": "shipped_product",
+  "live site": "live_site",
+  "website": "live_site",
+  // Achievement variants
+  "achievement": "achievement",
+  "award": "achievement",
+  "accomplishment": "achievement",
+  "recognition": "achievement",
+  // Credential variants
+  "certification": "certification",
+  "certificate": "certification",
+  "license": "certification",
+  // Publication variants
+  "publication": "publication",
+  "article": "publication",
+  "blog post": "publication",
+  "paper": "publication",
+  // Open source variants
+  "open source": "open_source",
+  "open_source": "open_source",
+  "contribution": "open_source",
+  // Education variants
+  "education": "education",
+  "degree": "education",
+  "school": "education",
+  "university": "education",
+  "course": "education",
+  // Skill variants
+  "skill": "skill",
+  "skills": "skill",
+  "competency": "skill",
+  "technology": "skill",
+  "tool": "skill",
+}
+
+function resolveSourceType(category: string): ApprovedSourceType | null {
+  const normalized = category.toLowerCase().trim()
+  return CATEGORY_TO_SOURCE_TYPE[normalized] ?? null
+}
+
+// ── System prompt ─────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are HireWire Coach, a strategic career advisor embedded in a job application operating system.
+
+Your role:
+- Answer career questions using the user's actual evidence, profile, and job history
+- Identify and collect missing profile facts that would strengthen job applications
+- Save structured, factual evidence entries when the user shares new career information
+- Reference prior evidence and profile before asking questions the user has already answered
+- Never overstate capabilities or make claims unsupported by the user's actual background
+
+Tools available to you:
+- getProfile: read the user's career profile
+- getEvidence: read saved evidence from the evidence library
+- saveEvidence: save a new structured evidence entry (only factual, verifiable information)
+
+When saving evidence:
+- Use the category field to describe the type (e.g. "work experience", "project", "certification")
+- Be specific about titles and descriptions
+- Do not save speculative or unverified claims
+- Confirm with the user before saving if the information is ambiguous
+
+Keep responses concise and grounded. Do not pad responses or repeat what the user just said.`
+
+// ── Route handler ─────────────────────────────────────────────────────────
+export async function POST(request: NextRequest) {
+  if (!process.env.GROQ_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: "GROQ_API_KEY is not configured" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    )
+  }
+
+  const supabase = await createClient()
+  let userId: string | undefined
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    userId = user.id
+  } else {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) userId = session.user.id
+  }
+  if (!userId) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    )
+  }
+
+  const { messages } = await request.json()
+  if (!messages || !Array.isArray(messages)) {
+    return new Response(
+      JSON.stringify({ error: "messages array required" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    )
+  }
+
+  const result = streamText({
+    model: groq("llama-3.3-70b-versatile"),
+    system: SYSTEM_PROMPT,
+    messages,
+    tools: {
+      // ── Read profile ─────────────────────────────────────────────────────
+      getProfile: tool({
+        description: "Read the user's career profile including name, title, skills, experience, and education.",
+        parameters: z.object({}),
+        execute: async () => {
+          const { data, error } = await supabase
+            .from("user_profile")
+            .select("full_name, title, email, location, summary, skills, tools, domains, certifications, linkedin_url, github_url, website_url, experience, education")
+            .eq("user_id", userId)
+            .single()
+          if (error) return { error: "Could not load profile" }
+          return data ?? { message: "No profile found" }
+        },
+      }),
+
+      // ── Read evidence ─────────────────────────────────────────────────────
+      getEvidence: tool({
+        description: "Read saved evidence entries from the user's evidence library.",
+        parameters: z.object({
+          source_type: z
+            .enum(["work_experience", "project", "portfolio_entry", "shipped_product", "live_site", "achievement", "certification", "publication", "open_source", "education", "skill"])
+            .optional()
+            .describe("Filter by source type. Omit to return all active evidence."),
+        }),
+        execute: async ({ source_type }) => {
+          let query = supabase
+            .from("evidence_library")
+            .select("id, source_type, source_title, role_name, company_name, date_range, responsibilities, tools_used, outcomes, confidence_level, is_user_approved")
+            .eq("user_id", userId)
+            .eq("is_active", true)
+            .order("priority_rank", { ascending: false })
+
+          if (source_type) {
+            query = query.eq("source_type", source_type)
+          }
+
+          const { data, error } = await query
+          if (error) return { error: "Could not load evidence" }
+          return { evidence: data ?? [], count: data?.length ?? 0 }
+        },
+      }),
+
+      // ── Save evidence ─────────────────────────────────────────────────────
+      // The AI provides a human-readable `category`; the mapping layer resolves
+      // it to an approved source_type before any DB write.
+      saveEvidence: tool({
+        description: "Save a new structured evidence entry to the user's evidence library. Use this when the user shares new factual career information.",
+        parameters: z.object({
+          title: z.string().describe("A clear, specific title for this evidence entry"),
+          category: z
+            .string()
+            .describe(
+              "Type of evidence. Use one of: work experience, project, portfolio entry, shipped product, live site, achievement, certification, publication, open source, education, skill"
+            ),
+          role_name: z.string().optional().describe("Job title or role (for work experience)"),
+          company_name: z.string().optional().describe("Employer or institution name"),
+          date_range: z.string().optional().describe("Date range e.g. Jan 2020 – Mar 2023"),
+          description: z.string().optional().describe("Brief description of this evidence"),
+          tools_used: z.array(z.string()).optional().describe("Technologies, tools, or skills involved"),
+          outcomes: z.array(z.string()).optional().describe("Measurable results or achievements"),
+        }),
+        execute: async ({ title, category, role_name, company_name, date_range, description, tools_used, outcomes }) => {
+          // Resolve category → approved source_type before any DB write
+          const source_type = resolveSourceType(category)
+
+          if (!source_type) {
+            return {
+              error: `Unrecognized category: "${category}". Use one of: work experience, project, portfolio entry, shipped product, live site, achievement, certification, publication, open source, education, skill.`,
+            }
+          }
+
+          const { data, error } = await supabase
+            .from("evidence_library")
+            .insert({
+              user_id: userId,
+              source_type,
+              source_title: title,
+              role_name: role_name ?? null,
+              company_name: company_name ?? null,
+              date_range: date_range ?? null,
+              responsibilities: description ? [description] : null,
+              tools_used: tools_used ?? null,
+              outcomes: outcomes ?? null,
+              confidence_level: "medium",
+              evidence_weight: "medium",
+              is_user_approved: false,
+              visibility_status: "active",
+              is_active: true,
+              priority_rank: 0,
+            })
+            .select("id, source_type, source_title")
+            .single()
+
+          if (error) {
+            console.error("coach saveEvidence error:", error)
+            return { error: "Failed to save evidence entry" }
+          }
+
+          return {
+            saved: true,
+            id: data.id,
+            source_type: data.source_type,
+            title: data.source_title,
+          }
+        },
+      }),
+    },
+    maxSteps: 5,
+  })
+
+  return result.toDataStreamResponse()
+import { NextRequest } from "next/server"
+import { streamText, tool } from "ai"
+import { z } from "zod"
+import { createClient } from "@/lib/supabase/server"
+import { checkSafety, logSafetyAudit } from "@/lib/safety"
+import { groq, MODELS } from "@/lib/adapters/groq"
+import { GAP_CLARIFICATION_SYSTEM_PROMPT } from "@/lib/coach-prompts/gap-questions"
 
 export const maxDuration = 60
 
-const INJECTION_PATTERNS = [
-  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|context)/i,
-  /forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|context)/i,
-  /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|context)/i,
-  /you\s+are\s+now\s+(a\s+)?(?!career|job|hiring)/i,
-  /new\s+instructions?:/i,
-  /system\s*prompt:/i,
-  /<\/?system>/i,
-  /\[INST\]|\[\/INST\]/i,
-  /###\s*(system|instruction)/i,
-  /act\s+as\s+(if\s+you\s+are\s+)?(?!a\s+(career|job|hiring|recruiter))/i,
-]
+// Enhanced System prompt with safety boundaries
+const COACH_SYSTEM_PROMPT = `You are HireWire Coach, a strategic career advisor embedded in the HireWire job application platform.
 
-const MAX_MESSAGE_LENGTH = 4000
-const MAX_MESSAGES = 50
-const FIT_ACTIVATION_THRESHOLD = 70
-const MAX_CONTEXT_ITEMS = 8
+## Your Capabilities
+1. **Career Coaching**: Provide strategic job search advice, interview preparation tips, and career planning guidance
+2. **Onboarding Help**: Guide new users through building their evidence library via conversational Q&A
+3. **Action Suggestions**: Proactively suggest next steps based on the user's pipeline state
+4. **Document Editing**: Help improve resumes and cover letters when asked
+5. **Profile Management**: You can directly add/update profile information, work experience, skills, and education when users ask
 
-function sanitizeInput(text: string): { safe: boolean; reason?: string } {
-  if (!text || typeof text !== "string") return { safe: false, reason: "invalid_input" }
-  if (text.length > MAX_MESSAGE_LENGTH) return { safe: false, reason: "too_long" }
-  for (const pattern of INJECTION_PATTERNS) {
-    if (pattern.test(text)) return { safe: false, reason: "injection_attempt" }
-  }
-  return { safe: true }
-}
+## Profile Actions You Can Take
+When users ask you to update their profile, USE YOUR TOOLS to do it directly:
+- **Add work experience**: Use addExperience to add companies/jobs (e.g., "add RedLantern Studios to my profile")
+- **Add skills**: Use addSkills to add new skills
+- **Remove skills**: Use removeSkill to remove skills
+- **Update profile info**: Use updateProfile to change name, location, summary, email, or phone
+- **Add education**: Use addEducation to add degrees/schools
+- **Update job status**: Use updateJobStatus to mark jobs as applied, interviewing, etc.
+- **Save evidence**: Use saveEvidence to document achievements
 
-function formatList(value: unknown, limit = MAX_CONTEXT_ITEMS): string {
-  if (!Array.isArray(value) || value.length === 0) return "Not provided"
-  return value.slice(0, limit).map(String).join(", ")
-}
+IMPORTANT: When a user asks you to add something to their profile, DO IT immediately using the appropriate tool. Don't just explain how - actually perform the action.
 
-function formatProfileJsonList(value: unknown, labelKeys: string[], limit = 5): string[] {
-  if (!Array.isArray(value)) return []
-  return value.slice(0, limit).map((item) => {
-    if (!item || typeof item !== "object") return String(item)
-    const row = item as Record<string, unknown>
-    return labelKeys
-      .map((key) => row[key])
-      .filter(Boolean)
-      .map(String)
-      .join(" — ")
-  }).filter(Boolean)
-}
+## Communication Style
+- Be concise but warm and encouraging
+- Always ground advice in the user's actual experience and evidence when available
+- When suggesting improvements, be specific and actionable
+- When helping build evidence, ask follow-up questions to extract STAR details (Situation, Task, Action, Result)
+- Format responses with markdown for readability
 
-export async function POST(request: Request) {
-  const { authError, aiProviderError, unknownError } = await import("@/lib/errors/factory")
-  const { logError: logErr } = await import("@/lib/errors/logger")
-  const { toApiErrorResponse } = await import("@/lib/errors/response")
-  const { createCorrelationId } = await import("@/lib/errors/correlation")
-  const correlationId = createCorrelationId()
-  try {
-    const auth = await requireUser()
-    if (!auth.ok) {
-      const err = authError({ code: "NOT_AUTHENTICATED", correlationId })
-      logErr(err, { route: "/api/coach" })
-      return new Response(JSON.stringify(toApiErrorResponse(err)), { status: 401, headers: { "Content-Type": "application/json" } })
-    }
-    const { supabase, userId } = auth
+## Safety Boundaries - STRICTLY FOLLOW
 
-    if (!isAnthropicConfigured()) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "AI Coach requires OPENAI_API_KEY or AI_GATEWAY_API_KEY in this environment.",
-        }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
-      )
-    }
+### Professional Scope Limits
+- **I am NOT a lawyer, recruiter, or HR authority.** For employment law questions, advise users to consult a qualified professional.
+- Do NOT provide specific legal advice about discrimination, wrongful termination, or employment contracts.
 
-    const body = await request.json()
-    // AI SDK v6 DefaultChatTransport sends: { id, messages, message, trigger, messageId, ...extraBody }
-    // jobContext and gapContext arrive as merged extraBody fields.
-    const { messages, jobContext, gapContext } = body
-    const requestedSessionId = typeof body?.sessionId === "string" ? body.sessionId : null
-    const jobId = typeof jobContext?.jobId === "string" ? jobContext.jobId : null
+### Content I Will NOT Help With
+- **Credential fabrication**: I will not help fake degrees, certifications, employment history, or references
+- **Resume misrepresentation**: I will not help lie about or significantly exaggerate qualifications
+- **Discrimination**: I will not help with discriminatory hiring practices or illegal interview questions
+- **Fraud**: I will not help circumvent background checks, drug tests, or screening processes
 
-    // Validate message array
-    if (!Array.isArray(messages) || messages.length > MAX_MESSAGES) {
-      return new Response("Invalid request", { status: 400 })
-    }
+### Accuracy & Honesty Policy
+- If I don't know something, I will admit it rather than speculate
+- I will not fabricate achievements, metrics, or company details
 
-    // Helper: extract plain text from a v6 UIMessage.
-    function extractText(msg: { role: string; parts?: { type: string; text?: string }[]; content?: unknown }): string {
-      if (Array.isArray(msg.parts)) {
-        return msg.parts.filter(p => p.type === "text").map(p => p.text ?? "").join(" ")
-      }
-      return typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "")
-    }
+You are speaking directly to the job seeker. Help them succeed - ethically and professionally.`
 
-    // Sanitize all user messages for injection attempts.
-    for (const msg of messages) {
-      if (msg.role === "user") {
-        const check = sanitizeInput(extractText(msg))
-        if (!check.safe) {
-          return new Response(
-            JSON.stringify({ error: "Message rejected", reason: check.reason }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
+// Create tools with userId bound
+function createCoachTools(userId: string) {
+  return {
+    getUserProfile: tool({
+      description: "Get the current user's profile including name, headline, summary, skills, experience, and education",
+      parameters: z.object({}),
+      execute: async () => {
+        const supabase = await createClient()
+        const { data } = await supabase
+          .from("user_profile")
+          .select("*")
+          .eq("user_id", userId)
+          .single()
+        
+        if (!data) return { error: "No profile found. User should complete their profile first." }
+        return data
+      },
+    }),
+
+    getEvidenceLibrary: tool({
+      description: "Get all evidence records from the user's evidence library - their achievements, projects, and metrics",
+      parameters: z.object({
+        category: z.string().optional().describe("Filter by category: achievement, project, metric, skill, certification"),
+      }),
+      execute: async ({ category }) => {
+        const supabase = await createClient()
+        let query = supabase
+          .from("evidence_library")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("is_active", true)
+          .order("priority_rank", { ascending: true })
+        
+        if (category) {
+          query = query.eq("category", category)
         }
-      }
-    }
+        
+        const { data } = await query
+        return data || []
+      },
+    }),
 
-    // Convert v6 UIMessage[] (parts-based) → CoreMessage[] (content-based) for streamText.
-    const coreMessages = messages
-      .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
-      .map((m: { role: string; parts?: { type: string; text?: string }[]; content?: unknown }) => ({
-        role: m.role as "user" | "assistant",
-        content: extractText(m),
-      }))
+    getJobPipeline: tool({
+      description: "Get the user's job pipeline - all jobs they're tracking with status and fit scores",
+      parameters: z.object({
+        status: z.string().optional().describe("Filter by status: ANALYZING, REVIEWING, READY, APPLIED, INTERVIEWING, OFFER, REJECTED, WITHDRAWN"),
+      }),
+      execute: async ({ status }) => {
+        const supabase = await createClient()
+        let query = supabase
+          .from("jobs")
+          .select(`
+            id,
+            company_name,
+            role_title,
+            status,
+            created_at,
+            job_scores (
+              overall_score
+            ),
+            applications (
+              applied_at
+            )
+          `)
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+        
+        if (status) {
+          query = query.eq("status", status)
+        }
+        
+        const { data } = await query.limit(20)
+        // Transform to expected format
+        return (data || []).map(job => ({
+          ...job,
+          job_title: job.role_title,
+          fit_score: job.job_scores?.[0]?.overall_score || null,
+          applied_at: job.applications?.[0]?.applied_at || null,
+        }))
+      },
+    }),
 
-    // ── Parallel data fetch ───────────────────────────────────────────────────
-    const [profileResult, evidenceResult, recentJobsResult, activeJobResult, outcomesResult] = await Promise.all([
-      supabase
-        .from("user_profile")
-        .select("full_name, name, title, summary, skills, tools, domains, certifications, education, experience, location")
-        .eq("user_id", userId)
-        .single(),
-      supabase
-        .from("evidence_library")
-        .select("id, source_type, source_title, company_name, role_name, date_range, responsibilities, tools_used, outcomes, proof_snippet, confidence_level")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .order("updated_at", { ascending: false })
-        .limit(20),
-      supabase
-        .from("jobs")
-        .select("id, role_title, company_name, status, score, score_gaps, gap_clarifications, gaps_addressed, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map")
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .order("updated_at", { ascending: false })
-        .limit(10),
-      jobId
-        ? supabase
-            .from("jobs")
-            .select("id, role_title, company_name, job_description, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, responsibilities, qualifications_required, qualifications_preferred, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
-            .eq("id", jobId)
-            .eq("user_id", userId)
-            .is("deleted_at", null)
-            .single()
-        : Promise.resolve({ data: null, error: null }),
-      supabase
-        .from("application_outcomes")
-        .select("job_id, outcome, outcome_date, notes, days_to_response, created_at")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(8),
-    ])
+    getJobDetails: tool({
+      description: "Get detailed information about a specific job including analysis, generated documents, and evidence map",
+      parameters: z.object({
+        jobId: z.string().describe("The job ID to fetch details for"),
+      }),
+      execute: async ({ jobId }) => {
+        const supabase = await createClient()
+        const { data } = await supabase
+          .from("jobs")
+          .select("*")
+          .eq("id", jobId)
+          .eq("user_id", userId)
+          .single()
+        
+        if (!data) return { error: "Job not found or access denied" }
+        return data
+      },
+    }),
 
-    const profile = profileResult.data
-    const evidenceLibrary = Array.isArray(evidenceResult.data) ? evidenceResult.data : []
-    const recentJobs = Array.isArray(recentJobsResult.data) ? recentJobsResult.data : []
-    const activeJob = activeJobResult.data
-    const recentOutcomes = Array.isArray(outcomesResult.data) ? outcomesResult.data : []
-
-    // ── Build coaching context ────────────────────────────────────────────────
-    const fitScore = activeJob?.score ?? jobContext?.score ?? 0
-
-    let workflowStage = "job_ingested"
-    let blockers: string[] = []
-
-    if (activeJob) {
-      const readiness = evaluateReadiness(activeJob)
-      workflowStage = readiness.stage
-      blockers = readiness.blockedReasons
-    }
-
-    const applicationHistory = recentJobs
-      .filter(j => j.applied_at)
-      .map(j => ({ title: j.role_title, company: j.company_name, date: j.applied_at }))
-
-    const generationHistory = recentJobs
-      .filter(j => j.generated_resume || j.generated_cover_letter)
-      .map(j => ({ jobId: j.id, title: j.role_title }))
-
-    const evidenceMap = activeJob?.evidence_map
-    const mappedCount = typeof evidenceMap === "object" && evidenceMap !== null
-      ? Object.keys(evidenceMap).filter(k => !isEvidenceMapMetadataKey(k)).length
-      : 0
-
-    const coachContext = buildCoachContext({
-      workflowStage,
-      blockers,
-      readiness: activeJob ? (evaluateReadiness(activeJob).isReady ? 1 : 0) : 0,
-      evidenceCoverage: mappedCount,
-      fitScore,
-      generationHistory,
-      applicationHistory,
-      recentOutcomes,
-      currentPage: jobId ? "job_detail" : gapContext ? "gap_clarification" : "dashboard",
-      currentAction: blockers[0] ?? "",
-    })
-
-    const signals = detectCoachSignals(coachContext, createCoachMemory())
-    void emitCoachSignals(supabase, signals, userId, jobId)
-    const recommendations = generateRecommendations(coachContext, signals)
-
-    // ── Assemble system prompt ────────────────────────────────────────────────
-    const gapRequirementId =
-      typeof gapContext?.gap?.requirement_id === "string" ? gapContext.gap.requirement_id : null
-    const activeEvidenceMap =
-      activeJob?.evidence_map && typeof activeJob.evidence_map === "object" && !Array.isArray(activeJob.evidence_map)
-        ? activeJob.evidence_map as { requirement_matches?: Array<Record<string, unknown>> }
-        : null
-    const targetedRequirement = gapRequirementId
-      ? activeEvidenceMap?.requirement_matches?.find((match) => match.requirement_id === gapRequirementId)
-      : null
-    const hasRequirementScopedPrompt = Boolean(gapContext?.gap && gapRequirementId)
-    let systemPrompt = hasRequirementScopedPrompt
-      ? buildCoachSystemPrompt({
-          gapRequirement: String(gapContext.gap.requirement ?? targetedRequirement?.requirement_text ?? "this requirement"),
-          requirementId: gapRequirementId,
-          requirementIntent: typeof targetedRequirement?.employer_intent === "string"
-            ? targetedRequirement.employer_intent
-            : typeof gapContext.gap.category === "string"
-              ? gapContext.gap.category
-              : null,
-          currentEvidence: Array.isArray(targetedRequirement?.matched_evidence_titles)
-            ? targetedRequirement.matched_evidence_titles.filter((item): item is string => typeof item === "string")
-            : [],
-          jobTitle: String(gapContext.jobTitle ?? jobContext?.title ?? activeJob?.role_title ?? "this role"),
-          jobCompany: String(gapContext.company ?? jobContext?.company ?? activeJob?.company_name ?? "this company"),
-          jobDescriptionSummary: String(activeJob?.job_description ?? "").slice(0, 500),
-          existingEvidenceTitles: evidenceLibrary.map((item) => String(item.source_title ?? "Evidence")).filter(Boolean),
-          priorMessages: coreMessages.slice(-10),
+    suggestNextAction: tool({
+      description: "Analyze the user's pipeline state and suggest the most impactful next action they should take",
+      parameters: z.object({}),
+      execute: async () => {
+        const supabase = await createClient()
+        
+        // Get pipeline summary with scores from job_scores table
+        const { data: jobs } = await supabase
+          .from("jobs")
+          .select(`
+            status,
+            job_scores (
+              overall_score
+            )
+          `)
+          .eq("user_id", userId)
+        
+        const { data: evidence } = await supabase
+          .from("evidence_library")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("is_active", true)
+        
+        const { data: profile } = await supabase
+          .from("user_profile")
+          .select("headline, summary")
+          .eq("user_id", userId)
+          .single()
+        
+        const jobsByStatus: Record<string, number> = {}
+        jobs?.forEach(j => {
+          jobsByStatus[j.status] = (jobsByStatus[j.status] || 0) + 1
         })
-      : COACH_SYSTEM_PROMPT
-
-    // Add risk flags and match quality context if available
-    if (hasRequirementScopedPrompt && targetedRequirement && typeof targetedRequirement === "object") {
-      const riskFlags = Array.isArray((targetedRequirement as Record<string, unknown>).riskFlags)
-        ? (targetedRequirement as Record<string, unknown>).riskFlags as string[]
-        : []
-      if (riskFlags.includes("seniority_mismatch")) {
-        systemPrompt += `\n\n## ⚠️ Match Quality Alert\nThis requirement was flagged during matching:\n- RISK: The requirement appears to call for a different seniority/authority level than the user's documented experience.\n- ACTION: On first message, validate the seniority level difference explicitly before asking for details.\n- EXAMPLE: "The requirement is 'Lead PM' (director-level authority). Your background shows Technical PM (individual contributor). Tell me about situations where you led or directed product strategy."`
-      }
-    }
-
-    // Profile
-    if (profile) {
-      const experienceLines = formatProfileJsonList(profile.experience, ["role", "title", "company"], 5)
-      const educationLines = formatProfileJsonList(profile.education, ["degree", "school", "field", "year"], 5)
-      systemPrompt += `\n\n## User Profile\nREFERENCE THIS WHEN VALIDATING QUESTIONS: Before asking about a specific expertise (PM, architecture, ML, etc.), check if the user's documented roles below support it. If not, acknowledge the gap and ask about adjacent experience.\n- Name: ${profile.full_name || profile.name || "Not provided"}\n- Current title: ${profile.title || "Not provided"}\n- Location: ${profile.location || "Not provided"}\n- Skills: ${formatList(profile.skills)}\n- Tools: ${formatList(profile.tools)}\n- Domains: ${formatList(profile.domains)}\n- Certifications: ${formatList(profile.certifications)}\n- Education: ${educationLines.length > 0 ? educationLines.join("; ") : "Not provided"}\n- Experience: ${experienceLines.length > 0 ? experienceLines.join("; ") : "Not provided"}\n- Summary: ${profile.summary || "Not provided"}`
-    }
-
-    // Evidence library snapshot
-    if (evidenceLibrary.length > 0) {
-      systemPrompt += `\n\n## Evidence Library Snapshot\nUse this user-owned evidence when answering. Do not invent missing facts.\n` +
-        evidenceLibrary.slice(0, 12).map((e) => {
-          const proof = e.proof_snippet || [...(e.responsibilities ?? []), ...(e.outcomes ?? [])].slice(0, 2).join("; ")
-          const tools = Array.isArray(e.tools_used) && e.tools_used.length > 0 ? ` Tools: ${e.tools_used.slice(0, 6).join(", ")}.` : ""
-          return `- ${e.source_title} (${e.source_type}${e.company_name ? `, ${e.company_name}` : ""}): ${String(proof || "No proof snippet").slice(0, 240)}.${tools}`
-        }).join("\n")
-    }
-
-    // Active job context
-    if (jobContext) {
-      systemPrompt += `\n\n## Current Job Context\n- Title: ${jobContext.title}\n- Company: ${jobContext.company}${jobContext.score != null ? `\n- Fit Score: ${jobContext.score}%` : ""}${jobContext.status ? `\n- Status: ${jobContext.status}` : ""}`
-    }
-    if (activeJob) {
-      systemPrompt += `\n\n## Active Job Analysis\n- Required qualifications: ${formatList(activeJob.qualifications_required)}\n- Responsibilities: ${formatList(activeJob.responsibilities)}\n- Score gaps: ${formatList(activeJob.score_gaps)}\n- Score strengths: ${formatList(activeJob.score_strengths)}`
-    }
-    if (recentOutcomes.length > 0) {
-      systemPrompt += `\n\n## Prior Application Outcomes\nUse these only for strategy and pattern recognition. Do not change readiness decisions because of outcomes.\n` +
-        recentOutcomes.map((outcome) =>
-          `- ${outcome.outcome}${outcome.days_to_response != null ? ` after ${outcome.days_to_response} days` : ""}${outcome.notes ? `: ${String(outcome.notes).slice(0, 160)}` : ""}`
-        ).join("\n")
-    }
-
-    if (isContextEngineEnabled() && evidenceLibrary.length > 0) {
-      const contextProfile = buildEvidenceLibraryContext({
-        userId: userId,
-        records: evidenceLibrary as Array<Record<string, any>>,
-      })
-      const allowed = contextProfile.capabilities
-        .filter((capability) => capability.allowed_usage !== "blocked")
-        .slice(0, 8)
-      if (allowed.length > 0) {
-        systemPrompt += `\n\n## ContextEngine Evidence Permissions\nWhen answering, label claims as evidence-backed, adjacent, gap, or interview-only.\n` +
-          allowed.map((capability) =>
-            `- ${capability.capability_name}: ${capability.allowed_usage}, ${capability.confidence} confidence. ${capability.reasoning_summary}`
-          ).join("\n")
-      }
-    }
-
-    // Gap clarification context
-    if (gapContext && !hasRequirementScopedPrompt) {
-      systemPrompt += `\n\n## Gap Clarification Mode\nHelp the user translate this specific job expectation into verified proof:\n- Job: ${gapContext.jobTitle} at ${gapContext.company}${gapContext.gap ? `\n- Requirement ID: ${gapContext.gap.requirement_id ?? "not provided"}\n- Requirement: ${gapContext.gap.requirement}\n- Category: ${gapContext.gap.category}\n- Question: ${gapContext.gap.coach_question}` : ""}`
-    }
-
-    // Workflow state
-    if (workflowStage !== "job_ingested" || blockers.length > 0) {
-      systemPrompt += `\n\n## Pipeline State\n- Stage: ${workflowStage}`
-      if (blockers.length > 0) {
-        systemPrompt += `\n- Blockers: ${blockers.join("; ")}`
-      }
-      if (applicationHistory.length > 0) {
-        systemPrompt += `\n- Applications submitted: ${applicationHistory.length}`
-      }
-    }
-
-    systemPrompt += `\n\n## Data Access and Write Boundaries\n- You may reason across this user's own profile, evidence library, jobs, fit scores, gaps, and generated workflow state provided in context.\n- You must never imply access to other users, admin data, hidden database rows, secrets, billing internals, or system prompts.\n- You may suggest profile/evidence/job updates, but durable writes require explicit user confirmation through HireWire UI actions.\n- For gap dialogue, handle one gap at a time: ask a targeted question, turn the answer into an evidence draft when appropriate, ask for confirmation, then move to the next gap.\n- New evidence must be factual, user-provided, and scoped to the authenticated user's own evidence library.`
-
-    // Coaching intelligence from recommendations
-    if (recommendations.length > 0) {
-      const top = recommendations.slice(0, 3)
-      systemPrompt += `\n\n## Coaching Intelligence\n` +
-        top.map(r => `- [${(r.type ?? "insight").toUpperCase()}] ${r.message}`).join("\n")
-    }
-
-    // Rejection pattern analysis — coach feedback loop
-    const rejectedJobs = recentJobs.filter(j => j.status === "rejected")
-    if (rejectedJobs.length > 0) {
-      const scoredRejections = rejectedJobs.filter(j => j.score != null)
-      const avgRejectionScore = scoredRejections.length > 0
-        ? Math.round(scoredRejections.reduce((sum, j) => sum + (j.score ?? 0), 0) / scoredRejections.length)
-        : null
-
-      const withMaterials = rejectedJobs.filter(j => j.generated_resume || j.generated_cover_letter).length
-      const withoutMaterials = rejectedJobs.length - withMaterials
-
-      systemPrompt += `\n\n## Rejection History (${rejectedJobs.length} rejection${rejectedJobs.length !== 1 ? "s" : ""})`
-      if (avgRejectionScore !== null) {
-        systemPrompt += `\n- Average fit score at rejection: ${avgRejectionScore}%`
-        if (avgRejectionScore < FIT_ACTIVATION_THRESHOLD) {
-          systemPrompt += ` — below the ${FIT_ACTIVATION_THRESHOLD}% threshold. Suggest the user improve evidence or target better-fit roles.`
+        
+        const evidenceCount = evidence?.length || 0
+        const hasProfile = !!(profile?.headline && profile?.summary)
+        
+        // Determine priority action
+        if (!hasProfile) {
+          return {
+            action: "complete_profile",
+            message: "Complete your profile first - add a headline and summary to help tailor your applications.",
+            priority: "high"
+          }
         }
-      }
-      if (withoutMaterials > 0) {
-        systemPrompt += `\n- ${withoutMaterials} rejection${withoutMaterials !== 1 ? "s" : ""} occurred without generated materials — user may have applied too early.`
-      }
-      systemPrompt += `\nUse this history proactively: surface patterns, identify whether the user is applying below fit threshold or skipping quality review, and suggest concrete changes.`
+        
+        if (evidenceCount < 5) {
+          return {
+            action: "build_evidence",
+            message: `You have ${evidenceCount} evidence items. Add more achievements and projects to strengthen your applications.`,
+            priority: "high"
+          }
+        }
+        
+        if (jobsByStatus["READY"] && jobsByStatus["READY"] > 0) {
+          return {
+            action: "apply",
+            message: `You have ${jobsByStatus["READY"]} jobs ready to apply. Don't let them sit too long!`,
+            priority: "medium"
+          }
+        }
+        
+        if (jobsByStatus["REVIEWING"] && jobsByStatus["REVIEWING"] > 0) {
+          return {
+            action: "review",
+            message: `You have ${jobsByStatus["REVIEWING"]} jobs awaiting your review. Check the generated materials.`,
+            priority: "medium"
+          }
+        }
+        
+        return {
+          action: "add_jobs",
+          message: "Your pipeline is looking good! Add more jobs to analyze by pasting a job posting URL.",
+          priority: "low"
+        }
+      },
+    }),
+
+    saveEvidence: tool({
+      description: "Save a new evidence record to the user's evidence library. Use this when helping users document their achievements.",
+      parameters: z.object({
+        title: z.string().describe("Brief title for the evidence"),
+        description: z.string().describe("Full description of the achievement, project, or skill"),
+        category: z.enum(["achievement", "project", "metric", "skill", "certification"]),
+        tags: z.array(z.string()).describe("Relevant tags/keywords"),
+        metrics: z.string().optional().describe("Quantifiable results if applicable"),
+      }),
+      execute: async ({ title, description, category, tags, metrics }) => {
+        const supabase = await createClient()
+        
+        const { data, error } = await supabase
+          .from("evidence_library")
+          .insert({
+            user_id: userId,
+            title,
+            description,
+            category,
+            tags,
+            metrics,
+            is_active: true,
+            priority_rank: 0,
+          })
+          .select()
+          .single()
+        
+        if (error) return { error: "Failed to save evidence" }
+        return { success: true, evidence: data }
+      },
+    }),
+
+    // ========== PROFILE MANAGEMENT TOOLS ==========
+    
+    updateProfile: tool({
+      description: "Update the user's profile information like name, location, phone, email, or summary. Use this when users want to change their basic profile details.",
+      parameters: z.object({
+        full_name: z.string().optional().describe("User's full name"),
+        location: z.string().optional().describe("User's location (e.g., 'San Francisco, CA')"),
+        phone: z.string().optional().describe("User's phone number"),
+        email: z.string().optional().describe("User's email address"),
+        summary: z.string().optional().describe("Professional summary/bio"),
+      }),
+      execute: async (updates) => {
+        const supabase = await createClient()
+        
+        // Get existing profile
+        const { data: existing } = await supabase
+          .from("user_profile")
+          .select("*")
+          .eq("user_id", userId)
+          .single()
+        
+        if (!existing) {
+          return { error: "No profile found. User should create their profile first." }
+        }
+        
+        // Filter out undefined values
+        const cleanUpdates = Object.fromEntries(
+          Object.entries(updates).filter(([_, v]) => v !== undefined)
+        )
+        
+        if (Object.keys(cleanUpdates).length === 0) {
+          return { error: "No updates provided" }
+        }
+        
+        const { data, error } = await supabase
+          .from("user_profile")
+          .update({
+            ...cleanUpdates,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .select()
+          .single()
+        
+        if (error) return { error: "Failed to update profile" }
+        return { success: true, message: "Profile updated successfully", updated_fields: Object.keys(cleanUpdates) }
+      },
+    }),
+
+    addExperience: tool({
+      description: "Add a work experience entry to the user's profile. Use this when users want to add a company or job to their work history.",
+      parameters: z.object({
+        title: z.string().describe("Job title (e.g., 'Senior Product Manager')"),
+        company: z.string().describe("Company name (e.g., 'RedLantern Studios')"),
+        start_date: z.string().describe("Start date (e.g., 'Jan 2022' or '2022')"),
+        end_date: z.string().optional().describe("End date (e.g., 'Dec 2023' or 'Present')"),
+        description: z.string().optional().describe("Job description and key achievements"),
+      }),
+      execute: async ({ title, company, start_date, end_date, description }) => {
+        const supabase = await createClient()
+        
+        // Get existing profile
+        const { data: existing } = await supabase
+          .from("user_profile")
+          .select("experience")
+          .eq("user_id", userId)
+          .single()
+        
+        if (!existing) {
+          return { error: "No profile found. User should create their profile first." }
+        }
+        
+        const currentExperience = existing.experience || []
+        const newExperience = {
+          title,
+          company,
+          start_date,
+          end_date: end_date || "Present",
+          description: description || "",
+        }
+        
+        const { data, error } = await supabase
+          .from("user_profile")
+          .update({
+            experience: [...currentExperience, newExperience],
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .select()
+          .single()
+        
+        if (error) return { error: "Failed to add experience" }
+        return { 
+          success: true, 
+          message: `Added ${title} at ${company} to your work experience.`,
+          experience: newExperience
+        }
+      },
+    }),
+
+    addSkills: tool({
+      description: "Add one or more skills to the user's profile. Use this when users want to add new skills.",
+      parameters: z.object({
+        skills: z.array(z.string()).describe("Array of skills to add (e.g., ['React', 'TypeScript', 'Product Management'])"),
+      }),
+      execute: async ({ skills }) => {
+        const supabase = await createClient()
+        
+        // Get existing profile
+        const { data: existing } = await supabase
+          .from("user_profile")
+          .select("skills")
+          .eq("user_id", userId)
+          .single()
+        
+        if (!existing) {
+          return { error: "No profile found. User should create their profile first." }
+        }
+        
+        const currentSkills = existing.skills || []
+        // Add only new skills (avoid duplicates)
+        const newSkills = skills.filter(s => !currentSkills.includes(s))
+        
+        if (newSkills.length === 0) {
+          return { message: "All skills already exist in profile", added: [] }
+        }
+        
+        const { data, error } = await supabase
+          .from("user_profile")
+          .update({
+            skills: [...currentSkills, ...newSkills],
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .select()
+          .single()
+        
+        if (error) return { error: "Failed to add skills" }
+        return { 
+          success: true, 
+          message: `Added ${newSkills.length} skill(s) to your profile.`,
+          added: newSkills
+        }
+      },
+    }),
+
+    removeSkill: tool({
+      description: "Remove a skill from the user's profile.",
+      parameters: z.object({
+        skill: z.string().describe("The skill to remove"),
+      }),
+      execute: async ({ skill }) => {
+        const supabase = await createClient()
+        
+        // Get existing profile
+        const { data: existing } = await supabase
+          .from("user_profile")
+          .select("skills")
+          .eq("user_id", userId)
+          .single()
+        
+        if (!existing) {
+          return { error: "No profile found" }
+        }
+        
+        const currentSkills = existing.skills || []
+        const updatedSkills = currentSkills.filter((s: string) => s.toLowerCase() !== skill.toLowerCase())
+        
+        if (updatedSkills.length === currentSkills.length) {
+          return { error: `Skill "${skill}" not found in profile` }
+        }
+        
+        const { error } = await supabase
+          .from("user_profile")
+          .update({
+            skills: updatedSkills,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+        
+        if (error) return { error: "Failed to remove skill" }
+        return { success: true, message: `Removed "${skill}" from your skills.` }
+      },
+    }),
+
+    addEducation: tool({
+      description: "Add an education entry to the user's profile.",
+      parameters: z.object({
+        degree: z.string().describe("Degree or certification (e.g., 'BS Computer Science', 'MBA')"),
+        school: z.string().describe("School or institution name"),
+        year: z.string().describe("Graduation year or date range"),
+      }),
+      execute: async ({ degree, school, year }) => {
+        const supabase = await createClient()
+        
+        // Get existing profile
+        const { data: existing } = await supabase
+          .from("user_profile")
+          .select("education")
+          .eq("user_id", userId)
+          .single()
+        
+        if (!existing) {
+          return { error: "No profile found" }
+        }
+        
+        const currentEducation = existing.education || []
+        const newEducation = { degree, school, year }
+        
+        const { error } = await supabase
+          .from("user_profile")
+          .update({
+            education: [...currentEducation, newEducation],
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+        
+        if (error) return { error: "Failed to add education" }
+        return { 
+          success: true, 
+          message: `Added ${degree} from ${school} to your education.`,
+          education: newEducation
+        }
+      },
+    }),
+
+    updateJobStatus: tool({
+      description: "Update the status of a job in the user's pipeline. Use this when users want to mark a job as applied, interviewing, rejected, etc.",
+      parameters: z.object({
+        jobId: z.string().describe("The job ID to update"),
+        status: z.enum(["ANALYZING", "REVIEWING", "READY", "APPLIED", "INTERVIEWING", "OFFER", "REJECTED", "WITHDRAWN"]).describe("The new status"),
+        notes: z.string().optional().describe("Optional notes about the status change"),
+      }),
+      execute: async ({ jobId, status }) => {
+        const supabase = await createClient()
+        
+        // Update job status
+        const { data, error } = await supabase
+          .from("jobs")
+          .update({ status })
+          .eq("id", jobId)
+          .eq("user_id", userId)
+          .select("id, role_title, company_name, status")
+          .single()
+        
+        if (error) return { error: "Failed to update job status" }
+        if (!data) return { error: "Job not found or access denied" }
+        
+        // If marking as applied, create an application record
+        if (status === "APPLIED") {
+          await supabase
+            .from("applications")
+            .upsert({
+              job_id: jobId,
+              user_id: userId,
+              status: "applied",
+              applied_at: new Date().toISOString(),
+            })
+        }
+        
+        return { 
+          success: true, 
+          message: `Updated ${data.role_title} at ${data.company_name} to ${status}.`,
+          job: data
+        }
+      },
+    }),
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { messages, conversationId, gapContext } = await req.json()
+
+    // Get current user
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      })
     }
 
-    // 70% fit threshold behavior gate
-    if (fitScore > 0 && fitScore < FIT_ACTIVATION_THRESHOLD) {
-      systemPrompt += `\n\n## Fit Threshold: Gap Mode (${fitScore}% < ${FIT_ACTIVATION_THRESHOLD}%)\nThis job's fit score is below the ${FIT_ACTIVATION_THRESHOLD}% threshold. Prioritize gap identification and evidence coaching over readiness or document polish. Ask the user what experience they have that could address the key gaps.`
-    } else if (fitScore >= FIT_ACTIVATION_THRESHOLD) {
-      systemPrompt += `\n\n## Fit Threshold: Readiness Mode (${fitScore}% ≥ ${FIT_ACTIVATION_THRESHOLD}%)\nThis job has strong fit. Focus coaching on completing the application package, quality review, and apply readiness rather than gap analysis.`
+    // === SAFETY CHECK ===
+    const safetyResult = checkSafety(messages, {
+      userId: user.id,
+      sessionId: conversationId,
+      strictMode: false,
+    })
+    
+    // Log safety audit asynchronously
+    logSafetyAudit(safetyResult.auditRecord, { supabase }).catch(() => {})
+    
+    // If blocked, return safe refusal response
+    if (!safetyResult.allowed) {
+      const refusalResponse = safetyResult.blockedResponse || 
+        "I'm here to help with your career journey! Let's focus on job searching, resume writing, interview prep, or career advice."
+      
+      return new Response(JSON.stringify({ 
+        role: "assistant",
+        content: refusalResponse 
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
     }
 
-    // Add tool descriptions to system prompt
-    systemPrompt += `\n\n## Available Actions\nWhen helpful, you can take the following actions directly:\n`
-    systemPrompt += `- **createEvidence**: Ask the user first. "Should I create an evidence entry for your database optimization work?" Only call if they say yes.\n`
-    systemPrompt += `- **mapEvidenceToRequirement**: Auto-map if evidence clearly matches requirement (>80% confidence). Show result: "Mapped your AWS experience to Infrastructure requirement."\n`
-    systemPrompt += `- **deriveCompositeEvidence**: For requirements like "10+ years experience", tally user-confirmed roles or existing evidence into one derived evidence entry. Ask/verify the breakdown first, then call this tool so the user can confirm before saving.\n`
-    systemPrompt += `- **recordOutcome**: Only when user explicitly tells you the result: "I got rejected" or "They scheduled an interview."\n`
-    systemPrompt += `- **markRequirementAddressed**: Use when you've successfully mapped sufficient evidence to a gap.\n`
-    systemPrompt += `- **archiveJob** & **deleteEvidence**: Require explicit user request ("Archive this job" / "Delete that evidence").\n`
-    systemPrompt += `Always narrate what you're doing: "I'll map that to the Infrastructure requirement" before calling tools.`
+    // Create tools with userId bound
+    const tools = createCoachTools(user.id)
 
-    // Use provided requirement session when valid; otherwise fall back to ephemeral session.
-    let sessionId = crypto.randomUUID()
-    if (requestedSessionId) {
-      const { data: ownedSession } = await supabase
-        .from("coach_sessions")
-        .select("id")
-        .eq("id", requestedSessionId)
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .maybeSingle()
-      if (ownedSession?.id) {
-        sessionId = ownedSession.id
-      }
+    // Build system prompt - add gap clarification mode if context provided
+    let systemPrompt = COACH_SYSTEM_PROMPT
+    if (gapContext) {
+      systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${GAP_CLARIFICATION_SYSTEM_PROMPT}\n\n## Current Gap Context\nThe user is asking about gaps for job: "${gapContext.jobTitle}" at "${gapContext.company}".\n${gapContext.gap ? `Specific gap to address: ${gapContext.gap.requirement} (${gapContext.gap.category})` : "Help the user address their evidence gaps for this role."}`
     }
-    const conversationTurn = 1
 
+    // Stream response using Groq
     const result = streamText({
-      model: CLAUDE_MODELS.SONNET,
+      model: groq(MODELS.VERSATILE),
       system: systemPrompt,
-      messages: coreMessages,
-      tools: Object.fromEntries(
-        Object.entries(COACH_TOOLS).map(([name, tool]) => [
-          name,
-          {
-            description: tool.description,
-            inputSchema: tool.parameters,
-            execute: async (input: unknown, options: { toolCallId?: string }) => {
-              const args = input && typeof input === "object" && !Array.isArray(input)
-                ? input as Record<string, unknown>
-                : {}
-              const output = await routeToolCall({
-                sessionId,
-                jobId,
-                toolName: name as keyof typeof COACH_TOOLS,
-                args,
-                clientToolCallId: options.toolCallId,
-                confirmed: false,
-                conversationTurnNumber: conversationTurn,
-              })
-
-              return {
-                message: formatToolResultForStream(output),
-                success: output.success,
-                needsConfirmation: output.result.needsConfirmation === true,
-                confirmationPrompt: output.result.confirmationPrompt,
-                toolName: name,
-                toolCallId: output.toolCallId,
-                sessionId,
-                jobId,
-                args,
-              }
-            },
-          },
-        ])
-      ),
-      stopWhen: stepCountIs(3),
+      messages,
+      tools,
+      maxSteps: 10,
     })
 
-    return result.toUIMessageStreamResponse()
+    // Return streaming response
+    return result.toDataStreamResponse()
   } catch (error) {
-    const errObj = aiProviderError({ code: "COACH_API_ERROR", message: error instanceof Error ? error.message : "Coach error", correlationId })
-    logErr(errObj, { route: "/api/coach" })
-    return new Response(JSON.stringify(toApiErrorResponse(errObj)), { status: 500, headers: { "Content-Type": "application/json" } })
+    console.error("[Coach API Error]", error)
+    return new Response(JSON.stringify({ error: "Internal server error" }), { 
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    })
   }
 }
