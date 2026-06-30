@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { X, ShieldCheck, AlertTriangle, XCircle, FileText, Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import type { Verdict } from './VerificationBadge'
 
 interface EvidenceItem {
@@ -61,7 +61,6 @@ export default function GovernancePanel({ jobId, claimId, onClose }: GovernanceP
     setClaim(null)
     setEvidence([])
 
-    const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
