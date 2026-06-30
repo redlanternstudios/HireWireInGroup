@@ -53,7 +53,10 @@ function LoginForm() {
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
     setIsLoading(true)
     setError(null)
 
@@ -76,7 +79,10 @@ function LoginForm() {
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
     setIsLoading(true)
     setError(null)
 

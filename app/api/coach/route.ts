@@ -17,12 +17,10 @@
  */
 
 import { NextRequest } from "next/server"
-import { createGroq } from "@ai-sdk/groq"
 import { streamText, tool } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
-
-const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
+import { groq, MODELS } from "@/lib/adapters/groq"
 
 // ── Approved source_type values (must match DB constraint) ────────────────
 const APPROVED_SOURCE_TYPES = [
@@ -271,13 +269,7 @@ export async function POST(request: NextRequest) {
   })
 
   return result.toDataStreamResponse()
-import { NextRequest } from "next/server"
-import { streamText, tool } from "ai"
-import { z } from "zod"
-import { createClient } from "@/lib/supabase/server"
-import { checkSafety, logSafetyAudit } from "@/lib/safety"
-import { groq, MODELS } from "@/lib/adapters/groq"
-import { GAP_CLARIFICATION_SYSTEM_PROMPT } from "@/lib/coach-prompts/gap-questions"
+}
 
 export const maxDuration = 60
 
@@ -806,73 +798,5 @@ function createCoachTools(userId: string) {
         }
       },
     }),
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const { messages, conversationId, gapContext } = await req.json()
-
-    // Get current user
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      })
-    }
-
-    // === SAFETY CHECK ===
-    const safetyResult = checkSafety(messages, {
-      userId: user.id,
-      sessionId: conversationId,
-      strictMode: false,
-    })
-    
-    // Log safety audit asynchronously
-    logSafetyAudit(safetyResult.auditRecord, { supabase }).catch(() => {})
-    
-    // If blocked, return safe refusal response
-    if (!safetyResult.allowed) {
-      const refusalResponse = safetyResult.blockedResponse || 
-        "I'm here to help with your career journey! Let's focus on job searching, resume writing, interview prep, or career advice."
-      
-      return new Response(JSON.stringify({ 
-        role: "assistant",
-        content: refusalResponse 
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      })
-    }
-
-    // Create tools with userId bound
-    const tools = createCoachTools(user.id)
-
-    // Build system prompt - add gap clarification mode if context provided
-    let systemPrompt = COACH_SYSTEM_PROMPT
-    if (gapContext) {
-      systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${GAP_CLARIFICATION_SYSTEM_PROMPT}\n\n## Current Gap Context\nThe user is asking about gaps for job: "${gapContext.jobTitle}" at "${gapContext.company}".\n${gapContext.gap ? `Specific gap to address: ${gapContext.gap.requirement} (${gapContext.gap.category})` : "Help the user address their evidence gaps for this role."}`
-    }
-
-    // Stream response using Groq
-    const result = streamText({
-      model: groq(MODELS.VERSATILE),
-      system: systemPrompt,
-      messages,
-      tools,
-      maxSteps: 10,
-    })
-
-    // Return streaming response
-    return result.toDataStreamResponse()
-  } catch (error) {
-    console.error("[Coach API Error]", error)
-    return new Response(JSON.stringify({ error: "Internal server error" }), { 
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    })
   }
 }
