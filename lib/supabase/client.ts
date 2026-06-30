@@ -1,11 +1,34 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
-// Browser-only: ANON_KEY is safe to expose on client
-// SERVICE_ROLE_KEY is NEVER used in browser — server-only (API routes)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Browser-only: ANON_KEY is safe to expose on client.
+// SERVICE_ROLE_KEY is NEVER used here — server-only (API routes only).
+// Constitution §4.4: no non-null assertion may hide an absent env value.
+function getBrowserSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  if (!supabaseUrl) {
+    throw new Error(
+      '[HireWire] Missing NEXT_PUBLIC_SUPABASE_URL — add Supabase integration in project settings.'
+    );
+  }
+  if (!supabaseAnonKey) {
+    throw new Error(
+      '[HireWire] Missing NEXT_PUBLIC_SUPABASE_ANON_KEY — add Supabase integration in project settings.'
+    );
+  }
+
+  return { supabaseUrl, supabaseAnonKey };
+}
+
+const { supabaseUrl, supabaseAnonKey } = getBrowserSupabaseConfig();
+
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+
+// Named factory for components that need a fresh client reference.
+export function createClient() {
+  return supabase;
+}
 
 // DEC-002: Evidence gating hook
 // Before any resume claim is shown, verify evidence source
