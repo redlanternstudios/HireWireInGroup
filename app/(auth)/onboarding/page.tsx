@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -87,7 +87,6 @@ export default function OnboardingPage() {
     setIsLoading(true)
     setError(null)
 
-    const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {

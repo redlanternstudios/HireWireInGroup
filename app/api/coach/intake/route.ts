@@ -11,11 +11,6 @@ import { NextRequest, NextResponse } from 'next/server';
  * - This route only validates, creates job_scores row, and sends webhook to n8n
  */
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(req: NextRequest) {
   try {
     const { userId, jobUrl } = await req.json();
@@ -26,6 +21,12 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Initialize Supabase inside the function
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
     // 1. Create job_scores row (RLS-guarded for user)
     const { data: jobScore, error: insertError } = await supabase
