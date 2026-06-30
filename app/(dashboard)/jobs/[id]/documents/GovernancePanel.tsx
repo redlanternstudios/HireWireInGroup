@@ -202,11 +202,11 @@ export default function GovernancePanel({ jobId, claimId, onClose }: GovernanceP
                 <section>
                   <h3 className="text-xs font-medium uppercase tracking-wide text-gray-400 mb-2">Provenance</h3>
                   <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600 space-y-1">
-                    {claim.provenance_ref.evidence_title && (
-                      <p><span className="font-medium">Source:</span> {String(claim.provenance_ref.evidence_title)}</p>
+                    {(claim.provenance_ref as any).evidence_title && (
+                      <p><span className="font-medium">Source:</span> {String((claim.provenance_ref as any).evidence_title)}</p>
                     )}
-                    {claim.provenance_ref.source_evidence_id && (
-                      <p className="text-gray-400 font-mono truncate">{String(claim.provenance_ref.source_evidence_id)}</p>
+                    {(claim.provenance_ref as any).source_evidence_id && (
+                      <p className="text-gray-400 font-mono truncate">{String((claim.provenance_ref as any).source_evidence_id)}</p>
                     )}
                   </div>
                 </section>

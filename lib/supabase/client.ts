@@ -9,7 +9,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // DEC-002: Evidence gating hook
 // Before any resume claim is shown, verify evidence source
-export async function useSupabase() {
+export function useSupabase() {
   return {
     // Get all evidence for current user (RLS handles user_id filtering)
     getEvidence: async () => {
