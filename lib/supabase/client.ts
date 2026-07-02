@@ -1,15 +1,44 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
+import type { Session } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
 
-// Browser-only: ANON_KEY is safe to expose on client
-// SERVICE_ROLE_KEY is NEVER used in browser — server-only (API routes)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Browser client — session is persisted in COOKIES (via @supabase/ssr) so that
+// Next.js middleware (proxy.ts) and server components, which read the session
+// through createServerClient, can actually see the logged-in user.
+// NOTE: the plain @supabase/supabase-js client stores the session in localStorage
+// only, which the server never sees → login "succeeds" then silently bounces back
+// to /login. That was the auth bug. createBrowserClient fixes it.
+// ANON_KEY is safe to expose on the client; SERVICE_ROLE_KEY is server-only.
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Shared singleton for the hooks/helpers below.
+const supabase = createClient();
 
-// DEC-002: Evidence gating hook
-// Before any resume claim is shown, verify evidence source
-export async function useSupabase() {
+// Client-side hook: returns the browser Supabase client plus the current auth
+// session, kept live via onAuthStateChange. Client components use this to run
+// RLS-guarded queries scoped to the signed-in user (session.user.id).
+export function useSupabase() {
+  const [session, setSession] = useState<Session | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { supabase, session };
+}
+
+// DEC-002: Evidence gating helper (not a React hook).
+// Before any resume claim is shown, verify evidence source.
+export async function evidenceGate() {
   return {
     // Get all evidence for current user (RLS handles user_id filtering)
     getEvidence: async () => {

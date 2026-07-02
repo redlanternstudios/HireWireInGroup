@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -145,7 +145,7 @@ export function Screen10ProveYourFit() {
   };
 
   // On mount, load evidence count
-  React.useEffect(() => {
+  useEffect(() => {
     fetchEvidenceCount();
   }, [session]);
 

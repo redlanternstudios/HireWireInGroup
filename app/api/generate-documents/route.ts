@@ -958,7 +958,7 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       provenance: {
         bullet_provenance: bulletProvenance,
         paragraph_provenance: paragraphProvenance,
-        blocked_evidence: blockedEvidence.map((e: { id: string; source_title: string }) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
+        blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
       },
       quality_check: {
         passed: qualityPassed,
@@ -1021,7 +1021,7 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
               generation_error: errorMessage
             })
             .eq("id", job_id)
-            .eq("user_id", userId)
+            .eq("user_id", user.id)
         }
       }
     } catch {

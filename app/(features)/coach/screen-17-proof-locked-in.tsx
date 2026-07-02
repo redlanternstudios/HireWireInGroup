@@ -88,7 +88,7 @@ export function Screen17ProofLockedIn() {
 
       // Map to component types
       const extractedEvidence: ExtractedEvidence[] = (evidenceData || []).map(
-        (item) => ({
+        (item: any) => ({
           id: item.id,
           skillCategory: item.skill_category,
           extractedText: item.extracted_text,

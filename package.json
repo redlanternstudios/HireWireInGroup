@@ -25,9 +25,12 @@
     "agent:v0-sync": "node scripts/agent/v0-sync.mjs",
     "agent:v0-sync:watch": "node scripts/agent/v0-sync.mjs --watch",
     "agent:new-task": "node scripts/agent/new-task.mjs",
-    "agent:verify": "npm run typecheck && npm run lint && npm run build"
+    "agent:integrity": "node scripts/agent/integrity-check.mjs",
+    "agent:verify": "npm run agent:integrity && npm run typecheck && npm run lint && npm run build",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^3.0.47",
     "@ai-sdk/react": "^3.0.0",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.12",

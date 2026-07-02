@@ -1,0 +1,16 @@
+#!/bin/sh
+# HireWire pre-commit gate.
+# Fast structural integrity check on the files being committed — catches the
+# v0-concat disease (mid-file imports, duplicate exports) before it ever lands
+# in the working tree. Runs in milliseconds; does NOT run tsc (that's the job
+# of `npm run agent:verify` in CI / before ship).
+#
+# Installed automatically via package.json "prepare" (sets core.hooksPath).
+# To skip in an emergency: git commit --no-verify
+
+node scripts/agent/integrity-check.mjs --changed || {
+  echo ""
+  echo "✗ pre-commit blocked: build-integrity check failed (see above)."
+  echo "  Fix the flagged files, or bypass with --no-verify if you know what you're doing."
+  exit 1
+}

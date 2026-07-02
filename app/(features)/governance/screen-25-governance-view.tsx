@@ -90,7 +90,7 @@ export function Screen25GovernanceView() {
 
       // For each claim, fetch source evidence (this enforces DEC-002)
       const enrichedClaims: ResumeClaim[] = await Promise.all(
-        (claimsData || []).map(async (claim) => {
+        (claimsData || []).map(async (claim: any) => {
           let sourceEvidence: SourceEvidence | undefined;
 
           try {
