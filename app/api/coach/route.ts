@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-dimport { streamText, tool } from "ai"
+import { streamText, tool, stepCountIs } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { checkSafety, logSafetyAudit } from "@/lib/safety"
@@ -537,13 +537,9 @@ function createCoachTools(userId: string) {
 }
 
 export async function POST(req: NextRequest) {
-
-export const maxDuration = 60
-
-export async function POST(request: NextRequest) {
   try {
-    const { messages } = await request.json()
-    
+    const { messages, conversationId, gapContext } = await req.json()
+
     if (!messages || !Array.isArray(messages)) {
       return new Response(
         JSON.stringify({ error: "messages array required" }),
@@ -551,14 +547,29 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return new Response(
-      JSON.stringify({
-        role: "assistant",
-        content: refusalResponse 
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    // Safety check
+    const safetyResult = checkSafety(messages, {
+      userId: user.id,
+      sessionId: conversationId,
+      strictMode: false,
+    })
+    logSafetyAudit(safetyResult.auditRecord, { supabase }).catch(() => {})
+    if (!safetyResult.allowed) {
+      const refusalResponse = safetyResult.blockedResponse ||
+        "I'm here to help with your career journey! Let's focus on job searching, resume writing, interview prep, or career advice."
+      return new Response(
+        JSON.stringify({ role: "assistant", content: refusalResponse }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
     }
 
     // Create tools with userId bound
@@ -570,20 +581,15 @@ export async function POST(request: NextRequest) {
       systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${GAP_CLARIFICATION_SYSTEM_PROMPT}\n\n## Current Gap Context\nThe user is asking about gaps for job: "${gapContext.jobTitle}" at "${gapContext.company}".\n${gapContext.gap ? `Specific gap to address: ${gapContext.gap.requirement} (${gapContext.gap.category})` : "Help the user address their evidence gaps for this role."}`
     }
 
-    // Stream response using Groq
     const result = streamText({
       model: groq(MODELS.VERSATILE),
       system: systemPrompt,
       messages,
       tools,
+      stopWhen: stepCountIs(10),
     })
 
-    // Return streaming response
-    return result.toTextStreamResponse()
-        content: "The coach feature is currently being configured. Please check back soon."
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    )
+    return result.toUIMessageStreamResponse()
   } catch (error) {
     console.error("[Coach API Error]", error)
     return new Response(
