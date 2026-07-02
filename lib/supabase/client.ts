@@ -1,4 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
+import { useState, useEffect } from 'react';
+import type { Session } from '@supabase/supabase-js';
 
 // Browser-only: ANON_KEY is safe to expose on client.
 // SERVICE_ROLE_KEY is NEVER used here — server-only (API routes only).
@@ -30,68 +32,22 @@ export function createClient() {
   return supabase;
 }
 
-// DEC-002: Evidence gating hook
-// Before any resume claim is shown, verify evidence source
-export async function useSupabase() {
-  return {
-    // Get all evidence for current user (RLS handles user_id filtering)
-    getEvidence: async () => {
-      const { data, error } = await supabase
-        .from('evidence')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw new Error(`Evidence fetch failed: ${error.message}`);
-      return data;
-    },
+// Synchronous React hook — returns the singleton supabase client and the live session.
+// Screens destructure: const { supabase, session } = useSupabase();
+export function useSupabase() {
+  const [session, setSession] = useState<Session | null>(null);
 
-    // Get evidence by ID (with RLS check)
-    getEvidenceById: async (id: string) => {
-      const { data, error } = await supabase
-        .from('evidence')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (error) throw new Error(`Evidence not found: ${error.message}`);
-      return data;
-    },
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+    });
 
-    // Hard gate: claim must have source evidence
-    validateClaimHasSource: async (claimId: string) => {
-      const { data, error } = await supabase
-        .from('claim_evidence_map')
-        .select('evidence_id')
-        .eq('claim_id', claimId);
-      
-      if (error || !data || data.length === 0) {
-        throw new Error('DEC-002 VIOLATION: Claim has no source evidence');
-      }
-      return data;
-    },
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
 
-    // Get governance view (resume + evidence map)
-    getGovernanceView: async (userId: string) => {
-      const { data: claims, error: claimsError } = await supabase
-        .from('resume_claims')
-        .select('*')
-        .eq('user_id', userId);
+    return () => subscription.unsubscribe();
+  }, []);
 
-      if (claimsError) throw new Error(`Claims fetch failed: ${claimsError.message}`);
-
-      // For each claim, verify evidence exists
-      const withEvidence = await Promise.all(
-        claims.map(async (claim) => {
-          const sources = await supabase
-            .from('claim_evidence_map')
-            .select('evidence_id')
-            .eq('claim_id', claim.id);
-          return {
-            ...claim,
-            hasSources: sources.data && sources.data.length > 0,
-          };
-        })
-      );
-
-      return withEvidence;
-    },
-  };
+  return { supabase, session };
 }

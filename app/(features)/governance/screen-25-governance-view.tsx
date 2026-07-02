@@ -90,7 +90,7 @@ export function Screen25GovernanceView() {
 
       // For each claim, fetch source evidence (this enforces DEC-002)
       const enrichedClaims: ResumeClaim[] = await Promise.all(
-        (claimsData || []).map(async (claim) => {
+        (claimsData || []).map(async (claim: Record<string, unknown>) => {
           let sourceEvidence: SourceEvidence | undefined;
 
           try {
@@ -114,13 +114,13 @@ export function Screen25GovernanceView() {
           }
 
           return {
-            id: claim.id,
-            bulletText: claim.bullet_text,
-            sourceEvidenceId: claim.source_evidence_id,
+            id: claim.id as string,
+            bulletText: claim.bullet_text as string,
+            sourceEvidenceId: claim.source_evidence_id as string,
             locked: claim.locked === true,
-            driftScore: claim.drift_score || 0,
+            driftScore: (claim.drift_score as number) || 0,
             sourceEvidence,
-            jobContext: claim.job_context,
+            jobContext: claim.job_context as string | undefined,
           };
         })
       );

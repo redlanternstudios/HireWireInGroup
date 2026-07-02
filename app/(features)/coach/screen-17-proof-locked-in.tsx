@@ -88,13 +88,13 @@ export function Screen17ProofLockedIn() {
 
       // Map to component types
       const extractedEvidence: ExtractedEvidence[] = (evidenceData || []).map(
-        (item) => ({
-          id: item.id,
-          skillCategory: item.skill_category,
-          extractedText: item.extracted_text,
+        (item: Record<string, unknown>) => ({
+          id: item.id as string,
+          skillCategory: item.skill_category as string,
+          extractedText: item.extracted_text as string,
           verified: item.verified === true,
-          userComment: item.user_comment,
-          confidenceScore: item.confidence_score || 0,
+          userComment: item.user_comment as string | undefined,
+          confidenceScore: (item.confidence_score as number) || 0,
         })
       );
 
@@ -236,7 +236,7 @@ export function Screen17ProofLockedIn() {
             <div className="mt-6 pt-6 border-t border-[#D6AAA3]">
               <label className="text-sm font-semibold text-[#2C2926]">Coach Notes</label>
               <p className="text-[#2C2926] mt-3 p-4 bg-[#F7F2EB] rounded italic">
-                "{coachSession.coachNotes}"
+                &ldquo;{coachSession.coachNotes}&rdquo;
               </p>
             </div>
           )}
@@ -288,7 +288,7 @@ export function Screen17ProofLockedIn() {
                     </div>
 
                     <p className="text-[#2C2926] p-4 bg-white rounded border border-[#D6AAA3] mb-3">
-                      "{evidence.extractedText}"
+                      &ldquo;{evidence.extractedText}&rdquo;
                     </p>
 
                     {evidence.userComment && (
@@ -374,7 +374,7 @@ export function Screen17ProofLockedIn() {
               </div>
 
               <p className="text-[#8E9878] mb-8">
-                Next: We'll generate your resume based on locked evidence, showing which claims align with the job.
+                Next: We&apos;ll generate your resume based on locked evidence, showing which claims align with the job.
               </p>
 
               <Button

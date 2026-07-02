@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -158,7 +158,7 @@ export function Screen10ProveYourFit() {
             Prove Your Fit
           </h1>
           <p className="text-lg text-[#8E9878]">
-            Tell us about the job you're targeting. We'll show you exactly how your verified evidence maps to what they're asking for.
+            Tell us about the job you&apos;re targeting. We&apos;ll show you exactly how your verified evidence maps to what they&apos;re asking for.
           </p>
         </div>
 
@@ -245,7 +245,7 @@ export function Screen10ProveYourFit() {
                     <div>
                       <h3 className="font-semibold text-[#2C2926]">{gap.skill}</h3>
                       <p className="text-sm text-[#8E9878] mt-1">
-                        They're looking for: {gap.jobRequired}
+                        They&apos;re looking for: {gap.jobRequired}
                       </p>
                     </div>
                     <Badge

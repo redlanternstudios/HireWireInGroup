@@ -60,7 +60,7 @@ function createCoachTools(userId: string) {
   return {
     getUserProfile: tool({
       description: "Get the current user's profile including name, headline, summary, skills, experience, and education",
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const supabase = await createClient()
         const { data } = await supabase
@@ -76,7 +76,7 @@ function createCoachTools(userId: string) {
 
     getEvidenceLibrary: tool({
       description: "Get all evidence records from the user's evidence library - their achievements, projects, and metrics",
-      parameters: z.object({
+      inputSchema: z.object({
         category: z.string().optional().describe("Filter by category: achievement, project, metric, skill, certification"),
       }),
       execute: async ({ category }) => {
@@ -99,7 +99,7 @@ function createCoachTools(userId: string) {
 
     getJobPipeline: tool({
       description: "Get the user's job pipeline - all jobs they're tracking with status and fit scores",
-      parameters: z.object({
+      inputSchema: z.object({
         status: z.string().optional().describe("Filter by status: ANALYZING, REVIEWING, READY, APPLIED, INTERVIEWING, OFFER, REJECTED, WITHDRAWN"),
       }),
       execute: async ({ status }) => {
@@ -139,7 +139,7 @@ function createCoachTools(userId: string) {
 
     getJobDetails: tool({
       description: "Get detailed information about a specific job including analysis, generated documents, and evidence map",
-      parameters: z.object({
+      inputSchema: z.object({
         jobId: z.string().describe("The job ID to fetch details for"),
       }),
       execute: async ({ jobId }) => {
@@ -158,7 +158,7 @@ function createCoachTools(userId: string) {
 
     suggestNextAction: tool({
       description: "Analyze the user's pipeline state and suggest the most impactful next action they should take",
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const supabase = await createClient()
         
@@ -236,7 +236,7 @@ function createCoachTools(userId: string) {
 
     saveEvidence: tool({
       description: "Save a new evidence record to the user's evidence library. Use this when helping users document their achievements.",
-      parameters: z.object({
+      inputSchema: z.object({
         title: z.string().describe("Brief title for the evidence"),
         description: z.string().describe("Full description of the achievement, project, or skill"),
         category: z.enum(["achievement", "project", "metric", "skill", "certification"]),
@@ -270,7 +270,7 @@ function createCoachTools(userId: string) {
     
     updateProfile: tool({
       description: "Update the user's profile information like name, location, phone, email, or summary. Use this when users want to change their basic profile details.",
-      parameters: z.object({
+      inputSchema: z.object({
         full_name: z.string().optional().describe("User's full name"),
         location: z.string().optional().describe("User's location (e.g., 'San Francisco, CA')"),
         phone: z.string().optional().describe("User's phone number"),
@@ -317,7 +317,7 @@ function createCoachTools(userId: string) {
 
     addExperience: tool({
       description: "Add a work experience entry to the user's profile. Use this when users want to add a company or job to their work history.",
-      parameters: z.object({
+      inputSchema: z.object({
         title: z.string().describe("Job title (e.g., 'Senior Product Manager')"),
         company: z.string().describe("Company name (e.g., 'RedLantern Studios')"),
         start_date: z.string().describe("Start date (e.g., 'Jan 2022' or '2022')"),
@@ -368,7 +368,7 @@ function createCoachTools(userId: string) {
 
     addSkills: tool({
       description: "Add one or more skills to the user's profile. Use this when users want to add new skills.",
-      parameters: z.object({
+      inputSchema: z.object({
         skills: z.array(z.string()).describe("Array of skills to add (e.g., ['React', 'TypeScript', 'Product Management'])"),
       }),
       execute: async ({ skills }) => {
@@ -414,7 +414,7 @@ function createCoachTools(userId: string) {
 
     removeSkill: tool({
       description: "Remove a skill from the user's profile.",
-      parameters: z.object({
+      inputSchema: z.object({
         skill: z.string().describe("The skill to remove"),
       }),
       execute: async ({ skill }) => {
@@ -453,7 +453,7 @@ function createCoachTools(userId: string) {
 
     addEducation: tool({
       description: "Add an education entry to the user's profile.",
-      parameters: z.object({
+      inputSchema: z.object({
         degree: z.string().describe("Degree or certification (e.g., 'BS Computer Science', 'MBA')"),
         school: z.string().describe("School or institution name"),
         year: z.string().describe("Graduation year or date range"),
@@ -494,7 +494,7 @@ function createCoachTools(userId: string) {
 
     updateJobStatus: tool({
       description: "Update the status of a job in the user's pipeline. Use this when users want to mark a job as applied, interviewing, rejected, etc.",
-      parameters: z.object({
+      inputSchema: z.object({
         jobId: z.string().describe("The job ID to update"),
         status: z.enum(["ANALYZING", "REVIEWING", "READY", "APPLIED", "INTERVIEWING", "OFFER", "REJECTED", "WITHDRAWN"]).describe("The new status"),
         notes: z.string().optional().describe("Optional notes about the status change"),
@@ -590,11 +590,10 @@ export async function POST(req: NextRequest) {
       system: systemPrompt,
       messages,
       tools,
-      maxSteps: 10,
     })
 
     // Return streaming response
-    return result.toDataStreamResponse()
+    return result.toTextStreamResponse()
   } catch (error) {
     console.error("[Coach API Error]", error)
     return new Response(JSON.stringify({ error: "Internal server error" }), { 
