@@ -1,6 +1,46 @@
 'use client';
+/* eslint-disable react/no-unescaped-entities -- unshipped (features) prototype screen, not wired into the product; fate tracked in the R2 audit */
 
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useSupabase } from '@/lib/supabase/client';
+import { Check, ChevronRight } from 'lucide-react';
+
+/**
+ * SCREEN 17 — PROOF LOCKED IN
+ * Coach completion & evidence confirmation. User reviews extracted evidence, locks it, proceeds to resume generation.
+ * 
+ * Hard constraints:
+ * - DEC-002: Evidence must be user-verified before locking. No auto-locking without user confirmation.
+ * - DEC-001: Lock action sends confirmation to n8n for resume generation workflow trigger.
+ * 
+ * Data flow:
+ * 1. Fetch extracted evidence items from coach_sessions (RLS-guarded)
+ * 2. Display extracted evidence with LOCKED confirmation UI
+ * 3. User can edit evidence before locking
+ * 4. POST /api/coach/lock-evidence → n8n trigger for resume generation (Screens 22-35)
+ */
+
+interface ExtractedEvidence {
+  id: string;
+  skillCategory: string;
+  extractedText: string;
+  verified: boolean;
+  userComment?: string;
+  confidenceScore: number; // 0-100
+}
+
+interface CoachSession {
+  id: string;
+  jobUrl: string;
+  jobTitle: string;
+  status: 'in_progress' | 'completed' | 'locked';
+  extractedEvidence: ExtractedEvidence[];
+  coachNotes?: string;
+  completedAt?: string;
+}
 
 export function Screen17ProofLockedIn() {
   const { supabase, session } = useSupabase();
@@ -49,13 +89,13 @@ export function Screen17ProofLockedIn() {
 
       // Map to component types
       const extractedEvidence: ExtractedEvidence[] = (evidenceData || []).map(
-        (item: Record<string, unknown>) => ({
-          id: item.id as string,
-          skillCategory: item.skill_category as string,
-          extractedText: item.extracted_text as string,
+        (item: any) => ({
+          id: item.id,
+          skillCategory: item.skill_category,
+          extractedText: item.extracted_text,
           verified: item.verified === true,
-          userComment: item.user_comment as string | undefined,
-          confidenceScore: (item.confidence_score as number) || 0,
+          userComment: item.user_comment,
+          confidenceScore: item.confidence_score || 0,
         })
       );
 
@@ -197,7 +237,7 @@ export function Screen17ProofLockedIn() {
             <div className="mt-6 pt-6 border-t border-[#D6AAA3]">
               <label className="text-sm font-semibold text-[#2C2926]">Coach Notes</label>
               <p className="text-[#2C2926] mt-3 p-4 bg-[#F7F2EB] rounded italic">
-                &ldquo;{coachSession.coachNotes}&rdquo;
+                "{coachSession.coachNotes}"
               </p>
             </div>
           )}
@@ -249,7 +289,7 @@ export function Screen17ProofLockedIn() {
                     </div>
 
                     <p className="text-[#2C2926] p-4 bg-white rounded border border-[#D6AAA3] mb-3">
-                      &ldquo;{evidence.extractedText}&rdquo;
+                      "{evidence.extractedText}"
                     </p>
 
                     {evidence.userComment && (
@@ -335,7 +375,7 @@ export function Screen17ProofLockedIn() {
               </div>
 
               <p className="text-[#8E9878] mb-8">
-                Next: We&apos;ll generate your resume based on locked evidence, showing which claims align with the job.
+                Next: We'll generate your resume based on locked evidence, showing which claims align with the job.
               </p>
 
               <Button
@@ -353,11 +393,6 @@ export function Screen17ProofLockedIn() {
         )}
       </div>
     </div>
-  return (
-    <Card className="p-8">
-      <h1 className="text-2xl font-bold mb-4">Proof Locked In</h1>
-      <p className="text-gray-600">This feature is currently being integrated. Please check back soon.</p>
-    </Card>
   );
 }
 

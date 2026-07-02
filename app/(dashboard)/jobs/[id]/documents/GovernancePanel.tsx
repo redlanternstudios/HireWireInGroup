@@ -207,11 +207,6 @@ export default function GovernancePanel({ jobId, claimId, onClose }: GovernanceP
                     )}
                     {Boolean(claim.provenance_ref.source_evidence_id) && (
                       <p className="text-gray-400 font-mono truncate">{String(claim.provenance_ref.source_evidence_id)}</p>
-                    {(claim.provenance_ref as any).evidence_title && (
-                      <p><span className="font-medium">Source:</span> {String((claim.provenance_ref as any).evidence_title)}</p>
-                    )}
-                    {(claim.provenance_ref as any).source_evidence_id && (
-                      <p className="text-gray-400 font-mono truncate">{String((claim.provenance_ref as any).source_evidence_id)}</p>
                     )}
                   </div>
                 </section>
