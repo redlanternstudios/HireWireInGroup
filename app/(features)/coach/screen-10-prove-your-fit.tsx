@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react/no-unescaped-entities -- unshipped (features) prototype screen, not wired into the product; fate tracked in the R2 audit */
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
