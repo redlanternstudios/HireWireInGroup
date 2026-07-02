@@ -1,45 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { useSupabase } from '@/lib/supabase/client';
-import { Check, ChevronRight } from 'lucide-react';
-
-/**
- * SCREEN 17 — PROOF LOCKED IN
- * Coach completion & evidence confirmation. User reviews extracted evidence, locks it, proceeds to resume generation.
- * 
- * Hard constraints:
- * - DEC-002: Evidence must be user-verified before locking. No auto-locking without user confirmation.
- * - DEC-001: Lock action sends confirmation to n8n for resume generation workflow trigger.
- * 
- * Data flow:
- * 1. Fetch extracted evidence items from coach_sessions (RLS-guarded)
- * 2. Display extracted evidence with LOCKED confirmation UI
- * 3. User can edit evidence before locking
- * 4. POST /api/coach/lock-evidence → n8n trigger for resume generation (Screens 22-35)
- */
-
-interface ExtractedEvidence {
-  id: string;
-  skillCategory: string;
-  extractedText: string;
-  verified: boolean;
-  userComment?: string;
-  confidenceScore: number; // 0-100
-}
-
-interface CoachSession {
-  id: string;
-  jobUrl: string;
-  jobTitle: string;
-  status: 'in_progress' | 'completed' | 'locked';
-  extractedEvidence: ExtractedEvidence[];
-  coachNotes?: string;
-  completedAt?: string;
-}
 
 export function Screen17ProofLockedIn() {
   const { supabase, session } = useSupabase();
@@ -392,6 +353,11 @@ export function Screen17ProofLockedIn() {
         )}
       </div>
     </div>
+  return (
+    <Card className="p-8">
+      <h1 className="text-2xl font-bold mb-4">Proof Locked In</h1>
+      <p className="text-gray-600">This feature is currently being integrated. Please check back soon.</p>
+    </Card>
   );
 }
 

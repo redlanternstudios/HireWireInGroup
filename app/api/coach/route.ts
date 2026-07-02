@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { streamText, tool } from "ai"
+dimport { streamText, tool } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { checkSafety, logSafetyAudit } from "@/lib/safety"
@@ -537,36 +537,22 @@ function createCoachTools(userId: string) {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const { messages, conversationId, gapContext } = await req.json()
 
-    // Get current user
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+export const maxDuration = 60
+
+export async function POST(request: NextRequest) {
+  try {
+    const { messages } = await request.json()
     
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      })
+    if (!messages || !Array.isArray(messages)) {
+      return new Response(
+        JSON.stringify({ error: "messages array required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
     }
 
-    // === SAFETY CHECK ===
-    const safetyResult = checkSafety(messages, {
-      userId: user.id,
-      sessionId: conversationId,
-      strictMode: false,
-    })
-    
-    // Log safety audit asynchronously
-    logSafetyAudit(safetyResult.auditRecord, { supabase }).catch(() => {})
-    
-    // If blocked, return safe refusal response
-    if (!safetyResult.allowed) {
-      const refusalResponse = safetyResult.blockedResponse || 
-        "I'm here to help with your career journey! Let's focus on job searching, resume writing, interview prep, or career advice."
-      
-      return new Response(JSON.stringify({ 
+    return new Response(
+      JSON.stringify({
         role: "assistant",
         content: refusalResponse 
       }), {
@@ -594,11 +580,15 @@ export async function POST(req: NextRequest) {
 
     // Return streaming response
     return result.toTextStreamResponse()
+        content: "The coach feature is currently being configured. Please check back soon."
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
   } catch (error) {
     console.error("[Coach API Error]", error)
-    return new Response(JSON.stringify({ error: "Internal server error" }), { 
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    })
+    return new Response(
+      JSON.stringify({ error: "Internal server error" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    )
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { X, ShieldCheck, AlertTriangle, XCircle, FileText, Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import type { Verdict } from './VerificationBadge'
 
 interface EvidenceItem {
@@ -61,7 +61,6 @@ export default function GovernancePanel({ jobId, claimId, onClose }: GovernanceP
     setClaim(null)
     setEvidence([])
 
-    const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
@@ -208,6 +207,11 @@ export default function GovernancePanel({ jobId, claimId, onClose }: GovernanceP
                     )}
                     {Boolean(claim.provenance_ref.source_evidence_id) && (
                       <p className="text-gray-400 font-mono truncate">{String(claim.provenance_ref.source_evidence_id)}</p>
+                    {(claim.provenance_ref as any).evidence_title && (
+                      <p><span className="font-medium">Source:</span> {String((claim.provenance_ref as any).evidence_title)}</p>
+                    )}
+                    {(claim.provenance_ref as any).source_evidence_id && (
+                      <p className="text-gray-400 font-mono truncate">{String((claim.provenance_ref as any).source_evidence_id)}</p>
                     )}
                   </div>
                 </section>

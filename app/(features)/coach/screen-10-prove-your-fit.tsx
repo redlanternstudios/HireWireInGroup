@@ -4,151 +4,8 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { useSupabase } from '@/lib/supabase/client';
-import { Badge } from '@/components/ui/badge';
-
-/**
- * SCREEN 10 — PROVE YOUR FIT
- * Socratic coach entry point. User provides job URL, sees gap analysis, starts interview.
- * 
- * Hard constraints:
- * - DEC-002: No hallucinated experience. Evidence checked against evidence_library only.
- * - DEC-001: All coach logic routes to n8n. This component is UI only.
- * 
- * Data flow:
- * 1. User inputs job URL
- * 2. POST /api/coach/intake — thin receiver forwards to n8n
- * 3. n8n parses job, creates job_scores row, returns webhook
- * 4. Component fetches job_scores (RLS-guarded) and displays gap analysis
- * 5. Evidence readiness checklist queries evidence_library count per category
- */
-
-interface GapItem {
-  skill: string;
-  userProof: string;
-  jobRequired: string;
-  status: 'verified' | 'partial' | 'missing';
-  evidenceItemId?: string;
-}
-
-interface JobAnalysis {
-  id: string;
-  jobUrl: string;
-  jobTitle: string;
-  requiredSkills: string[];
-  gaps: GapItem[];
-  readinessScore: number; // 0-100
-  createdAt: string;
-}
 
 export function Screen10ProveYourFit() {
-  const { supabase, session } = useSupabase();
-  const [jobUrl, setJobUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<JobAnalysis | null>(null);
-  const [evidenceCount, setEvidenceCount] = useState(0);
-
-  // 1. Fetch user's evidence library count (DEC-002 readiness check)
-  const fetchEvidenceCount = async () => {
-    if (!session?.user.id) return;
-    
-    try {
-      const { count, error: countError } = await supabase
-        .from('evidence_library')
-        .select('id', { count: 'exact' })
-        .eq('user_id', session.user.id);
-      
-      if (countError) throw countError;
-      setEvidenceCount(count || 0);
-    } catch (err) {
-      console.error('Failed to fetch evidence count:', err);
-      setEvidenceCount(0);
-    }
-  };
-
-  // 2. Submit job URL to intake (thin receiver → n8n)
-  const handleSubmitJob = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (!session?.user.id) {
-        throw new Error('Not authenticated');
-      }
-
-      // DEC-001: Thin receiver only. All logic in n8n.
-      const response = await fetch('/api/coach/intake', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: session.user.id,
-          jobUrl,
-        }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.text();
-        throw new Error(`Coach intake failed: ${response.status} ${errBody}`);
-      }
-
-      const { jobScoresId } = await response.json();
-
-      // 3. Poll job_scores table for n8n result (RLS-guarded)
-      await fetchJobAnalysis(jobScoresId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch completed analysis from job_scores
-  const fetchJobAnalysis = async (jobScoresId: string) => {
-    try {
-      const { data, error: fetchError } = await supabase
-        .from('job_scores')
-        .select('*')
-        .eq('id', jobScoresId)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      // Parse n8n result from metadata
-      const gaps: GapItem[] = (data.analysis_metadata?.gaps || []).map(
-        (gap: any) => ({
-          skill: gap.skill,
-          userProof: gap.userProof || 'No evidence found',
-          jobRequired: gap.jobRequired || 'Required',
-          status: gap.evidenceFound ? 'verified' : 'missing',
-          evidenceItemId: gap.evidenceItemId,
-        })
-      );
-
-      setAnalysis({
-        id: jobScoresId,
-        jobUrl,
-        jobTitle: data.job_title || 'Job',
-        requiredSkills: data.analysis_metadata?.requiredSkills || [],
-        gaps,
-        readinessScore: data.readiness_score || 0,
-        createdAt: data.created_at,
-      });
-
-      // Refresh evidence count for UI
-      await fetchEvidenceCount();
-    } catch (err) {
-      console.error('Failed to fetch job analysis:', err);
-      throw err;
-    }
-  };
-
-  // On mount, load evidence count
-  React.useEffect(() => {
-    fetchEvidenceCount();
-  }, [session]);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#F7F2EB] to-[#F2ECE4] p-8">
       <div className="max-w-4xl mx-auto">
@@ -285,7 +142,9 @@ export function Screen10ProveYourFit() {
         )}
       </div>
     </div>
+    <Card className="p-8">
+      <h1 className="text-2xl font-bold mb-4">Prove Your Fit</h1>
+      <p className="text-gray-600">This feature is currently being integrated. Please check back soon.</p>
+    </Card>
   );
 }
-
-export default Screen10ProveYourFit;

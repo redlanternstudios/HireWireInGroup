@@ -26,6 +26,19 @@ function getBrowserSupabaseConfig() {
 const { supabaseUrl, supabaseAnonKey } = getBrowserSupabaseConfig();
 
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+// DEC-002: Evidence gating hook
+// Before any resume claim is shown, verify evidence source
+export function useSupabase() {
+  return {
+    // Get all evidence for current user (RLS handles user_id filtering)
+    getEvidence: async () => {
+      const { data, error } = await supabase
+        .from('evidence')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(`Evidence fetch failed: ${error.message}`);
+      return data;
+    },
 
 // Named factory for components that need a fresh client reference.
 export function createClient() {

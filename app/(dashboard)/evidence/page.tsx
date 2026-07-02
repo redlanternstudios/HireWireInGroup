@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -142,7 +142,6 @@ export default function CareerContextPage() {
   })
 
   const fetchEvidence = useCallback(async () => {
-    const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
@@ -169,7 +168,6 @@ export default function CareerContextPage() {
     setSaving(true)
     setSaveError(null)
     try {
-      const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Not authenticated")
 
@@ -208,7 +206,6 @@ export default function CareerContextPage() {
 
   const handleDelete = async (id: string) => {
     setDeletingId(id)
-    const supabase = createClient()
     await supabase.from("evidence_library").update({ is_active: false }).eq("id", id)
     setItems(prev => prev.filter(i => i.id !== id))
     setDeletingId(null)

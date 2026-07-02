@@ -26,6 +26,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Initialize Supabase inside the function
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
     // 1. Create job_scores row (RLS-guarded for user)
     const { data: jobScore, error: insertError } = await supabase
       .from('job_scores')

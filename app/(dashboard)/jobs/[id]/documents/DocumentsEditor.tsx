@@ -24,7 +24,7 @@ import {
 } from "@/lib/resume-formats";
 import { ResumePreviewPanel } from "@/components/documents/ResumePreviewPanel";
 import { ResumeExportMenu } from "@/components/documents/ResumeExportMenu";
-import { createClient } from "@/lib/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import GovernancePanel from "./GovernancePanel";
 import VerificationBadge from "./VerificationBadge";
 import type { Verdict } from "./VerificationBadge";
@@ -106,7 +106,6 @@ export default function DocumentsEditor({
   // Fetch claims on mount — cancellable to prevent stale-result race on job.id change
   useEffect(() => {
     let cancelled = false;
-    const supabase = createClient();
     const fetchClaims = async () => {
       const {
         data: { user },
