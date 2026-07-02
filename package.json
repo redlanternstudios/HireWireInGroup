@@ -98,7 +98,7 @@
   "devDependencies": {
     "@ai-sdk/openai": "^3.0.65",
     "@eslint/js": "^8.57.0",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^22",

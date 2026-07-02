@@ -27,9 +27,23 @@ const AUTH_ROUTES = [
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
 
+  // Constitution §4.4: no non-null assertion may hide an absent env value.
+  // In middleware, a missing key means auth-gating is impossible — log loudly
+  // and return the default response rather than throwing (which would crash all routing).
+  const supabaseUrl = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const supabaseAnonKey = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error(
+      '[HireWire middleware] NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is missing. ' +
+      'Auth-gating is disabled until environment is configured correctly.'
+    )
+    return response
+  }
+
   const supabase = createServerClient(
-    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-    cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
