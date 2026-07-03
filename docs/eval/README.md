@@ -25,8 +25,27 @@ matcher_risk, evidence, human_verdict, human_notes`.
 > CSV. Only the assembler + this README live in the repo; the sheet is delivered
 > privately for judging.
 
-## How to judge (one human decision per row)
-Fill `human_verdict` — this single sheet calibrates **both** subsystems:
+## Autonomous labeling (Subsystem B — the entailment judge)
+The set does **not** require a human to fill it in. `lib/matching/entailment-judge.ts`
+is the judge: for each `(requirement, evidence)` it returns
+`{ status, confidence, cited_evidence_id, reasoning }` by **entailment, not overlap**,
+and a `met` verdict must cite a specific evidence id (honesty guard — no citation → `partial`).
+
+Run it over the corpus and diff it against the current token-overlap matcher:
+```
+export NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OPENAI_API_KEY=...
+node --import tsx scripts/eval/auto-judge-set.ts 24 out.csv
+```
+First run (22 highest-signal triples): judge↔matcher agreement **23%**, **10** matcher
+`met` verdicts downgraded (over-scores — "on a cross-functional team" scored as "led";
+"7+ years" scored with no tenure evidence), **3** flagged `not_a_requirement` (posting
+headers). Same privacy rule: the output CSV holds real user evidence — do **not** commit it.
+
+The verdict schema (`status: met|partial|gap`) is exactly what the fit resolver already
+trusts, so it drops in with zero fit-code change; `not_a_requirement` feeds extraction cleaning.
+
+## How to judge (the schema, whether human or judge fills it)
+`human_verdict` / `judge_status` — this single sheet calibrates **both** subsystems:
 
 | verdict | meaning | feeds |
 |---|---|---|
