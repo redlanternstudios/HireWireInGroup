@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +72,7 @@ export function Screen25GovernanceView() {
   const [modal, setModal] = useState<EvidenceModal>({ open: false });
 
   // 1. Fetch all resume claims for user + linked evidence (RLS-guarded)
-  const fetchClaims = async () => {
+  const fetchClaims = useCallback(async () => {
     if (!session?.user.id) return;
 
     setLoading(true);
@@ -132,7 +132,7 @@ export function Screen25GovernanceView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session, supabase]);
 
   // 2. Open modal with evidence details
   const handleClaimClick = (claim: ResumeClaim) => {
@@ -147,7 +147,7 @@ export function Screen25GovernanceView() {
   // On mount, load claims
   useEffect(() => {
     fetchClaims();
-  }, [session]);
+  }, [fetchClaims]);
 
   if (loading) {
     return (

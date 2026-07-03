@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -50,7 +50,7 @@ export function Screen10ProveYourFit() {
   const [evidenceCount, setEvidenceCount] = useState(0);
 
   // 1. Fetch user's evidence library count (DEC-002 readiness check)
-  const fetchEvidenceCount = async () => {
+  const fetchEvidenceCount = useCallback(async () => {
     if (!session?.user.id) return;
     
     try {
@@ -65,7 +65,7 @@ export function Screen10ProveYourFit() {
       console.error('Failed to fetch evidence count:', err);
       setEvidenceCount(0);
     }
-  };
+  }, [session, supabase]);
 
   // 2. Submit job URL to intake (thin receiver → n8n)
   const handleSubmitJob = async (e: React.FormEvent) => {
@@ -145,9 +145,9 @@ export function Screen10ProveYourFit() {
   };
 
   // On mount, load evidence count
-  React.useEffect(() => {
+  useEffect(() => {
     fetchEvidenceCount();
-  }, [session]);
+  }, [fetchEvidenceCount]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#F7F2EB] to-[#F2ECE4] p-8">
@@ -158,7 +158,7 @@ export function Screen10ProveYourFit() {
             Prove Your Fit
           </h1>
           <p className="text-lg text-[#8E9878]">
-            Tell us about the job you're targeting. We'll show you exactly how your verified evidence maps to what they're asking for.
+            Tell us about the job you&apos;re targeting. We&apos;ll show you exactly how your verified evidence maps to what they&apos;re asking for.
           </p>
         </div>
 
@@ -245,7 +245,7 @@ export function Screen10ProveYourFit() {
                     <div>
                       <h3 className="font-semibold text-[#2C2926]">{gap.skill}</h3>
                       <p className="text-sm text-[#8E9878] mt-1">
-                        They're looking for: {gap.jobRequired}
+                        They&apos;re looking for: {gap.jobRequired}
                       </p>
                     </div>
                     <Badge

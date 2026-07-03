@@ -167,22 +167,45 @@ export default function OnboardingPage() {
     }
   }
 
-  const handleSelectPath = (path: "job" | "evidence" | "explore" | "coach") => {
-    switch (path) {
-      case "job":
-        router.push("/jobs/new")
-        break
-      case "evidence":
-        router.push("/profile")
-        break
-      case "coach":
-        router.push("/coach")
-        break
-      case "explore":
-        router.push("/")
-        break
+  const handleSelectPath = async (path: "job" | "evidence" | "explore" | "coach") => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error("Your session expired. Please sign in again.")
+      }
+
+      const { data: profile, error: completionError } = await supabase
+        .from("user_profile")
+        .update({
+          onboarding_complete: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", user.id)
+        .select("user_id")
+        .maybeSingle()
+
+      if (completionError) throw completionError
+      if (!profile) throw new Error("Your profile could not be marked complete.")
+
+      const destination = {
+        job: "/jobs/new",
+        evidence: "/profile",
+        coach: "/coach",
+        explore: "/dashboard",
+      }[path]
+
+      router.push(destination)
+      router.refresh()
+    } catch (err) {
+      console.error("Error completing onboarding:", err)
+      setError(err instanceof Error ? err.message : "Failed to complete onboarding")
+      setIsLoading(false)
     }
-    router.refresh()
   }
 
   // ── WELCOME ──────────────────────────────────────────────────────────────
@@ -615,6 +638,7 @@ export default function OnboardingPage() {
         <CardContent className="space-y-4">
           <button
             onClick={() => handleSelectPath("job")}
+            disabled={isLoading}
             className="w-full p-4 rounded-lg border-2 border-transparent bg-muted/50 hover:border-hirewire-red hover:bg-muted transition-colors text-left group"
           >
             <div className="flex items-start gap-3">
@@ -632,6 +656,7 @@ export default function OnboardingPage() {
 
           <button
             onClick={() => handleSelectPath("coach")}
+            disabled={isLoading}
             className="w-full p-4 rounded-lg border-2 border-transparent bg-muted/50 hover:border-hirewire-red hover:bg-muted transition-colors text-left group"
           >
             <div className="flex items-start gap-3">
@@ -649,6 +674,7 @@ export default function OnboardingPage() {
 
           <button
             onClick={() => handleSelectPath("evidence")}
+            disabled={isLoading}
             className="w-full p-4 rounded-lg border-2 border-transparent bg-muted/50 hover:border-hirewire-red hover:bg-muted transition-colors text-left group"
           >
             <div className="flex items-start gap-3">
@@ -666,6 +692,7 @@ export default function OnboardingPage() {
 
           <button
             onClick={() => handleSelectPath("explore")}
+            disabled={isLoading}
             className="w-full p-4 rounded-lg border-2 border-transparent bg-muted/50 hover:border-hirewire-red hover:bg-muted transition-colors text-left group"
           >
             <div className="flex items-start gap-3">

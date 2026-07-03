@@ -1,7 +1,7 @@
 /**
  * mapResumeToEvidence
  *
- * Translates a Groq-parsed resume object into evidence_library rows.
+ * Translates an AI parsed resume object into evidence_library rows.
  * Each section maps to a semantically correct source_type value.
  *
  * Mapping rules (per alignment answers):

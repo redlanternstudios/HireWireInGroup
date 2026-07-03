@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -11,27 +11,32 @@ import { NextRequest, NextResponse } from 'next/server';
  * - This route only validates, creates job_scores row, and sends webhook to n8n
  */
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(req: NextRequest) {
   try {
     const { userId, jobUrl } = await req.json();
 
-    if (!userId || !jobUrl) {
+    if (!jobUrl) {
       return NextResponse.json(
-        { error: 'Missing userId or jobUrl' },
+        { error: 'Missing jobUrl' },
         { status: 400 }
       );
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user || (userId && userId !== user.id)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // 1. Create job_scores row (RLS-guarded for user)
     const { data: jobScore, error: insertError } = await supabase
       .from('job_scores')
       .insert({
-        user_id: userId,
+        user_id: user.id,
         job_url: jobUrl,
         status: 'pending',
       })

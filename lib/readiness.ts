@@ -93,7 +93,6 @@ export async function evaluateJobReadiness(
   // Fetch evidence count
   const [
     { count: evidenceCount },
-    { data: contextGapMatches },
     { data: proveFitDecisions },
   ] = await Promise.all([
     supabase
@@ -101,15 +100,6 @@ export async function evaluateJobReadiness(
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
       .eq("is_active", true),
-    supabase
-      .from("context_gap_matches")
-      .select("match_type, risk_level")
-      .eq("job_id", jobId)
-      .eq("user_id", userId)
-      .then(
-        (result) => result,
-        () => ({ data: null, error: null }),
-      ),
     supabase
       .from("prove_fit_decisions")
       .select("requirement_id, decision")
@@ -138,12 +128,6 @@ export async function evaluateJobReadiness(
   const is_applied = job.applied_at !== null || job.status === "applied"
   const is_archived = job.status === "archived"
   const coachStep = getCoachStepState(job)
-  const contextCriticalGaps = Array.isArray(contextGapMatches)
-    ? contextGapMatches.filter((match: { match_type?: string; risk_level?: string }) =>
-        ["true_gap", "unsupported"].includes(match.match_type ?? "") ||
-        ["high", "blocked"].includes(match.risk_level ?? "")
-      ).length
-    : 0
   
   // Derive requirement count from analysis
   const requirementCount = analyses[0]?.qualifications_required?.length || 0
@@ -184,7 +168,7 @@ export async function evaluateJobReadiness(
   const can_score = has_job_analysis && (evidenceCount || 0) > 0
   const can_generate = (matching_complete || requirementCount === 0) && (evidenceCount || 0) > 0 && has_job_analysis && coachStep.complete
   const can_interview_prep = has_resume && has_cover_letter
-  const can_apply = canonicalReadiness.isReady && contextCriticalGaps === 0 && !is_applied && !is_archived
+  const can_apply = canonicalReadiness.isReady && !is_applied && !is_archived
   const is_ready = can_apply
   
   // Build reasons list
@@ -210,9 +194,6 @@ export async function evaluateJobReadiness(
   }
   if (!canonicalReadiness.checklist.coach) {
     reasons_not_ready.push("Coach step required")
-  }
-  if (contextCriticalGaps > 0) {
-    reasons_not_ready.push(`${contextCriticalGaps} ContextEngine evidence gap(s) need review`)
   }
   if (!quality_passed && has_resume && has_cover_letter) {
     reasons_not_ready.push("Quality review not passed (Red Team)")

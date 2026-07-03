@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +51,7 @@ export function Screen17ProofLockedIn() {
   const [showLockModal, setShowLockModal] = useState(false);
 
   // 1. Fetch latest completed coach session + extracted evidence
-  const fetchCoachSession = async () => {
+  const fetchCoachSession = useCallback(async () => {
     if (!session?.user.id) return;
 
     setLoading(true);
@@ -116,7 +116,7 @@ export function Screen17ProofLockedIn() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session, supabase]);
 
   // 2. Lock evidence → send to n8n for resume generation
   const handleLockEvidence = async () => {
@@ -172,7 +172,7 @@ export function Screen17ProofLockedIn() {
 
   useEffect(() => {
     fetchCoachSession();
-  }, [session]);
+  }, [fetchCoachSession]);
 
   if (loading) {
     return (
@@ -236,7 +236,7 @@ export function Screen17ProofLockedIn() {
             <div className="mt-6 pt-6 border-t border-[#D6AAA3]">
               <label className="text-sm font-semibold text-[#2C2926]">Coach Notes</label>
               <p className="text-[#2C2926] mt-3 p-4 bg-[#F7F2EB] rounded italic">
-                "{coachSession.coachNotes}"
+                &ldquo;{coachSession.coachNotes}&rdquo;
               </p>
             </div>
           )}
@@ -288,7 +288,7 @@ export function Screen17ProofLockedIn() {
                     </div>
 
                     <p className="text-[#2C2926] p-4 bg-white rounded border border-[#D6AAA3] mb-3">
-                      "{evidence.extractedText}"
+                      &ldquo;{evidence.extractedText}&rdquo;
                     </p>
 
                     {evidence.userComment && (
@@ -374,7 +374,7 @@ export function Screen17ProofLockedIn() {
               </div>
 
               <p className="text-[#8E9878] mb-8">
-                Next: We'll generate your resume based on locked evidence, showing which claims align with the job.
+                Next: We&apos;ll generate your resume based on locked evidence, showing which claims align with the job.
               </p>
 
               <Button

@@ -10,7 +10,6 @@ import type {
 import { matchRequirementToEvidence } from "./matchRequirementToEvidence"
 import { normalizeRequirement } from "./normalizeRequirement"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
-import { buildJobContext } from "@/lib/context-engine"
 
 type BuildEvidenceMapParams = {
   supabase: SupabaseClient
@@ -49,50 +48,10 @@ function buildCoverageSummary(matches: RequirementEvidenceMatch[]): EvidenceCove
   }
 }
 
-function priorityFromImportance(importance: string | undefined): RequirementPriority {
-  if (importance === "medium") return "preferred"
-  if (importance === "low") return "keyword"
-  return "required"
-}
-
 function buildRequirementInputs(
   analysis: Record<string, unknown> | null,
   job: Record<string, unknown> | null
 ): RequirementInput[] {
-  const jobContext = buildJobContext({
-    jobId: typeof job?.id === "string" ? job.id : undefined,
-    jobText: typeof job?.job_description === "string" ? job.job_description : "",
-    title: typeof job?.role_title === "string" ? job.role_title : null,
-    company: typeof job?.company_name === "string" ? job.company_name : null,
-    requirements: safeArray(analysis?.qualifications_required),
-    responsibilities: safeArray(analysis?.responsibilities),
-    keywords: safeArray(analysis?.keywords),
-  })
-
-  if (jobContext.requirements.length > 0) {
-    return jobContext.requirements.map((requirement): RequirementInput => ({
-      id: requirement.id,
-      text: requirement.requirement_text,
-      normalized: requirement.normalized_requirement,
-      priority: priorityFromImportance(requirement.importance),
-      expectationType: requirement.category,
-      employerIntent: requirement.evidence_from_job_post,
-      proofNeeded: [
-        `Specific proof that supports: ${requirement.normalized_requirement}`,
-        "Ownership, scope, systems, stakeholders, constraints, and outcomes where available.",
-      ],
-      evidenceQuestions: [
-        `What real project, responsibility, or result shows ${requirement.normalized_requirement}?`,
-        "What was your role, who was involved, and what changed because of your work?",
-      ],
-      recoveryQuestion: `What real project, responsibility, or result shows ${requirement.normalized_requirement}?`,
-      relatedSkills: safeArray(analysis?.keywords).filter(keyword =>
-        requirement.requirement_text.toLowerCase().includes(keyword.toLowerCase())
-      ),
-      seniorityLevel: typeof job?.seniority_level === "string" ? job.seniority_level : null,
-    }))
-  }
-
   const required = safeArray(analysis?.qualifications_required).map((text): RequirementInput => ({
     text,
     priority: "required" as RequirementPriority,

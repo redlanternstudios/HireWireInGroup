@@ -236,7 +236,7 @@ async function reAnalyzeExistingJob(
     return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
   }
 
-  // Extract structured data via generateStructuredText (works with all Groq models)
+  // Extract structured data through the canonical AI Gateway
   let analysis: z.infer<typeof JobAnalysisSchema>
   try {
     analysis = await generateStructuredText({

@@ -296,7 +296,7 @@ export async function generateText(
 }
 
 type GenerateStructuredTextOptions<T> = Omit<GenerateTextOptions, "output"> & {
-  schema: z.ZodType<T>
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>
   schemaDescription: string
   contextPrompt?: string
 }

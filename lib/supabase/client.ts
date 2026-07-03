@@ -1,74 +1,78 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr'
+import { useEffect, useMemo, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 
-// Browser-only: ANON_KEY is safe to expose on client
-// SERVICE_ROLE_KEY is NEVER used in browser — server-only (API routes)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const EXPECTED_PROJECT_REF = 'endovljmaudnxdzdapmf'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+function cleanEnvValue(value: string | undefined) {
+  return value?.replace(/[\u2028\u2029]/g, '').trim()
+}
 
-// DEC-002: Evidence gating hook
-// Before any resume claim is shown, verify evidence source
-export async function useSupabase() {
-  return {
-    // Get all evidence for current user (RLS handles user_id filtering)
-    getEvidence: async () => {
-      const { data, error } = await supabase
-        .from('evidence')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw new Error(`Evidence fetch failed: ${error.message}`);
-      return data;
-    },
+function getBrowserSupabaseConfig() {
+  const supabaseUrl = cleanEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const supabaseAnonKey = cleanEnvValue(
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  )
 
-    // Get evidence by ID (with RLS check)
-    getEvidenceById: async (id: string) => {
-      const { data, error } = await supabase
-        .from('evidence')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (error) throw new Error(`Evidence not found: ${error.message}`);
-      return data;
-    },
+  if (!supabaseUrl) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
 
-    // Hard gate: claim must have source evidence
-    validateClaimHasSource: async (claimId: string) => {
-      const { data, error } = await supabase
-        .from('claim_evidence_map')
-        .select('evidence_id')
-        .eq('claim_id', claimId);
-      
-      if (error || !data || data.length === 0) {
-        throw new Error('DEC-002 VIOLATION: Claim has no source evidence');
+  if (!supabaseAnonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
+  }
+
+  let projectRef: string
+
+  try {
+    projectRef = new URL(supabaseUrl).hostname.split('.')[0]
+  } catch {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is not a valid URL')
+  }
+
+  if (projectRef !== EXPECTED_PROJECT_REF) {
+    throw new Error(
+      `Supabase project mismatch: expected ${EXPECTED_PROJECT_REF}, received ${projectRef}`,
+    )
+  }
+
+  return { supabaseUrl, supabaseAnonKey }
+}
+
+export function createClient() {
+  const { supabaseUrl, supabaseAnonKey } = getBrowserSupabaseConfig()
+  return createBrowserClient(supabaseUrl, supabaseAnonKey)
+}
+
+export function useSupabase() {
+  const supabase = useMemo(() => createClient(), [])
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setSession(data.session)
+        setLoading(false)
       }
-      return data;
-    },
+    })
 
-    // Get governance view (resume + evidence map)
-    getGovernanceView: async (userId: string) => {
-      const { data: claims, error: claimsError } = await supabase
-        .from('resume_claims')
-        .select('*')
-        .eq('user_id', userId);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (active) {
+        setSession(nextSession)
+        setLoading(false)
+      }
+    })
 
-      if (claimsError) throw new Error(`Claims fetch failed: ${claimsError.message}`);
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [supabase])
 
-      // For each claim, verify evidence exists
-      const withEvidence = await Promise.all(
-        claims.map(async (claim) => {
-          const sources = await supabase
-            .from('claim_evidence_map')
-            .select('evidence_id')
-            .eq('claim_id', claim.id);
-          return {
-            ...claim,
-            hasSources: sources.data && sources.data.length > 0,
-          };
-        })
-      );
-
-      return withEvidence;
-    },
-  };
+  return { supabase, session, loading }
 }

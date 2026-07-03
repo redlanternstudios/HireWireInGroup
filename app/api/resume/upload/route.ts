@@ -7,7 +7,7 @@
  * Flow:
  *   1. Extract text from request
  *   2. Store raw record in source_resumes
- *   3. Parse via Groq → ParsedResume
+ *   3. Parse via the canonical AI Gateway into ParsedResume
  *   4. Update source_resumes.parsed_data
  *   5. Map to evidence rows via mapResumeToEvidence
  *   6. Deduplicate against existing evidence for this user
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
   // ── 1. Extract text from the request ──────────────────────────────────────
   let resumeText = ""
   let filename = "resume.txt"
+  let fileType = "text/plain"
 
   const contentType = request.headers.get("content-type") ?? ""
 
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     if (file) {
       filename = file.name
-      const fileType = file.type
+      fileType = file.type || "text/plain"
 
       if (fileType === "application/pdf" ||
           fileType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
@@ -85,8 +86,9 @@ export async function POST(request: NextRequest) {
     .from("source_resumes")
     .insert({
       user_id: userId,
-      filename,
-      content_text: resumeText,
+      file_name: filename,
+      file_type: fileType,
+      parsed_text: resumeText,
     })
     .select("id")
     .single()
@@ -101,7 +103,7 @@ export async function POST(request: NextRequest) {
 
   const sourceResumeId = sourceResume.id
 
-  // ── 3. Parse via Groq ─────────────────────────────────────────────────────
+  // ── 3. Parse via the canonical AI Gateway ─────────────────────────────────
   let parsed
   try {
     parsed = await parseResumeText(resumeText)
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
     console.error("Resume parse error:", parseError)
     await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
     return NextResponse.json(
-      { error: "Failed to parse resume. Ensure GROQ_API_KEY is configured." },
+      { error: "Failed to parse resume through the AI Gateway. Please try again." },
       { status: 500 }
     )
   }

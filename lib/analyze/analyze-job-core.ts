@@ -18,15 +18,6 @@ import { runJobFlow } from "@/lib/orchestrator/runJobFlow";
 import { withCoachStepMeta } from "@/lib/coach-step";
 import { buildEvidenceMapForJob, initializeEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import {
-  buildEvidenceLibraryContext,
-  buildJobContext,
-  isContextEngineEnabled,
-  mirrorGapMatches,
-  mirrorJobContext,
-  mirrorProfileContext,
-  runContextGapMatch,
-} from "@/lib/context-engine";
-import {
   inferRoleFromJobTitle,
   getWeightsForRole,
 } from "@/lib/scoring-weights";
@@ -852,36 +843,6 @@ Extract the job details following the schema.`,
         .eq("id", job.id)
         .eq("user_id", user.id);
     }
-  }
-
-  if (isContextEngineEnabled()) {
-    const jobContext = buildJobContext({
-      jobId: job.id,
-      jobText: pageContent,
-      title: validatedAnalysis.title,
-      company: validatedAnalysis.company,
-      requirements: validatedAnalysis.qualifications_required,
-      responsibilities: validatedAnalysis.responsibilities,
-      keywords: validatedAnalysis.keywords,
-    });
-    const profileContext = buildEvidenceLibraryContext({
-      userId: user.id,
-      records: (evidenceResult.data ?? []) as Array<Record<string, any>>,
-    });
-    const gapContext = runContextGapMatch({
-      userId: user.id,
-      jobId: job.id,
-      profile: profileContext,
-      requirements: jobContext.requirements,
-    });
-    void mirrorProfileContext({ supabase, userId: user.id, context: profileContext });
-    void mirrorJobContext({ supabase, jobId: job.id, jobContext });
-    void mirrorGapMatches({
-      supabase,
-      userId: user.id,
-      jobId: job.id,
-      matches: gapContext.gapReport.matches,
-    });
   }
 
   // Run orchestration flow
