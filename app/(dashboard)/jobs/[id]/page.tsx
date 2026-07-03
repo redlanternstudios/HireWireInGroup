@@ -18,6 +18,8 @@ import {
   ArrowRight,
 } from "lucide-react"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
+import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore"
+import { asCanonicalEvidenceMap } from "@/lib/coach/coach-step-helpers"
 import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
@@ -240,6 +242,26 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const isAnalyzed = analysisPresent
   const overallScore = scores?.overall_score ?? job.score ?? null
+  // Single source of truth for the headline Fit Score: coverage-based fit
+  // (same computeFitScore used by the Prove Fit page + generate gate).
+  const _canonMap = asCanonicalEvidenceMap((job as Record<string, unknown>).evidence_map)
+  const _reqMatches = Array.isArray(_canonMap?.requirement_matches)
+    ? _canonMap.requirement_matches
+    : []
+  const fit = computeFitScore(_reqMatches as any)
+  const fitScoreDisplay = fit.hasSignal
+    ? fit.fitScore
+    : overallScore !== null
+      ? Math.round(Number(overallScore))
+      : null
+  const fitLabelDisplay =
+    fitScoreDisplay === null
+      ? (job.fit ?? null)
+      : fitScoreDisplay >= FIT_THRESHOLD
+        ? "HIGH"
+        : fitScoreDisplay >= 50
+          ? "MEDIUM"
+          : "LOW"
   const scoreGaps: string[] = Array.isArray(job.score_gaps)
     ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
     : []
@@ -299,16 +321,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             >
               {readiness.displayLabel}
             </Badge>
-            {job.fit && (
+            {fitLabelDisplay && (
               <Badge
                 variant="outline"
                 className={`text-[10px] font-medium ${
-                  job.fit === "HIGH" ? "status-ready"
-                  : job.fit === "MEDIUM" ? "status-analyzing"
+                  fitLabelDisplay === "HIGH" ? "status-ready"
+                  : fitLabelDisplay === "MEDIUM" ? "status-analyzing"
                   : "status-rejected"
                 }`}
               >
-                {job.fit} fit
+                {fitLabelDisplay} fit
               </Badge>
             )}
             {isAnalyzed && hasUrl && !inEarlyStageAction && (
@@ -381,7 +403,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 {overallScore !== null && (
                   <div className="text-right">
                     <span className="text-2xl font-bold tabular-nums text-foreground">
-                      {Math.round(Number(overallScore))}
+                      {fitScoreDisplay}
                       <span className="text-sm font-normal text-muted-foreground">/100</span>
                     </span>
                   </div>
@@ -441,7 +463,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <ReadinessReview
             strengths={strengths}
             detectedGaps={detectedGaps}
-            fitLabel={job.fit ?? null}
+            fitLabel={fitLabelDisplay}
             overallScore={overallScore !== null ? Number(overallScore) : null}
             fallbackMatchedSkills={matchedSkills}
             fallbackKnownGaps={knownGaps}
@@ -507,7 +529,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Fit Score</span>
                 <span className="font-semibold text-foreground tabular-nums">
-                  {overallScore !== null ? `${Math.round(Number(overallScore))}/100` : "Pending"}
+                  {fitScoreDisplay !== null ? `${fitScoreDisplay}/100` : "Pending"}
                 </span>
               </div>
             </div>
