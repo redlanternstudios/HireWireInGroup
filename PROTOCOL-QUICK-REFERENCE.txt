@@ -1,0 +1,409 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║          AUDIT PROTOCOL v1.0 — HIREWIRE COMPLIANCE QUICK REFERENCE        ║
+║                                                                            ║
+║                    "What's built, what's missing, how to build it"         ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+SECTIONS 1-4: INVENTORY (✅ DONE)
+════════════════════════════════════════════════════════════════════════════
+
+✅ Section 1: Component Map (127 components listed)
+✅ Section 2: Page/Route Map (35 pages listed)  
+✅ Section 3: API Endpoint Registry (39 endpoints listed)
+✅ Section 4: Data Model (18 tables with RLS)
+
+Action: Nothing to build (already discovered)
+Reference: COMPREHENSIVE-AUDIT-RE-DISCOVERY.md
+
+
+SECTION 5: STATE MACHINES (❌ MISSING) — 2-3 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: Formal state diagrams for 4 major entities
+
+Currently exists implicitly:
+  - Job workflow (new → analyzed → scored → ready → applied → tracking → closed)
+  - Evidence status (collected → validated → approved → mapped → used)
+  - Document generation (pending → ready | needs_review | failed → exported)
+  - Proof decisions (needs_judgment → confirmed | skipped)
+
+What to build:
+  ☐ Create lib/state-machines/ directory
+  ☐ Add job-lifecycle.ts (enum + type guards + illegal-transition detector)
+  ☐ Add evidence-lifecycle.ts
+  ☐ Add document-generation.ts
+  ☐ Add proof-decision.ts
+  ☐ Add tests (verify no illegal transitions can happen)
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 5
+
+
+SECTIONS 6-7: ENTRY/EXIT POINTS (🟡 PARTIAL) — 2 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+Section 6 (Entries): ✅ Done
+  - Login, signup, LinkedIn import, resume upload, manual entry, job paste, webhooks
+
+Section 7 (Exits): 🟡 Partial — need to formalize:
+  ☐ Logout (clear session + redirect)
+  ☐ Session timeout (60min idle → force logout + show message)
+  ☐ Account deletion (if supporting)
+  ☐ Subscription cancellation exit flow
+
+What to build:
+  ☐ Update middleware.ts (add session timeout check)
+  ☐ Create lib/auth/session.ts (session management)
+  ☐ Add POST /api/auth/logout/route.ts (explicit logout)
+  ☐ Add session timeout handler (redirect to /login)
+  ☐ Document all exit flows in DECISIONS.md
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 7
+
+
+SECTION 8: ATOMIC I/O CONTRACT TABLE (❌ MISSING) — 8-10 HOURS **P0**
+════════════════════════════════════════════════════════════════════════════
+
+This is THE HEART of The Protocol. Every interaction documented.
+
+What's needed: 175 contracts (35 pages × 5 interactions avg)
+
+Each contract documents:
+  • User input: "What the user does" (click, type, submit, etc)
+  • API called: "Which endpoint" (POST /api/jobs/analyze, etc)
+  • Request schema: "What data sent" (URL, file, form data)
+  • Response schema: "What returned" (job_id, status, errors)
+  • DB changes: "What's written" (INSERT, UPDATE operations)
+  • Feedback: "What user sees" (toast, redirect, banner)
+  • Error cases: "What can go wrong" (invalid URL, timeout, etc)
+  • Recovery: "How to fix" (retry, manual entry, etc)
+
+What to build:
+  ☐ Create lib/contracts/atomic-i-o-registry.ts
+  ☐ Define TypeScript interface for contracts
+  ☐ Document ALL 175 interactions (or prioritize critical 30)
+  ☐ Create lib/contracts/contract-validator.ts (runtime check)
+  ☐ Add tests to ensure all API endpoints have contracts
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 8
+
+
+SECTION 9: TRIGGER REGISTRY (🟡 PARTIAL) — 4 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: Inventory of all 150+ ways to trigger actions
+
+Currently exists implicitly (UI triggers mostly):
+  - Button clicks, form submits, links, etc
+
+Missing:
+  ☐ Webhook triggers (Stripe, Zapier) — not formalized
+  ☐ Time triggers (session timeout, usage reset) — not formalized
+  ☐ Event triggers (cascades) — partially documented
+
+What to build:
+  ☐ Create lib/triggers/trigger-registry.ts (list all 150+ triggers)
+  ☐ Create lib/triggers/webhook-handlers.ts (Stripe, Zapier)
+  ☐ Create lib/triggers/timer-triggers.ts (cron jobs, timeouts)
+  ☐ Create lib/triggers/event-triggers.ts (domain event handlers)
+  ☐ Document guard conditions for each trigger
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 9
+
+
+SECTION 10: HOOK/LOOP/CASCADE REGISTRY (🟡 PARTIAL) — 3 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: Document all automatic cascades + detect cycles
+
+Currently exists:
+  ✅ Domain events system (lib/domain-events/)
+  ✅ Event cascades partially documented
+  ❌ Cycle detection missing
+  ❌ Cascade depth limit missing
+
+What to build:
+  ☐ Create lib/domain-events/cascade-registry.ts (all cascades mapped)
+  ☐ Create lib/domain-events/cycle-detector.ts (find circular loops)
+  ☐ Add cycle-detection tests (ensure no infinite loops)
+  ☐ Add cascade depth limit (max 5 levels to prevent runaway)
+  ☐ Document all 5-10 major cascades
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 10
+
+
+SECTION 11: NOTIFICATION MATRIX (🟡 PARTIAL) — 4 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: Every piece of user feedback (50+ notifications)
+
+Currently exists:
+  ✅ Toasts scattered in code
+  ✅ Comms registry framework (lib/comms/)
+  ❌ Not systematized
+  ❌ Email notifications missing (if needed)
+
+What to build:
+  ☐ Create lib/comms/notification-matrix.ts (all 50+ notifications)
+  ☐ Map each action → feedback channel (toast, banner, modal, email)
+  ☐ Create lib/comms/notify.ts (centralized notification dispatcher)
+  ☐ Add email template system (if supporting email)
+  ☐ Wire notifications to all major flows
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 11
+
+
+SECTION 12: GATES & CONTROL LAYER (🟡 PARTIAL) — 3 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: Document all 20+ checkpoints that allow/prevent actions
+
+Currently exists:
+  ✅ Auth gate (middleware.ts)
+  ✅ Readiness gate (lib/readiness.ts)
+  ✅ Plan limit gate (somewhere in generate endpoint)
+  ❌ Gates not systematized in one place
+  ❌ Gate bypass conditions not clear
+  ❌ Manual overrides not documented
+
+What to build:
+  ☐ Create lib/gates/gate-registry.ts (all 20 gates listed)
+  ☐ Add gate evaluators for each gate type
+  ☐ Formalize bypass conditions (if any)
+  ☐ Add tests for each gate
+  ☐ Document failure messages + recovery paths
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 12
+
+
+SECTION 13: START/STOP/KILL CONTROLS (❌ MISSING) — 2 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: How to stop/pause/control the system
+
+Missing entirely:
+  ❌ Feature flags/kill switches (AI coach, generation, etc)
+  ❌ Job cancellation/pause (if generating)
+  ❌ Cascade kill switch (for debugging)
+
+What to build:
+  ☐ Create lib/features/feature-flags.ts (toggle features on/off)
+  ☐ Create lib/jobs/job-controls.ts (cancel, pause, resume)
+  ☐ Create lib/domain-events/cascade-control.ts (disable cascades)
+  ☐ Add /admin/feature-flags page (toggle UI)
+  ☐ Add tests for each control
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 13
+
+
+SECTION 14: RECEIPTS & OBSERVABILITY (🟡 PARTIAL) — 4 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: Everything logged + traceable (correlation IDs, audit trail)
+
+Currently exists:
+  ✅ audit_events table
+  ✅ domain_events table
+  ❌ No correlation IDs for request tracing
+  ❌ No debug logging layer
+  ❌ No request/response logging
+
+What to build:
+  ☐ Create lib/observability/correlation.ts (correlation ID context)
+  ☐ Create lib/observability/request-logger.ts (log all requests)
+  ☐ Create lib/observability/logger.ts (structured debug logging)
+  ☐ Update middleware.ts (add correlation ID + logging)
+  ☐ Create request_logs + debug_logs DB tables
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 14
+
+
+SECTION 15: FAILURE & RECOVERY PATHS (🟡 PARTIAL) — 5 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+What's needed: What happens when things go wrong + how to recover
+
+Currently exists:
+  ✅ Try/catch blocks scattered
+  ⚠️ Try/catch logic inconsistent
+  ❌ Retry logic not standardized
+  ❌ Dead-letter queues missing
+  ❌ Manual intervention paths missing
+
+What to build:
+  ☐ Create lib/resilience/retry.ts (exponential backoff)
+  ☐ Create lib/resilience/dead-letter-queue.ts (failed event storage)
+  ☐ Create lib/resilience/circuit-breaker.ts (fail-fast)
+  ☐ Document 10+ failure modes + recovery paths
+  ☐ Add cron job to process dead-letter queue (every 5 min)
+  ☐ Create admin page to view + reprocess failed items
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 15
+
+
+SECTION 16: TRAP STATES & GUARDS (❌ MISSING) — 4 HOURS **P1**
+════════════════════════════════════════════════════════════════════════════
+
+CRITICAL: Prevent users from getting stuck
+
+What's needed: Identify + guard all trap states
+
+Potential traps identified:
+  • Job stuck in "generating" (API crashes mid-stream)
+  • Evidence stuck in "needs_judgment" (user never confirms)
+  • Application stuck in "pending" (user forgets to update)
+  • Session timeout without warning
+  • Subscription canceled but pro features still used
+
+What to build:
+  ☐ Create lib/guards/trap-state-detector.ts (identify traps)
+  ☐ Create lib/guards/state-timeouts.ts (enforce timeouts via cron)
+  ☐ Create lib/guards/manual-overrides.ts (escape hatches)
+  ☐ Add timeout guards for each trap state
+  ☐ Add admin override page for stuck states
+  ☐ Add cron job: /api/cron/enforce-state-timeouts (every 5 min)
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 16
+
+
+SECTION 17: SHIP GATE CHECKLIST (❌ MISSING) — 3 HOURS **P0**
+════════════════════════════════════════════════════════════════════════════
+
+Pre-launch verification with receipts
+
+What's needed: Formal launch checklist
+
+Build:
+  ☐ Create /admin/ship-gate page (checklist UI)
+  ☐ Create lib/ship-gate/ship-gate-checklist.ts
+  ☐ Create lib/ship-gate/tests.ts (automated verification)
+  ☐ Create ship_gate_receipts DB table
+  ☐ Document all checks + how to verify
+  ☐ Record receipts for each check before launch
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 17
+
+
+SECTION 18: DECISION LOG (❌ MISSING) — 1 HOUR **P3**
+════════════════════════════════════════════════════════════════════════════
+
+Document why the system is built this way
+
+What's needed: Decision + change log
+
+Build:
+  ☐ Create /admin/decisions page (view decisions)
+  ☐ Create lib/decisions/decision-index.ts (all decisions)
+  ☐ Create DECISIONS.md in repo root
+  ☐ Link decisions to code references (file:line)
+  ☐ Document each major architectural choice
+
+Build details: See AUDIT-PROTOCOL-COMPLIANCE-MAP.md § Section 18
+
+
+THE FOUR AUDITS (❌ MISSING) — 6-8 HOURS
+════════════════════════════════════════════════════════════════════════════
+
+1. ORPHAN AUDIT: Are there components/endpoints/tables not used anywhere?
+   ☐ Export every component, search for usage
+   ☐ List every endpoint, search for calls
+   ☐ Check every DB table, search for queries
+   ☐ Report orphans (none should be found if complete)
+
+2. BLANK-CELL AUDIT: Are all Atomic I/O contracts complete?
+   ☐ Create Atomic I/O table (175 rows)
+   ☐ For each row, verify all columns filled
+   ☐ Report any blank cells (none should be found)
+
+3. TRAP-STATE AUDIT: Are there states user can enter but not exit?
+   ☐ For each state in system, document entry + exit
+   ☐ Identify trap conditions (entry but no exit)
+   ☐ Verify timeout guards exist for each trap
+   ☐ Report traps + guards
+
+4. FAKE-COMPLETE AUDIT: Are "verified" features actually working?
+   ☐ Test each major feature end-to-end
+   ☐ Verify error cases handled gracefully
+   ☐ Check edge cases + boundaries
+   ☐ Report findings (any failures = fail audit)
+
+
+BUILD PRIORITY
+════════════════════════════════════════════════════════════════════════════
+
+🔴 P0 - TODAY (Blocking ship):
+   ☐ Section 8: Atomic I/O Registry (8-10 hrs)
+   ☐ Section 17: Ship Gate Checklist (3 hrs)
+   ☐ Run 4 Audits (6-8 hrs)
+   → Total: 17-21 hours
+
+🟡 P1 - THIS WEEK (Before launch):
+   ☐ Section 5: State Machines (2-3 hrs)
+   ☐ Section 16: Trap State Guards (4 hrs)
+   ☐ Section 15: Failure/Recovery (5 hrs)
+   ☐ Section 9: Trigger Registry (4 hrs)
+   ☐ Section 10: Hook Registry (3 hrs)
+   → Total: 18-19 hours
+
+🟠 P2 - NEXT WEEK (Polish):
+   ☐ Section 11: Notifications (4 hrs)
+   ☐ Section 14: Observability (4 hrs)
+   ☐ Section 13: Controls (2 hrs)
+   ☐ Section 7: Exit Points (2 hrs)
+   → Total: 12 hours
+
+🔵 P3 - LATER (Knowledge base):
+   ☐ Section 18: Decision Log (1 hr)
+
+TOTAL EFFORT: ~55-60 hours
+Can parallelize: Yes (sections mostly independent)
+
+
+BUILD ORDER RECOMMENDATION
+════════════════════════════════════════════════════════════════════════════
+
+Most impactful first (prevent future bugs):
+
+1. Section 8 (Atomic I/O) — Formalize all interactions
+2. Section 16 (Trap States) — Prevent user getting stuck
+3. Section 5 (State Machines) — Formalize transitions
+4. Section 15 (Failure/Recovery) — Handle edge cases
+5. Section 9 (Triggers) — Complete trigger inventory
+6. Section 10 (Cascades) — Detect cycles
+7. Run 4 Audits — Find gaps in above
+8. Section 17 (Ship Gate) — Verify before launch
+9. Section 14 (Observability) — Enable debugging
+10. Section 11 (Notifications) — Polish UX
+... remaining sections
+
+
+REFERENCE FILES
+════════════════════════════════════════════════════════════════════════════
+
+AUDIT-PROTOCOL-COMPLIANCE-MAP.md (1757 lines)
+  → Deep dive into each section with code examples
+  → Shows exactly what to build + where
+  → Use this as your implementation guide
+
+This file: PROTOCOL-QUICK-REFERENCE.txt
+  → Quick checklist + overview
+  → Use this to track progress
+
+
+NEXT STEPS
+════════════════════════════════════════════════════════════════════════════
+
+1. Open AUDIT-PROTOCOL-COMPLIANCE-MAP.md
+2. Start with P0 sections (Section 8 + 17 + audits)
+3. Document every atomic I/O contract
+4. Run the 4 audits
+5. Fix gaps found by audits
+6. Proceed to P1 sections
+7. Ship with full Protocol compliance
+
+Once complete: HireWire will be a formally verified, fully documented,
+trap-state-safe, failure-resistant, audit-compliant production system.
+
+════════════════════════════════════════════════════════════════════════════
