@@ -1,8 +1,18 @@
 import { describe, it, expect } from "vitest"
 import { computeFitScore, FIT_THRESHOLD } from "./fitScore"
 
-const m = (priority: string, proof_decision?: string, matched_evidence_ids: string[] = []) =>
-  ({ priority, proof_decision, matched_evidence_ids, requirement_id: Math.random().toString() } as any)
+// priority + optional { proof_decision, status }
+const m = (
+  priority: string,
+  opts: { proof_decision?: string; status?: string } = {},
+) =>
+  ({
+    priority,
+    proof_decision: opts.proof_decision,
+    status: opts.status ?? "met",
+    matched_evidence_ids: ["e1"],
+    requirement_id: Math.random().toString(),
+  } as any)
 
 describe("computeFitScore", () => {
   it("returns no signal when there are no matches", () => {
@@ -12,59 +22,65 @@ describe("computeFitScore", () => {
     expect(r.meetsThreshold).toBe(false)
   })
 
-  it("counts only auto_mapped/confirmed required as fit; skipped and gaps do not", () => {
+  it("counts confirmed and met-auto-mapped as resolved; skipped/needs_judgment do not", () => {
     const r = computeFitScore([
-      m("required", "auto_mapped"),
-      m("required", "confirmed"),
-      m("required", "skipped"),
-      m("required", "needs_judgment"),
+      m("required", { proof_decision: "confirmed", status: "partial" }), // user attested -> counts
+      m("required", { proof_decision: "auto_mapped", status: "met" }),
+      m("required", { proof_decision: "skipped", status: "met" }),
+      m("required", { proof_decision: "needs_judgment", status: "met" }),
     ])
     expect(r.requiredTotal).toBe(4)
     expect(r.requiredResolved).toBe(2)
     expect(r.requiredSkipped).toBe(1)
-    expect(r.requiredGaps).toBe(1)
     expect(r.fitScore).toBe(50)
     expect(r.meetsThreshold).toBe(false)
   })
 
-  it("hits the threshold at >= 70% required coverage", () => {
+  it("does NOT count auto-mapped/undecided PARTIAL (weak fuzzy) matches as fit", () => {
     const r = computeFitScore([
-      m("required", "confirmed"),
-      m("required", "confirmed"),
-      m("required", "auto_mapped"),
-      m("required", "skipped"),
+      m("required", { proof_decision: "auto_mapped", status: "partial" }),
+      m("required", { proof_decision: undefined, status: "partial" }),
+      m("required", { proof_decision: undefined, status: "met" }),
+    ])
+    expect(r.requiredResolved).toBe(1) // only the "met" one
+    expect(r.fitScore).toBe(33)
+  })
+
+  it("counts undecided MET matches as resolved (no persisted proof_decision)", () => {
+    const r = computeFitScore([
+      m("required", { status: "met" }),
+      m("required", { status: "met" }),
+      m("required", { status: "met" }),
+    ])
+    expect(r.fitScore).toBe(100)
+    expect(r.meetsThreshold).toBe(true)
+  })
+
+  it("hits threshold at >= 70% met coverage", () => {
+    const r = computeFitScore([
+      m("required", { status: "met" }),
+      m("required", { status: "met" }),
+      m("required", { status: "met" }),
+      m("required", { proof_decision: "skipped" }),
     ])
     expect(r.fitScore).toBe(75)
     expect(r.meetsThreshold).toBe(true)
     expect(FIT_THRESHOLD).toBe(70)
   })
 
-  it("all skipped required => 0% fit, gated", () => {
-    const r = computeFitScore([m("required", "skipped"), m("required", "skipped")])
+  it("all gaps => 0% fit, gated", () => {
+    const r = computeFitScore([
+      m("required", { status: "gap" }),
+      m("required", { status: "partial" }),
+    ])
     expect(r.fitScore).toBe(0)
     expect(r.meetsThreshold).toBe(false)
   })
 
-  it("counts undecided requirements with matched evidence as auto-mapped (resolved)", () => {
-    const r = computeFitScore([
-      m("required", undefined, ["ev1"]),
-      m("required", undefined, ["ev2"]),
-      m("required", undefined, []),
-    ])
-    expect(r.requiredResolved).toBe(2)
-    expect(r.fitScore).toBe(67)
-  })
-
-  it("undecided WITHOUT evidence does not count as fit", () => {
-    const r = computeFitScore([m("required", undefined, []), m("required", "confirmed", ["e"])])
-    expect(r.requiredResolved).toBe(1)
-    expect(r.fitScore).toBe(50)
-  })
-
   it("falls back to all matches when no required tier exists", () => {
     const r = computeFitScore([
-      m("preferred", "confirmed"),
-      m("preferred", "needs_judgment"),
+      m("preferred", { status: "met" }),
+      m("preferred", { status: "gap" }),
     ])
     expect(r.requiredTotal).toBe(0)
     expect(r.fitScore).toBe(50)

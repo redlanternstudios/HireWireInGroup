@@ -18,8 +18,7 @@ import type { RequirementEvidenceMatch } from "./types"
 
 export const FIT_THRESHOLD = 70
 
-const RESOLVED_DECISIONS = new Set(["auto_mapped", "confirmed"])
-const UNRESOLVED_DECISIONS = new Set(["skipped", "needs_judgment"])
+
 
 export type FitScoreResult = {
   /** false when there is nothing to score yet (no requirement matches). */
@@ -36,12 +35,16 @@ export type FitScoreResult = {
 
 function isResolved(match: RequirementEvidenceMatch): boolean {
   const decision = match.proof_decision
-  if (decision && RESOLVED_DECISIONS.has(String(decision))) return true
-  if (decision && UNRESOLVED_DECISIONS.has(String(decision))) return false
-  // Undecided requirement: mirror applyAutoMappedProofDecisions — a requirement
-  // with matched evidence is auto-mapped (resolved) even if no proof_decision was
-  // ever persisted. Prevents under-counting older/auto-matched jobs to 0%.
-  return Array.isArray(match.matched_evidence_ids) && match.matched_evidence_ids.length > 0
+  // The user explicitly attested a real claim — trust the human over the matcher.
+  if (decision === "confirmed") return true
+  // Intentionally omitted or still open — never counts toward fit.
+  if (decision === "skipped" || decision === "needs_judgment") return false
+  // Auto-mapped or undecided: count ONLY genuinely-MET matches. A "partial"
+  // (fuzzy / weak-synonym, overlap as low as 0.35) or "gap"/"unknown" is NOT
+  // resolved, even though it carries matched_evidence_ids. Truthfulness must be
+  // a structural guarantee, not an accident of clean data — a resume should
+  // never be generated on "all go" backed by weak fuzzy matches.
+  return match.status === "met"
 }
 
 export function computeFitScore(
