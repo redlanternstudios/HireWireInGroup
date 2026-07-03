@@ -12,6 +12,7 @@ import { logError as logErr } from '@/lib/errors/logger'
 import { toApiErrorResponse } from '@/lib/errors/response'
 import { createCorrelationId } from '@/lib/errors/correlation'
 import { requireUser } from '@/lib/supabase/require-user'
+import { atsSanitize } from '@/lib/resume/atsSanitize'
 
 export const runtime = 'nodejs'
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     logErr(err, { route: "/api/export-docx" })
     return NextResponse.json(toApiErrorResponse(err), { status: 400 })
   }
-  const text = typeof body.text === 'string' ? body.text : ''
+  const text = atsSanitize(typeof body.text === 'string' ? body.text : '')
   const filename = typeof body.filename === 'string' ? body.filename : 'document'
   const jobId = typeof body.job_id === 'string' ? body.job_id : null
   const resumeFormat = normalizeResumeFormat(body.resumeFormat)
@@ -141,8 +142,13 @@ function isResumeHeading(line: string, index: number) {
     'work experience',
     'skills',
     'technical skills',
+    'core skills',
+    'core competencies',
+    'competencies',
     'education',
     'certifications',
+    'education and certifications',
+    'education & certifications',
     'projects',
     'selected projects',
     'achievements',
