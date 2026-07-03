@@ -3,6 +3,7 @@ import {
   createGateway,
   generateText as aiGenerateText,
   streamText as aiStreamText,
+  Output,
 } from "ai"
 import type { z } from "zod"
 import { writeAiAuditEvent } from "./audit"
@@ -342,18 +343,25 @@ export async function generateStructuredText<T>(
           : Array.isArray(messages)
             ? JSON.stringify(messages)
             : ""
+  // AI SDK v6 native structured output: the model is constrained to the schema
+  // (json_schema for OpenAI), so it can no longer omit required fields — which
+  // is what caused the ZodErrors (e.g. missing soc_* fields) in prompt-and-parse.
   const structuredOptions = {
     ...textOptions,
     prompt: `${promptText}
 
-Return only valid JSON. Do not include markdown fences, explanations, or extra text.
-The JSON must match this schema exactly:
+Populate every field of the required schema; do not omit any required field.
+Schema reference:
 ${schemaDescription}`,
+    experimental_output: Output.object({ schema }),
   } as GenerateTextOptions
 
   const result = await generateText(structuredOptions, telemetry)
 
-  return schema.parse(JSON.parse(extractJsonFromText(result.text)))
+  // Prefer the schema-constrained structured output; fall back to the legacy
+  // parse only if a provider didn't return structured output.
+  const structured = (result as { experimental_output?: T }).experimental_output
+  return structured ?? schema.parse(JSON.parse(extractJsonFromText(result.text)))
 }
 
 export function streamText(
