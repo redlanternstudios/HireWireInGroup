@@ -54,6 +54,7 @@ import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore";
+import { atsSanitize } from "@/lib/resume/atsSanitize";
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import { recordUsage } from "@/lib/paywall/usage";
 
@@ -796,7 +797,7 @@ async function generateFallbackDocuments({
       ...bullets.map((bullet) => `- ${bullet}`),
     ].join("\n");
   });
-  const formattedResume = `${name ? String(name).toUpperCase() : "CANDIDATE"}
+  const formattedResume = atsSanitize(`${name ? String(name).toUpperCase() : "CANDIDATE"}
 ${[location, email].filter(Boolean).join(" | ")}
 ${headline || "Evidence-backed candidate"}
 
@@ -815,7 +816,7 @@ ${Array.isArray(sourceResumeData?.education) && sourceResumeData.education.lengt
       .map((edu: Record<string, unknown>) => [edu.degree, edu.school, edu.year].filter(Boolean).join(", "))
       .filter(Boolean)
       .join("\n")
-  : "Education and certifications omitted when not present in verified profile data."}`;
+  : "Education and certifications omitted when not present in verified profile data."}`);
   const coverLetterParagraphs = [
     {
       text: `I am applying for the ${jobData.title || jobData.role_title || "Product role"} at ${jobData.company || jobData.company_name || "your company"} with evidence-backed experience from my profile and work history.`,
@@ -2299,7 +2300,7 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
     // Build ATS-safe formatted resume (no unicode dividers, clean structure)
     // CHANGED: Removed unicode box-drawing characters that break ATS parsing
     // CHANGED: Added job title as professional headline for alignment
-    const formattedResume = `${(effectiveName || "CANDIDATE NAME").toUpperCase()}
+    const formattedResume = atsSanitize(`${(effectiveName || "CANDIDATE NAME").toUpperCase()}
   ${targetJobTitle}
   ${contactInfo}
 
@@ -2324,7 +2325,7 @@ ${effectiveEducation
     (edu: { degree: string; school: string; year?: string }) =>
       `${edu.degree}, ${edu.school}${edu.year ? ` (${edu.year})` : ""}`,
   )
-  .join("\n")}`;
+  .join("\n")}`);
 
     // Build premium formatted cover letter with professional signature
     const today = new Date().toLocaleDateString("en-US", {
