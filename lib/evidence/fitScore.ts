@@ -19,6 +19,7 @@ import type { RequirementEvidenceMatch } from "./types"
 export const FIT_THRESHOLD = 70
 
 const RESOLVED_DECISIONS = new Set(["auto_mapped", "confirmed"])
+const UNRESOLVED_DECISIONS = new Set(["skipped", "needs_judgment"])
 
 export type FitScoreResult = {
   /** false when there is nothing to score yet (no requirement matches). */
@@ -34,7 +35,13 @@ export type FitScoreResult = {
 }
 
 function isResolved(match: RequirementEvidenceMatch): boolean {
-  return RESOLVED_DECISIONS.has(String(match.proof_decision))
+  const decision = match.proof_decision
+  if (decision && RESOLVED_DECISIONS.has(String(decision))) return true
+  if (decision && UNRESOLVED_DECISIONS.has(String(decision))) return false
+  // Undecided requirement: mirror applyAutoMappedProofDecisions — a requirement
+  // with matched evidence is auto-mapped (resolved) even if no proof_decision was
+  // ever persisted. Prevents under-counting older/auto-matched jobs to 0%.
+  return Array.isArray(match.matched_evidence_ids) && match.matched_evidence_ids.length > 0
 }
 
 export function computeFitScore(

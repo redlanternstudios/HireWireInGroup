@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { computeFitScore, FIT_THRESHOLD } from "./fitScore"
 
-const m = (priority: string, proof_decision?: string) =>
-  ({ priority, proof_decision, requirement_id: Math.random().toString() } as any)
+const m = (priority: string, proof_decision?: string, matched_evidence_ids: string[] = []) =>
+  ({ priority, proof_decision, matched_evidence_ids, requirement_id: Math.random().toString() } as any)
 
 describe("computeFitScore", () => {
   it("returns no signal when there are no matches", () => {
@@ -43,6 +43,22 @@ describe("computeFitScore", () => {
     const r = computeFitScore([m("required", "skipped"), m("required", "skipped")])
     expect(r.fitScore).toBe(0)
     expect(r.meetsThreshold).toBe(false)
+  })
+
+  it("counts undecided requirements with matched evidence as auto-mapped (resolved)", () => {
+    const r = computeFitScore([
+      m("required", undefined, ["ev1"]),
+      m("required", undefined, ["ev2"]),
+      m("required", undefined, []),
+    ])
+    expect(r.requiredResolved).toBe(2)
+    expect(r.fitScore).toBe(67)
+  })
+
+  it("undecided WITHOUT evidence does not count as fit", () => {
+    const r = computeFitScore([m("required", undefined, []), m("required", "confirmed", ["e"])])
+    expect(r.requiredResolved).toBe(1)
+    expect(r.fitScore).toBe(50)
   })
 
   it("falls back to all matches when no required tier exists", () => {

@@ -287,7 +287,6 @@ function JobRow({
   const tags = tagsFor(job);
   const time = timeAgo(job.updated_at || job.created_at);
   const fitColor = scoreColor(job.score);
-  const evidenceCoverage = job.coachStep.evidenceCoverage;
 
   return (
     <div
@@ -358,12 +357,7 @@ function JobRow({
             <p className={cn("text-sm font-bold tabular-nums", fitColor)}>
               {Math.round(job.score)}%
             </p>
-            <p className={cn("text-[10px]", fitColor)}>Strategic fit</p>
-            {evidenceCoverage != null && (
-              <p className="text-[10px] text-muted-foreground">
-                {Math.round(evidenceCoverage)}% evidence
-              </p>
-            )}
+            <p className={cn("text-[10px]", fitColor)}>Fit</p>
           </>
         ) : (
           <p className="text-xs text-muted-foreground">In progress</p>
@@ -673,7 +667,7 @@ export function JobsPipelineClient({
           case "ready_to_apply":
             return j.readiness.displayState === "ready_to_apply";
           case "high_fit":
-            return (j.score ?? 0) >= 75;
+            return (j.score ?? 0) >= 70;
           case "recently_added":
             return Date.now() - new Date(j.created_at).getTime() < 7 * 86400000;
           case "stale":

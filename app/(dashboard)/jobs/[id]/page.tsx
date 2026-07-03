@@ -20,7 +20,6 @@ import {
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore"
 import { asCanonicalEvidenceMap } from "@/lib/coach/coach-step-helpers"
-import { getCoachStepState } from "@/lib/coach-step"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
 import { getUnresolvedRequirements } from "@/lib/clarity/getUnresolvedRequirements"
@@ -232,7 +231,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     analysis_present: analysisPresent,
     prove_fit_decisions: proveFitDecisions ?? [],
   })
-  const coachStep = getCoachStepState(job)
 
   const matchedSkills: string[] = Array.isArray(analysis?.matched_skills) ? analysis.matched_skills : []
   const knownGaps: string[] = Array.isArray(analysis?.known_gaps) ? analysis.known_gaps : []
@@ -251,12 +249,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const fit = computeFitScore(_reqMatches as any)
   const fitScoreDisplay = fit.hasSignal
     ? fit.fitScore
-    : overallScore !== null
-      ? Math.round(Number(overallScore))
-      : null
+    : null
   const fitLabelDisplay =
     fitScoreDisplay === null
-      ? (job.fit ?? null)
+      ? null
       : fitScoreDisplay >= FIT_THRESHOLD
         ? "HIGH"
         : fitScoreDisplay >= 50
@@ -400,7 +396,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <div className="hw-card px-6 py-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="hw-section-label">Fit Analysis</h2>
-                {overallScore !== null && (
+                {fitScoreDisplay !== null && (
                   <div className="text-right">
                     <span className="text-2xl font-bold tabular-nums text-foreground">
                       {fitScoreDisplay}
@@ -433,18 +429,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 </div>
               )}
               <div className="space-y-3">
-                {coachStep.evidenceCoverage != null && (
+                {fitScoreDisplay !== null && (
                   <ScoreBar
                     label="Evidence coverage"
-                    value={coachStep.evidenceCoverage}
-                    note="How much of the role is backed by proof in your Career Context."
-                  />
-                )}
-                {coachStep.strategicFit != null && (
-                  <ScoreBar
-                    label="Strategic fit"
-                    value={coachStep.strategicFit}
-                    note="How well your current evidence lines up with this job after weighting role signals."
+                    value={fitScoreDisplay}
+                    note="Share of required role signals backed by confirmed or auto-matched proof."
                   />
                 )}
                 {scores?.skills_match != null && (
@@ -464,7 +453,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             strengths={strengths}
             detectedGaps={detectedGaps}
             fitLabel={fitLabelDisplay}
-            overallScore={overallScore !== null ? Number(overallScore) : null}
+            overallScore={fitScoreDisplay}
             fallbackMatchedSkills={matchedSkills}
             fallbackKnownGaps={knownGaps}
           />

@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { JobsPipelineClient, type PipelineJob } from "@/components/jobs/jobs-pipeline-client"
+import { computeFitScore } from "@/lib/evidence/fitScore"
+import { asCanonicalEvidenceMap } from "@/lib/coach/coach-step-helpers"
 
 export const dynamic = "force-dynamic"
 
@@ -101,10 +103,15 @@ export default async function JobsPage({
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   )
 
-  // Normalize score — prefer job_scores.overall_score, fall back to jobs.score
+  // Canonical fit — single source of truth (computeFitScore over evidence_map),
+  // same as the job detail + Prove Fit pages + generate gate. No stale overall_score.
   const pipeline: PipelineJob[] = ((jobs ?? []) as JobsRow[]).map((j) => {
-    const scores = j.job_scores ?? []
-    const score = scores[0]?.overall_score ?? (j.score as number | null) ?? null
+    const canonMap = asCanonicalEvidenceMap(j.evidence_map)
+    const reqMatches = Array.isArray(canonMap?.requirement_matches)
+      ? canonMap.requirement_matches
+      : []
+    const fit = computeFitScore(reqMatches as any)
+    const score = fit.hasSignal ? fit.fitScore : null
     return {
       id:                    j.id,
       role_title:            j.role_title ?? null,
