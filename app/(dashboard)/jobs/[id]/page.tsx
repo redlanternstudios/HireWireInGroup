@@ -262,7 +262,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     ? job.score_gaps.map((gap: string) => gap.replace(/^Gap:\s*/i, "").trim()).filter(Boolean)
     : []
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
-  const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
+  const stillProcessing =
+    ["analyzing", "queued", "generating"].includes(job.status) &&
+    !analysisPresent
   // One action at a time: while the journey's primary step is still Analyze or
   // Prove Fit, don't surface the header "Re-analyze" as a competing action.
   const inEarlyStageAction =

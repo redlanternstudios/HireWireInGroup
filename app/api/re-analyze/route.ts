@@ -16,6 +16,8 @@ import { requireUser } from "@/lib/supabase/require-user"
  * re-analyze UPDATES an existing job that already has a job_url in the DB.
  */
 export async function POST(request: NextRequest) {
+  let recoveryJobId: string | null = null
+  let recoveryStatus = "analyzed"
   try {
     const body = await request.json()
     const { job_id } = body
@@ -26,6 +28,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    recoveryJobId = job_id
 
     const auth = await requireUser()
     if (!auth.ok) return auth.response
@@ -43,6 +46,7 @@ export async function POST(request: NextRequest) {
     if (jobError || !job) {
       return NextResponse.json({ success: false, error: "Job not found" }, { status: 404 })
     }
+    recoveryStatus = job.status || "analyzed"
 
     if (!job.job_url) {
       return NextResponse.json(
@@ -102,6 +106,16 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Error in re-analyze:", error)
+    if (recoveryJobId) {
+      const recoveryAuth = await requireUser()
+      if (recoveryAuth.ok) {
+        await recoveryAuth.supabase
+          .from("jobs")
+          .update({ status: recoveryStatus })
+          .eq("id", recoveryJobId)
+          .eq("user_id", recoveryAuth.userId)
+      }
+    }
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Re-analysis failed" },
       { status: 500 }
