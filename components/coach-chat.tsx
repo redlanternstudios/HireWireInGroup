@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 import { cn } from "@/lib/utils";
+import { FIT_THRESHOLD } from "@/lib/evidence/fitScore";
 import {
   Send,
   Sparkles,
@@ -337,7 +338,7 @@ export function CoachChat({
                     <span
                       className={cn(
                         "text-sm font-bold",
-                        jobContext.score >= 70
+                        jobContext.score > FIT_THRESHOLD
                           ? "text-[#22c55e]"
                           : jobContext.score >= 50
                             ? "text-amber-400"

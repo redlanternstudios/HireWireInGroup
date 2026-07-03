@@ -68,29 +68,6 @@ export function NextStepModal({ job, open, onOpenChange }: NextStepModalProps) {
     }
   }
 
-  async function generateDocuments() {
-    setError(null)
-    setBusyLabel("Generating documents...")
-    try {
-      const response = await fetch("/api/generate-documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: currentJob.id }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) {
-        setError(data.user_message ?? data.reason ?? data.error ?? "Generation failed.")
-        return
-      }
-      router.push(`/jobs/${currentJob.id}/documents`)
-      router.refresh()
-    } catch {
-      setError("Network error. Please try again.")
-    } finally {
-      setBusyLabel(null)
-    }
-  }
-
   function runComplete(payload: Parameters<typeof completeStep>[1]) {
     setError(null)
     startTransition(async () => {
@@ -108,7 +85,7 @@ export function NextStepModal({ job, open, onOpenChange }: NextStepModalProps) {
     if (currentStep.type === "refresh_analysis") return void refreshAnalysis()
     if (currentStep.type === "analyzing") return router.refresh()
     if (currentStep.type === "add_example") return router.push(currentStep.href ?? `/jobs/${currentJob.id}/evidence-match`)
-    if (currentStep.type === "generate") return void generateDocuments()
+    if (currentStep.type === "generate") return router.push(`/jobs/${currentJob.id}`)
     if (currentStep.type === "review") return router.push(currentStep.href ?? `/jobs/${currentJob.id}/documents`)
     if (currentStep.type === "apply") return runComplete({ step: "apply", method: "manual" })
     if (currentStep.type === "done") return router.push(currentStep.href ?? `/jobs/${currentJob.id}`)

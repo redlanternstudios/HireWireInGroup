@@ -4,7 +4,7 @@ import { describe, it } from "node:test"
 import { evaluateReadiness } from "./evaluator"
 
 describe("evaluateReadiness", () => {
-  it("allows generation when every required claim is verified or intentionally skipped", () => {
+  it("blocks generation when skipped claims keep verified fit at or below seventy percent", () => {
     const result = evaluateReadiness({
       id: "job_1",
       status: "active",
@@ -45,7 +45,8 @@ describe("evaluateReadiness", () => {
 
     assert.equal(result.checklist.evidence, true)
     assert.equal(result.checklist.coach, true)
-    assert.equal(result.canGenerate, true)
-    assert.equal(result.displayState, "ready_to_generate")
+    assert.equal(result.checklist.fit, false)
+    assert.equal(result.canGenerate, false)
+    assert.equal(result.displayState, "evidence_needed")
   })
 })

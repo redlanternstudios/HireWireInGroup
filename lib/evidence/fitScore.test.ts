@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest"
+import assert from "node:assert/strict"
+import { describe, it } from "node:test"
 import { computeFitScore, FIT_THRESHOLD } from "./fitScore"
 
 // priority + optional { proof_decision, status }
@@ -18,9 +19,9 @@ const m = (
 describe("computeFitScore", () => {
   it("returns no signal when there are no matches", () => {
     const r = computeFitScore([])
-    expect(r.hasSignal).toBe(false)
-    expect(r.fitScore).toBeNull()
-    expect(r.meetsThreshold).toBe(false)
+    assert.equal(r.hasSignal, false)
+    assert.equal(r.fitScore, null)
+    assert.equal(r.meetsThreshold, false)
   })
 
   it("counts confirmed and met-auto-mapped as resolved; skipped/needs_judgment do not", () => {
@@ -30,11 +31,11 @@ describe("computeFitScore", () => {
       m("required", { proof_decision: "skipped", status: "met" }),
       m("required", { proof_decision: "needs_judgment", status: "met" }),
     ])
-    expect(r.requiredTotal).toBe(4)
-    expect(r.requiredResolved).toBe(2)
-    expect(r.requiredSkipped).toBe(1)
-    expect(r.fitScore).toBe(50)
-    expect(r.meetsThreshold).toBe(false)
+    assert.equal(r.requiredTotal, 4)
+    assert.equal(r.requiredResolved, 2)
+    assert.equal(r.requiredSkipped, 1)
+    assert.equal(r.fitScore, 50)
+    assert.equal(r.meetsThreshold, false)
   })
 
   it("does NOT count auto-mapped/undecided PARTIAL (weak fuzzy) matches as fit", () => {
@@ -43,8 +44,8 @@ describe("computeFitScore", () => {
       m("required", { proof_decision: undefined, status: "partial" }),
       m("required", { proof_decision: undefined, status: "met" }),
     ])
-    expect(r.requiredResolved).toBe(1) // only the "met" one
-    expect(r.fitScore).toBe(33)
+    assert.equal(r.requiredResolved, 1)
+    assert.equal(r.fitScore, 33)
   })
 
   it("counts undecided MET matches as resolved (no persisted proof_decision)", () => {
@@ -53,20 +54,29 @@ describe("computeFitScore", () => {
       m("required", { status: "met" }),
       m("required", { status: "met" }),
     ])
-    expect(r.fitScore).toBe(100)
-    expect(r.meetsThreshold).toBe(true)
+    assert.equal(r.fitScore, 100)
+    assert.equal(r.meetsThreshold, true)
   })
 
-  it("hits threshold at >= 70% met coverage", () => {
+  it("passes above seventy percent met coverage", () => {
     const r = computeFitScore([
       m("required", { status: "met" }),
       m("required", { status: "met" }),
       m("required", { status: "met" }),
       m("required", { proof_decision: "skipped" }),
     ])
-    expect(r.fitScore).toBe(75)
-    expect(r.meetsThreshold).toBe(true)
-    expect(FIT_THRESHOLD).toBe(70)
+    assert.equal(r.fitScore, 75)
+    assert.equal(r.meetsThreshold, true)
+    assert.equal(FIT_THRESHOLD, 70)
+  })
+
+  it("does not pass at exactly seventy percent", () => {
+    const matches = Array.from({ length: 10 }, (_, index) =>
+      m("required", { status: index < 7 ? "met" : "gap" }),
+    )
+    const r = computeFitScore(matches)
+    assert.equal(r.fitScore, 70)
+    assert.equal(r.meetsThreshold, false)
   })
 
   it("all gaps => 0% fit, gated", () => {
@@ -74,8 +84,8 @@ describe("computeFitScore", () => {
       m("required", { status: "gap" }),
       m("required", { status: "partial" }),
     ])
-    expect(r.fitScore).toBe(0)
-    expect(r.meetsThreshold).toBe(false)
+    assert.equal(r.fitScore, 0)
+    assert.equal(r.meetsThreshold, false)
   })
 
   it("excludes boilerplate requirements (posting headline) from fit", () => {
@@ -92,8 +102,8 @@ describe("computeFitScore", () => {
       m("required", { status: "gap" }),
     ])
     // headline dropped -> only 2 real requirements counted, 1 met
-    expect(r.requiredTotal).toBe(2)
-    expect(r.fitScore).toBe(50)
+    assert.equal(r.requiredTotal, 2)
+    assert.equal(r.fitScore, 50)
   })
 
   it("falls back to all matches when no required tier exists", () => {
@@ -101,7 +111,7 @@ describe("computeFitScore", () => {
       m("preferred", { status: "met" }),
       m("preferred", { status: "gap" }),
     ])
-    expect(r.requiredTotal).toBe(0)
-    expect(r.fitScore).toBe(50)
+    assert.equal(r.requiredTotal, 0)
+    assert.equal(r.fitScore, 50)
   })
 })

@@ -1,45 +1,46 @@
-import { describe, it, expect } from "vitest"
+import assert from "node:assert/strict"
+import { describe, it } from "node:test"
 import { atsSanitize, atsIssues } from "./atsSanitize"
 
 describe("atsSanitize", () => {
   it("normalizes bullet glyphs to '- ' with no indentation", () => {
     const out = atsSanitize("EXPERIENCE\n  • Led team\n▪ Shipped feature\n- Already fine")
-    expect(out).toContain("- Led team")
-    expect(out).toContain("- Shipped feature")
-    expect(out).toContain("- Already fine")
-    expect(atsIssues(out)).toEqual([])
+    assert.match(out, /- Led team/)
+    assert.match(out, /- Shipped feature/)
+    assert.match(out, /- Already fine/)
+    assert.deepEqual(atsIssues(out), [])
   })
 
   it("strips markdown emphasis and headings", () => {
     const out = atsSanitize("## Summary\n**Bold** and __under__ and `code`")
-    expect(out).toContain("Summary")
-    expect(out).toContain("Bold and under and code")
-    expect(out).not.toMatch(/\*\*|__|`|#/)
+    assert.match(out, /Summary/)
+    assert.match(out, /Bold and under and code/)
+    assert.doesNotMatch(out, /\*\*|__|`|#/)
   })
 
   it("removes markdown table scaffolding, keeps cell text", () => {
     const out = atsSanitize("| Skill | Level |\n|-------|-------|\n| SQL | Expert |")
-    expect(out).not.toMatch(/\|/)
-    expect(out).toContain("Skill")
-    expect(out).toContain("SQL")
-    expect(out).toContain("Expert")
+    assert.doesNotMatch(out, /\|/)
+    assert.match(out, /Skill/)
+    assert.match(out, /SQL/)
+    assert.match(out, /Expert/)
   })
 
   it("converts smart punctuation to ascii", () => {
     const out = atsSanitize("It’s a “great” role – really…")
-    expect(out).toContain("It's a \"great\" role - really...")
-    expect(atsIssues(out)).toEqual([])
+    assert.match(out, /It's a "great" role - really\.\.\./)
+    assert.deepEqual(atsIssues(out), [])
   })
 
   it("collapses 3+ blank lines and is idempotent", () => {
     const once = atsSanitize("A\n\n\n\nB")
-    expect(once).toBe("A\n\nB\n")
-    expect(atsSanitize(once)).toBe(once)
+    assert.equal(once, "A\n\nB\n")
+    assert.equal(atsSanitize(once), once)
   })
 
   it("atsIssues flags a raw dirty resume before sanitizing", () => {
     const dirty = "**Name**\n• bullet\n| a | b |"
-    expect(atsIssues(dirty).length).toBeGreaterThan(0)
-    expect(atsIssues(atsSanitize(dirty))).toEqual([])
+    assert.ok(atsIssues(dirty).length > 0)
+    assert.deepEqual(atsIssues(atsSanitize(dirty)), [])
   })
 })

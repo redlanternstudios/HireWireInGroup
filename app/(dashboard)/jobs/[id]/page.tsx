@@ -18,7 +18,7 @@ import {
   ArrowRight,
 } from "lucide-react"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
-import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore"
+import { computeFitScore } from "@/lib/evidence/fitScore"
 import { asCanonicalEvidenceMap } from "@/lib/coach/coach-step-helpers"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
@@ -253,7 +253,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const fitLabelDisplay =
     fitScoreDisplay === null
       ? null
-      : fitScoreDisplay >= FIT_THRESHOLD
+      : fit.meetsThreshold
         ? "HIGH"
         : fitScoreDisplay >= 50
           ? "MEDIUM"

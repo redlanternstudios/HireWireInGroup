@@ -14,7 +14,7 @@ import { isBoilerplateRequirement } from "./requirement-quality"
  *   "Resolved" = proof_decision is auto_mapped or confirmed (real evidence).
  *   Skipped and unresolved (needs_judgment / gap) do NOT count as fit.
  *
- * Gate: green "all-go" AND resume generation require fit >= FIT_THRESHOLD.
+ * Gate: green approval and resume generation require fit above FIT_THRESHOLD.
  */
 
 export const FIT_THRESHOLD = 70
@@ -30,7 +30,7 @@ export type FitScoreResult = {
   requiredResolved: number
   requiredSkipped: number
   requiredGaps: number
-  /** true only when fitScore !== null && fitScore >= FIT_THRESHOLD. */
+  /** true only when fitScore is strictly above FIT_THRESHOLD. */
   meetsThreshold: boolean
 }
 
@@ -69,7 +69,7 @@ export function computeFitScore(
 
   const hasSignal = denom > 0
   const fitScore = hasSignal ? Math.round((resolved / denom) * 100) : null
-  const meetsThreshold = fitScore !== null && fitScore >= FIT_THRESHOLD
+  const meetsThreshold = fitScore !== null && fitScore > FIT_THRESHOLD
 
   return {
     hasSignal,

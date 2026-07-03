@@ -3,6 +3,7 @@ export type ReadinessChecklistState = {
   coverLetter: boolean;
   evidence: boolean;
   coach: boolean;
+  fit: boolean;
   quality: boolean;
   voiceIntegrity?: boolean;
 };
@@ -121,6 +122,7 @@ import {
 
 
 import type { CanonicalJobEvidenceMap } from "@/lib/evidence/types";
+import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore";
 
 function hasRequiredEvidenceCoverage(job: ReadinessJob): boolean {
   const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
@@ -159,11 +161,14 @@ export function evaluateReadiness(
   const voiceIntegrity = isVoiceIntegrityPassed(job.voice_drift_result ?? null);
   const coachStep = getCoachStepState(job);
   const evidenceReady = hasRequiredEvidenceCoverage(job);
+  const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
+  const fit = computeFitScore(evidenceMap?.requirement_matches);
   const checklist = {
     resume: !!job.generated_resume,
     coverLetter: !!job.generated_cover_letter,
     evidence: evidenceReady,
     coach: coachStep.complete || evidenceReady,
+    fit: fit.meetsThreshold,
     quality: job.quality_passed === true,
     voiceIntegrity,
   };
@@ -173,7 +178,7 @@ export function evaluateReadiness(
   const hasMaterials = checklist.resume && checklist.coverLetter;
   const isReady = Object.values(checklist).every(Boolean);
   const canApply = isReady && !isOutcome;
-  const canGenerate = checklist.evidence && checklist.coach && !hasMaterials && !isOutcome;
+  const canGenerate = checklist.evidence && checklist.coach && checklist.fit && !hasMaterials && !isOutcome;
   const stage = getReadinessStage(checklist, outcome);
   const hasAnalysis = hasJobAnalysis(job);
   const displayState = getReadinessDisplayState(job, checklist, outcome, hasAnalysis);
@@ -184,6 +189,7 @@ export function evaluateReadiness(
   if (!checklist.coverLetter) blockedReasons.push("Cover letter not generated");
   if (!checklist.evidence) blockedReasons.push(...getEvidenceBlockedReasons(job));
   if (!checklist.coach) blockedReasons.push("Coach step required before generation");
+  if (!checklist.fit) blockedReasons.push(`Verified fit must be above ${FIT_THRESHOLD}%`);
   if (!checklist.quality) blockedReasons.push("Quality check failed");
   if (!checklist.voiceIntegrity) {
     const reason = getVoiceBlockedReason(job.voice_drift_result ?? null);
@@ -223,6 +229,7 @@ function getReadinessStage(
   if (Object.values(checklist).every(Boolean)) return "ready";
   if (!checklist.evidence) return "evidence_blocked";
   if (!checklist.coach) return "coach_blocked";
+  if (!checklist.fit) return "evidence_blocked";
   if (!checklist.resume || !checklist.coverLetter) return "materials_missing";
   return "quality_review";
 }
@@ -256,6 +263,7 @@ function getReadinessDisplayState(
   if (!hasAnalysis) return "analyze_needed";
   if (!checklist.evidence) return "evidence_needed";
   if (!checklist.coach) return "coach_needed";
+  if (!checklist.fit) return "evidence_needed";
   if (!checklist.resume || !checklist.coverLetter) return "ready_to_generate";
   if (!checklist.quality || !checklist.voiceIntegrity) return "package_review";
   return "ready_to_apply";
@@ -295,10 +303,18 @@ function getNextAction(
     };
   }
 
+  if (!checklist.fit) {
+    return {
+      label: "Improve fit",
+      href: job.id ? `/jobs/${job.id}/evidence-match` : "/jobs",
+      description: `Confirm more real evidence until verified fit is above ${FIT_THRESHOLD}%.`,
+    };
+  }
+
   if (!checklist.resume || !checklist.coverLetter) {
     return {
       label: "Generate materials",
-      href: job.id ? `/jobs/${job.id}/documents` : "/jobs",
+      href: jobHref,
       description: "Create the evidence-grounded resume and cover letter.",
     };
   }

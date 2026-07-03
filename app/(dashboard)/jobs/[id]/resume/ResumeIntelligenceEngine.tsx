@@ -2,7 +2,6 @@
 
 import React, { useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,12 +20,10 @@ import {
   BarChart2,
   MessageSquare,
   ExternalLink,
-  RefreshCw,
   Copy,
   Check,
   Info,
   ArrowRight,
-  Sparkles,
   Activity,
 } from "lucide-react"
 
@@ -344,170 +341,6 @@ function ResumePreview({ text }: { text: string }) {
   )
 }
 
-// ─── Generate trigger ─────────────────────────────────────────────────────────
-
-type BlockedRequirement = {
-  requirement_id: string
-  requirement_text: string
-  status: string
-}
-
-function requirementAnchorId(requirementId: string) {
-  const safeId = requirementId
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-
-  return `req-${safeId || "unknown"}`
-}
-
-function GenerateTrigger({ jobId, hasDocuments }: { jobId: string; hasDocuments: boolean }) {
-  const [loading, setLoading] = useState(false)
-  const [done, setDone] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [blockedRequirements, setBlockedRequirements] = useState<BlockedRequirement[]>([])
-  const [nextActionHref, setNextActionHref] = useState<string | null>(null)
-  const router = useRouter()
-
-  async function handleGenerate() {
-    setLoading(true)
-    setError(null)
-    setBlockedRequirements([])
-    setNextActionHref(null)
-    try {
-      const res = await fetch("/api/generate-documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobId }),
-      })
-      const data = await res.json().catch(() => ({}))
-
-      if (!res.ok || !data.success) {
-        const message =
-          data.reason ??
-          data.detail ??
-          data.user_message ??
-          data.error ??
-          data.message ??
-          "Generation failed"
-
-        if (data.error === "evidence_required") {
-          setError(
-            data.user_message ??
-              "No evidence found in your library. Upload a resume or add evidence manually before generating."
-          )
-        } else if (data.error === "matching_incomplete") {
-          setError(data.user_message ?? "Run Prove Fit before generating documents.")
-        } else if (data.error === "coach_step_required") {
-          setError(
-            data.user_message ??
-              "Answer or skip the Match Interview prompts before generating documents."
-          )
-        } else if (data.error === "prove_fit_required") {
-          setError(data.user_message ?? "Run Prove Fit before generating documents.")
-          if (data.next_action?.href && typeof data.next_action.href === "string") {
-            setNextActionHref(data.next_action.href)
-          }
-        } else if (data.error === "capability_packets_required") {
-          setError(data.user_message ?? "Resolve missing requirement proof before generating.")
-          if (Array.isArray(data.blocked_requirements)) {
-            setBlockedRequirements(
-              data.blocked_requirements
-                .filter((item: unknown) => item && typeof item === "object")
-                .map((item: Record<string, unknown>) => ({
-                  requirement_id: String(item.requirement_id ?? ""),
-                  requirement_text: String(item.requirement_text ?? ""),
-                  status: String(item.status ?? "unknown"),
-                }))
-                .filter((item: BlockedRequirement) => item.requirement_id.length > 0),
-            )
-          }
-          if (data.next_action?.href && typeof data.next_action.href === "string") {
-            setNextActionHref(data.next_action.href)
-          }
-        } else if (data.error === "generation_limit_reached") {
-          setError(
-            data.user_message ??
-              "You've reached your monthly limit of 5 document generations. Upgrade to Pro for unlimited generations."
-          )
-        } else {
-          setError(message)
-        }
-        return
-      }
-
-      setDone(true)
-      router.refresh()
-    } catch {
-      setError("Network error — try again")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (done) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-emerald-700">
-        <CheckCircle2 className="h-4 w-4" />
-        Generated — refreshing…
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      <Button
-        onClick={handleGenerate}
-        disabled={loading}
-        className="hw-btn-primary gap-2"
-        size="sm"
-      >
-        {loading ? (
-          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Sparkles className="h-3.5 w-3.5" />
-        )}
-        {loading
-          ? "Generating…"
-          : hasDocuments
-          ? "Regenerate Resume"
-          : "Generate Resume"}
-      </Button>
-      {error && (
-        <p className="text-xs text-rose-600 flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3" />
-          {error}
-        </p>
-      )}
-      {blockedRequirements.length > 0 && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-left">
-          <p className="text-xs font-semibold text-amber-800">Claims needing judgment</p>
-          <ul className="mt-1 space-y-1">
-            {blockedRequirements.slice(0, 5).map((item) => (
-              <li key={item.requirement_id}>
-                <a
-                  className="text-xs text-amber-800 underline hover:text-amber-900"
-                  href={`/jobs/${jobId}/evidence-match?req=${encodeURIComponent(item.requirement_id)}#${requirementAnchorId(item.requirement_id)}`}
-                >
-                  {item.requirement_text || item.requirement_id}
-                </a>
-              </li>
-            ))}
-          </ul>
-          {nextActionHref ? (
-            <a
-              href={nextActionHref}
-              className="mt-2 inline-block text-xs font-medium text-amber-900 underline"
-            >
-              Prove Fit
-            </a>
-          ) : null}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ResumeIntelligenceEngine({ jobId, job, analysis }: Props) {
@@ -568,7 +401,11 @@ export function ResumeIntelligenceEngine({ jobId, job, analysis }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <GenerateTrigger jobId={jobId} hasDocuments={hasDocuments} />
+          <Link href={`/jobs/${jobId}`}>
+            <Button size="sm" className="hw-btn-primary">
+              Return to job overview
+            </Button>
+          </Link>
           {hasDocuments && (
             <Link href={`/jobs/${jobId}/documents`}>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs">
@@ -590,7 +427,11 @@ export function ResumeIntelligenceEngine({ jobId, job, analysis }: Props) {
               Generate a resume first. Signal profiling, archetype classification, and recruiter scan run automatically during generation.
             </p>
           </div>
-          <GenerateTrigger jobId={jobId} hasDocuments={false} />
+          <Link href={`/jobs/${jobId}`}>
+            <Button size="sm" className="hw-btn-primary">
+              Return to job overview
+            </Button>
+          </Link>
         </div>
       )}
 

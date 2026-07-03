@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
+import { computeFitScore } from "@/lib/evidence/fitScore";
+import { asCanonicalEvidenceMap } from "@/lib/coach/coach-step-helpers";
 import { CoachChat } from "@/components/coach-chat";
 import {
   ArrowRight,
@@ -132,6 +134,12 @@ async function getCoachContext(focusedJobId?: string | null) {
       (focusedJobId
         ? jobs.find((job) => job.id === focusedJobId)
         : null) ?? topJob;
+    const focusedEvidenceMap = focusedJob
+      ? asCanonicalEvidenceMap(focusedJob.evidence_map)
+      : null;
+    const focusedFitScore = computeFitScore(
+      focusedEvidenceMap?.requirement_matches,
+    ).fitScore;
 
     const urgentReady =
       recentEvents.find(
@@ -150,6 +158,7 @@ async function getCoachContext(focusedJobId?: string | null) {
       urgentReady,
       topJob,
       focusedJob,
+      focusedFitScore,
       hasNoEvidence: evidenceCount === 0,
       hasNoPipeline: activeJobs === 0,
     };
@@ -217,6 +226,7 @@ export default async function CoachPage({
   const focusedJobId = Array.isArray(jobParam) ? jobParam[0] : jobParam;
   const ctx = await getCoachContext(focusedJobId ?? null);
   const focusedJob = ctx?.focusedJob ?? null;
+  const focusedFitScore = ctx?.focusedFitScore ?? null;
 
   const evidenceStatus =
     !ctx || ctx.evidenceCount === 0
@@ -291,7 +301,7 @@ export default async function CoachPage({
                     jobId: focusedJob.id,
                     title: focusedJob.role_title ?? "Untitled role",
                     company: focusedJob.company_name ?? "",
-                    score: focusedJob.score ?? null,
+                    score: focusedFitScore,
                     status: focusedJob.status ?? undefined,
                   }
                 : undefined

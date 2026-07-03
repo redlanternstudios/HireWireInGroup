@@ -1705,18 +1705,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fit gate (control layer) — coverage-based fit must clear FIT_THRESHOLD
-    // unless the caller explicitly overrides. Single source of truth: computeFitScore.
+    // Fit gate: the canonical evidence score must be above FIT_THRESHOLD.
+    // There is intentionally no override because a low fit package must never
+    // receive the same generation or approval path as a proven fit.
     const fitGate = computeFitScore(canonicalRequirements as any);
-    const fitOverride = body?.override === true;
-    if (fitGate.hasSignal && !fitGate.meetsThreshold && !fitOverride) {
+    if (!fitGate.hasSignal || !fitGate.meetsThreshold) {
       return NextResponse.json(
         {
           success: false,
           error: "fit_below_threshold",
           fit_score: fitGate.fitScore,
           threshold: FIT_THRESHOLD,
-          user_message: `Fit is ${fitGate.fitScore}% — below the ${FIT_THRESHOLD}% bar. Prove more required signals, or resubmit with override to generate anyway.`,
+          user_message: `Fit is ${fitGate.fitScore ?? 0}%. Resume generation unlocks only when verified fit is above ${FIT_THRESHOLD}%.`,
           next_action: {
             label: "Prove Fit",
             href: `/jobs/${job_id}/evidence-match`,
@@ -2796,14 +2796,14 @@ If no issues found, return empty arrays and overall_passed: true.`,
       generated_resume: formattedResume,
       generated_cover_letter: formattedCoverLetter,
       fit:
-        generatedEvidenceMap.fit_score >= 70
+        fitGate.meetsThreshold
           ? "HIGH"
-          : generatedEvidenceMap.fit_score >= 40
+          : (fitGate.fitScore ?? 0) >= 40
             ? "MEDIUM"
             : "LOW",
-      score: generatedEvidenceMap.fit_score,
+      score: fitGate.fitScore,
       score_reasoning: {
-        rationale: generatedEvidenceMap.fit_rationale,
+        rationale: `Verified evidence covers ${fitGate.requiredResolved} of ${fitGate.requiredTotal} required role signals.`,
         gaps: generatedEvidenceMap.gaps,
         strategy,
         strategy_reasoning: strategyReasoning,

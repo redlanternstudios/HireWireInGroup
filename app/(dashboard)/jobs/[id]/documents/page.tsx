@@ -17,7 +17,6 @@ import {
 } from "@/lib/resume-formats";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { getCoachStepState } from "@/lib/coach-step";
-import { GenerateButton } from "../GenerateButton";
 
 export const dynamic = "force-dynamic";
 
@@ -92,18 +91,11 @@ export default async function DocumentsPage({
               {job.generation_error}
             </p>
           )}
-          <div className="w-full max-w-sm">
-            <GenerateButton
-              jobId={id}
-              disabled={!readiness.canGenerate}
-              disabledReason={readiness.nextAction?.description}
-            />
-          </div>
           <Link
             href={`/jobs/${id}`}
-            className="text-xs text-primary hover:underline"
+            className="inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
           >
-            Back to job
+            Return to job overview
           </Link>
         </div>
       </div>

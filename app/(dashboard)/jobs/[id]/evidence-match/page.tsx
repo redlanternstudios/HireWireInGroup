@@ -235,7 +235,7 @@ export default async function EvidenceMatchPage({
                     <div className="min-w-0">
                       <p className="hw-section-label mb-1">Fit proved — all go ({matchScore}%).</p>
                       <p className="text-sm text-muted-foreground">
-                        Fit is at or above the {FIT_THRESHOLD}% bar. HireWire will generate from confirmed and auto-matched claims.
+                        Fit is above the {FIT_THRESHOLD}% bar. HireWire will generate from confirmed and auto-matched claims.
                       </p>
                     </div>
                     <Link href={`/jobs/${id}`} className="shrink-0">
