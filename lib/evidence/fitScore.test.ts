@@ -11,6 +11,7 @@ const m = (
     proof_decision: opts.proof_decision,
     status: opts.status ?? "met",
     matched_evidence_ids: ["e1"],
+    requirement_text: "Lead cross-functional product delivery",
     requirement_id: Math.random().toString(),
   } as any)
 
@@ -75,6 +76,24 @@ describe("computeFitScore", () => {
     ])
     expect(r.fitScore).toBe(0)
     expect(r.meetsThreshold).toBe(false)
+  })
+
+  it("excludes boilerplate requirements (posting headline) from fit", () => {
+    const headline = {
+      priority: "required",
+      status: "met",
+      matched_evidence_ids: ["e1"],
+      requirement_text: "E2E Labs 1779356362335 is hiring a Lead Product Manager",
+      requirement_id: "bp",
+    } as any
+    const r = computeFitScore([
+      headline,
+      m("required", { status: "met" }),
+      m("required", { status: "gap" }),
+    ])
+    // headline dropped -> only 2 real requirements counted, 1 met
+    expect(r.requiredTotal).toBe(2)
+    expect(r.fitScore).toBe(50)
   })
 
   it("falls back to all matches when no required tier exists", () => {

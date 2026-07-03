@@ -1,4 +1,5 @@
 import type { RequirementEvidenceMatch } from "./types"
+import { isBoilerplateRequirement } from "./requirement-quality"
 
 /**
  * Canonical Fit Score — SINGLE SOURCE OF TRUTH.
@@ -50,7 +51,9 @@ function isResolved(match: RequirementEvidenceMatch): boolean {
 export function computeFitScore(
   requirementMatches: RequirementEvidenceMatch[] | null | undefined,
 ): FitScoreResult {
-  const matches = Array.isArray(requirementMatches) ? requirementMatches : []
+  const matches = (Array.isArray(requirementMatches) ? requirementMatches : []).filter(
+    (m) => !isBoilerplateRequirement(m.requirement_text),
+  )
   const required = matches.filter((m) => m.priority === "required")
 
   const requiredTotal = required.length

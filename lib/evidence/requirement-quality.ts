@@ -17,6 +17,38 @@ function normalizeText(value: string) {
     .trim()
 }
 
+// UI/status strings and posting scaffolding that leak into extracted
+// requirements. These are NOT requirements and must never count toward fit.
+const UI_STATUS_LEAKS = new Set([
+  "package review",
+  "analyze needed",
+  "ready to generate",
+  "ready to apply",
+  "back to jobs",
+  "prove fit",
+  "match interview",
+  "in progress",
+])
+
+/**
+ * True only for UNAMBIGUOUS non-requirements: posting headlines ("X is hiring a
+ * Y"), leaked UI status strings, and lines that are empty once numeric-id
+ * pollution is stripped. Deliberately conservative — a real requirement that
+ * merely carries an appended id (e.g. "Own ERP migrations 1779675718093") is
+ * NOT boilerplate; it should be kept (and its id stripped elsewhere).
+ */
+export function isBoilerplateRequirement(value: unknown): boolean {
+  if (typeof value !== "string") return true
+  const text = normalizeText(value)
+  const lower = text.toLowerCase()
+  if (/\bis hiring\b/.test(lower)) return true
+  // Strip standalone long numeric ids, collapse, and re-check what remains.
+  const stripped = lower.replace(/\b\d{5,}\b/g, "").replace(/\s+/g, " ").trim()
+  if (stripped.length < 6) return true
+  if (UI_STATUS_LEAKS.has(stripped)) return true
+  return false
+}
+
 export function isActionableRequirementText(value: unknown): value is string {
   if (typeof value !== "string") return false
 
