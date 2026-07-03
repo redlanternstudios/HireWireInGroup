@@ -12,6 +12,7 @@ import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requiremen
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
+import { isActionableRequirementText } from "@/lib/evidence/requirement-quality"
 
 export const dynamic = "force-dynamic"
 
@@ -85,13 +86,7 @@ export default async function EvidenceMatchPage({
 
   if (error || !job) notFound()
 
-  const [{ data: evidenceItems }, { data: analysis }, { data: proveFitDecisions }] = await Promise.all([
-    supabase
-      .from("evidence_library")
-      .select("id, source_title, source_type, confidence_level, outcomes")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false }),
+  const [{ data: analysis }, { data: proveFitDecisions, error: proveFitDecisionError }] = await Promise.all([
     supabase
       .from("job_analyses")
       .select("matched_skills, known_gaps, qualifications_required, responsibilities")
@@ -105,13 +100,23 @@ export default async function EvidenceMatchPage({
       .eq("user_id", user.id),
   ])
 
+  if (proveFitDecisionError) {
+    console.error("[HireWire] failed to load proof decisions", {
+      job_id: id,
+      user_id: user.id,
+      error: proveFitDecisionError.message,
+    })
+  }
+
   const requirements: string[] = [
     ...(Array.isArray(analysis?.qualifications_required) ? analysis.qualifications_required : []),
     ...(Array.isArray(analysis?.responsibilities) ? analysis.responsibilities : []),
   ].filter(Boolean)
 
   const evidenceMap = asCanonicalEvidenceMap(job.evidence_map)
-  const requirementMatches = evidenceMap?.requirement_matches ?? []
+  const requirementMatches = (evidenceMap?.requirement_matches ?? []).filter((match) =>
+    isActionableRequirementText(match.requirement_text),
+  )
   const mapBuildError =
     job.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
       ? (job.evidence_map as Record<string, unknown>).map_build_error
@@ -131,8 +136,17 @@ export default async function EvidenceMatchPage({
   const readiness = evaluateReadiness(jobWithDecisionAuthority)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const matchScore = typeof job.score === "number" ? job.score : null
-  const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
-  const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
+  const requiredTotal = requirementMatches.filter((match) => match.priority === "required").length
+  const requiredVerified = requirementMatches.filter(
+    (match) =>
+      match.priority === "required" &&
+      (match.proof_decision === "auto_mapped" || match.proof_decision === "confirmed"),
+  ).length
+  const requiredSkipped = requirementMatches.filter(
+    (match) =>
+      match.priority === "required" &&
+      match.proof_decision === "skipped",
+  ).length
   const unresolvedRequirements = listUnresolvedRequirements(jobWithDecisionAuthority)
   const unresolvedRequirementIds = new Set(unresolvedRequirements.map((match) => match.id))
   const normalizedRequirementMatches = requirementMatches.map((match) =>
@@ -174,16 +188,16 @@ export default async function EvidenceMatchPage({
           <span className="hw-stat-label">Role Signals</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-emerald-600">{requiredCovered}</span>
-          <span className="hw-stat-label">Auto-Matched</span>
+          <span className="hw-stat-value text-emerald-600">{requiredVerified}</span>
+          <span className="hw-stat-label">Verified</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-amber-600">{proofGaps.length || gaps.length}</span>
+          <span className="hw-stat-value text-amber-600">{proofGaps.length}</span>
           <span className="hw-stat-label">Need Judgment</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value">{Math.max(requiredTotal - requiredCovered - (proofGaps.length || gaps.length), 0)}</span>
-          <span className="hw-stat-label">Clear</span>
+          <span className="hw-stat-value">{requiredSkipped}</span>
+          <span className="hw-stat-label">Skipped</span>
         </div>
       </div>
 
@@ -207,21 +221,17 @@ export default async function EvidenceMatchPage({
 
           {normalizedRequirementMatches.length > 0 && (
             <div className="space-y-4">
-              <GuidedRequirementCoachFlow
-                jobId={id}
-                jobTitle={job.role_title ?? "this role"}
-                company={job.company_name ?? "this company"}
-                score={job.score}
-                status={job.status}
-                requirementMatches={normalizedRequirementMatches}
-                requestedRequirementId={requestedRequirementId}
-                evidenceItems={(evidenceItems ?? []).map((item) => ({
-                  id: item.id,
-                  source_title: item.source_title,
-                  source_type: item.source_type,
-                }))}
-                generationBlocked={!readiness.canGenerate}
-              />
+              {requiredGaps.length > 0 && (
+                <GuidedRequirementCoachFlow
+                  jobId={id}
+                  jobTitle={job.role_title ?? "this role"}
+                  company={job.company_name ?? "this company"}
+                  requirementMatches={normalizedRequirementMatches.filter((match) =>
+                    unresolvedRequirementIds.has(match.requirement_id),
+                  )}
+                  requestedRequirementId={requestedRequirementId}
+                />
+              )}
 
               {requiredGaps.length === 0 && (
                 <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
@@ -325,10 +335,7 @@ export default async function EvidenceMatchPage({
                   jobId={id}
                   jobTitle={job.role_title ?? "this role"}
                   company={job.company_name ?? "this company"}
-                  score={job.score}
-                  status={job.status}
                   gaps={gaps}
-                  showGenerationUnlock={!readiness.canGenerate}
                 />
               </div>
             </div>

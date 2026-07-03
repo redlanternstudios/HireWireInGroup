@@ -1,7 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useReducer, useState } from "react"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { MatchInterviewHeader } from "./MatchInterviewHeader"
 import { CoachChatThread } from "./CoachChatThread"
 import { ChatComposer } from "./ChatComposer"
@@ -215,7 +220,23 @@ async function confirmDraft(draftId: string) {
   return data
 }
 
-async function saveDirectProof(jobId: string, requirement: InterviewRequirement, claimText: string) {
+async function rejectDraft(draftId: string) {
+  const response = await fetch(`/api/coach/evidence-drafts/${draftId}/reject`, {
+    method: "POST",
+  })
+  const data = await readJson(response)
+  if (!response.ok) {
+    throw new Error(asErrorMessage(data, "Could not reject that proof."))
+  }
+  return data
+}
+
+async function saveDirectProof(
+  jobId: string,
+  requirement: InterviewRequirement,
+  claimText: string,
+  sessionId: string | null,
+) {
   const response = await fetch(`/api/jobs/${jobId}/coach-step`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -225,6 +246,7 @@ async function saveDirectProof(jobId: string, requirement: InterviewRequirement,
       gap: requirement.requirement_text,
       answer: claimText,
       force_save: true,
+      sessionId,
     }),
   })
   const data = await readJson(response)
@@ -234,7 +256,11 @@ async function saveDirectProof(jobId: string, requirement: InterviewRequirement,
   return data
 }
 
-async function skipRequirement(jobId: string, requirement: InterviewRequirement) {
+async function skipRequirement(
+  jobId: string,
+  requirement: InterviewRequirement,
+  sessionId: string | null,
+) {
   const response = await fetch(`/api/jobs/${jobId}/coach-step`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -242,6 +268,7 @@ async function skipRequirement(jobId: string, requirement: InterviewRequirement)
       action: "skip",
       requirementId: requirement.requirement_id,
       gap: requirement.requirement_text,
+      sessionId,
     }),
   })
   const data = await readJson(response)
@@ -264,8 +291,6 @@ export interface MatchInterviewModalProps {
   requirement: InterviewRequirement
   currentIndex: number
   totalCount: number
-  onPrev?: () => void
-  onNext?: () => void
   onStepSaved?: (mode: "answer" | "skip") => void
 }
 
@@ -278,8 +303,6 @@ export function MatchInterviewModal({
   requirement,
   currentIndex,
   totalCount,
-  onPrev,
-  onNext,
   onStepSaved,
 }: MatchInterviewModalProps) {
   const requirementType = inferRequirementType(requirement.requirement_text)
@@ -417,7 +440,6 @@ export function MatchInterviewModal({
           await confirmDraft(evidence.id)
           dispatch({ type: "SET_STATUS", status: "completed" })
           onStepSaved?.("answer")
-          onNext?.()
         } catch (error) {
           dispatch({
             type: "ADD_MESSAGE",
@@ -433,12 +455,55 @@ export function MatchInterviewModal({
           dispatch({ type: "SET_SAVING", value: false })
         }
       } else if (action === "add_detail") {
-        void handleSend(`I'd like to add more detail to "${evidence.title}".`)
+        dispatch({ type: "SET_SAVING", value: true })
+        try {
+          await rejectDraft(evidence.id)
+          dispatch({ type: "SET_SAVING", value: false })
+          await handleSend(`I'd like to replace that draft with a more detailed example for "${evidence.title}".`)
+        } catch (error) {
+          dispatch({ type: "SET_SAVING", value: false })
+          dispatch({
+            type: "ADD_MESSAGE",
+            message: {
+              id: makeId(),
+              role: "coach",
+              type: "text",
+              content: error instanceof Error ? error.message : "Could not reopen that proof.",
+              timestamp: new Date(),
+            },
+          })
+        }
       } else {
-        void handleSend(`"${evidence.title}" is not relevant to this requirement.`)
+        dispatch({ type: "SET_SAVING", value: true })
+        try {
+          await rejectDraft(evidence.id)
+          dispatch({
+            type: "ADD_MESSAGE",
+            message: {
+              id: makeId(),
+              role: "coach",
+              type: "text",
+              content: "That draft was removed and will not be used in your resume. Share another example or skip this requirement.",
+              timestamp: new Date(),
+            },
+          })
+        } catch (error) {
+          dispatch({
+            type: "ADD_MESSAGE",
+            message: {
+              id: makeId(),
+              role: "coach",
+              type: "text",
+              content: error instanceof Error ? error.message : "Could not remove that proof.",
+              timestamp: new Date(),
+            },
+          })
+        } finally {
+          dispatch({ type: "SET_SAVING", value: false })
+        }
       }
     },
-    [handleSend, onNext, onStepSaved],
+    [handleSend, onStepSaved],
   )
 
   const handleConfirmProof = useCallback(
@@ -455,12 +520,11 @@ export function MatchInterviewModal({
         if (draftId) {
           await confirmDraft(draftId)
         } else {
-          await saveDirectProof(jobId, requirement, claimText)
+          await saveDirectProof(jobId, requirement, claimText, state.sessionId)
         }
         dispatch({ type: "SET_SAVING", value: false })
         dispatch({ type: "SET_STATUS", status: "completed" })
         onStepSaved?.("answer")
-        onNext?.()
       } catch (error) {
         dispatch({ type: "SET_SAVING", value: false })
         dispatch({
@@ -475,16 +539,15 @@ export function MatchInterviewModal({
         })
       }
     },
-    [jobId, onNext, onStepSaved, requirement, state.messages],
+    [jobId, onStepSaved, requirement, state.messages, state.sessionId],
   )
 
   const handleSkip = useCallback(async () => {
     dispatch({ type: "SET_SAVING", value: true })
     try {
-      await skipRequirement(jobId, requirement)
+      await skipRequirement(jobId, requirement, state.sessionId)
       dispatch({ type: "SET_STATUS", status: "skipped" })
       onStepSaved?.("skip")
-      onNext?.()
     } catch (error) {
       dispatch({
         type: "ADD_MESSAGE",
@@ -499,7 +562,18 @@ export function MatchInterviewModal({
     } finally {
       dispatch({ type: "SET_SAVING", value: false })
     }
-  }, [jobId, onNext, onStepSaved, requirement])
+  }, [jobId, onStepSaved, requirement, state.sessionId])
+
+  const handleQuickReply = useCallback(
+    (reply: string) => {
+      if (reply === "I can't meet this requirement") {
+        void handleSkip()
+        return
+      }
+      void handleSend(reply)
+    },
+    [handleSend, handleSkip],
+  )
 
   const handleYearsUpdate = useCallback((messageId: string, entries: YearsEntry[]) => {
     dispatch({ type: "UPDATE_YEARS", messageId, entries })
@@ -510,11 +584,10 @@ export function MatchInterviewModal({
     setRetryNonce((value) => value + 1)
   }, [])
 
-  const hasNext = !!onNext && currentIndex < totalCount - 1
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        showCloseButton={false}
         className="flex flex-col gap-0 overflow-hidden border-border/60 p-0 shadow-2xl"
         style={{
           width: "min(780px, 94vw)",
@@ -525,14 +598,19 @@ export function MatchInterviewModal({
         }}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
+        <DialogTitle className="sr-only">
+          Match Interview for {requirement.requirement_text}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          Work with the HireWire coach to confirm evidence or skip this requirement.
+        </DialogDescription>
+
         {/* Header */}
         <MatchInterviewHeader
           requirement={requirement}
           requirementType={requirementType}
           currentIndex={currentIndex}
           totalCount={totalCount}
-          onPrev={onPrev}
-          onNext={onNext}
           onClose={() => onOpenChange(false)}
         />
 
@@ -547,7 +625,7 @@ export function MatchInterviewModal({
               messages={state.messages}
               isLoading={state.isLoading}
               isSaving={state.isSaving}
-              onQuickReply={handleSend}
+              onQuickReply={handleQuickReply}
               onEvidenceAction={handleEvidenceAction}
               onConfirmProof={handleConfirmProof}
               onSkipClaim={handleSkip}
@@ -571,8 +649,6 @@ export function MatchInterviewModal({
         {state.sessionStatus === "ready" && (
           <InterviewActionBar
             onSkip={handleSkip}
-            onNext={() => onNext?.()}
-            hasNext={hasNext}
             disabled={state.isLoading || state.isSaving}
           />
         )}

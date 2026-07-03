@@ -16,6 +16,10 @@ import { generateStructuredText } from "@/lib/ai/gateway";
 import { z } from "zod";
 import { runJobFlow } from "@/lib/orchestrator/runJobFlow";
 import { withCoachStepMeta } from "@/lib/coach-step";
+import {
+  sanitizeKeywordList,
+  sanitizeRequirementList,
+} from "@/lib/evidence/requirement-quality";
 import { buildEvidenceMapForJob, initializeEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import {
   inferRoleFromJobTitle,
@@ -513,6 +517,18 @@ Extract the job details following the schema.`,
     company: analysis.company || "Unknown Company",
     description_summary:
       analysis.description_summary || "No description available",
+    responsibilities: sanitizeRequirementList(analysis.responsibilities, 12),
+    qualifications_required: sanitizeRequirementList(
+      analysis.qualifications_required,
+      8,
+    ),
+    qualifications_preferred: sanitizeRequirementList(
+      analysis.qualifications_preferred,
+      5,
+    ),
+    keywords: sanitizeKeywordList(analysis.keywords, 15),
+    ats_phrases: sanitizeKeywordList(analysis.ats_phrases, 12),
+    tech_stack: sanitizeKeywordList(analysis.tech_stack, 20),
   };
 
   const normalizedSeniority = normalizeSeniority(

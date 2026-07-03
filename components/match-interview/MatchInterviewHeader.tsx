@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react"
+import { ChevronDown, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { REQUIREMENT_TYPE_LABELS, type InterviewRequirement, type RequirementType } from "./types"
@@ -11,21 +11,15 @@ export function MatchInterviewHeader({
   requirementType,
   currentIndex,
   totalCount,
-  onPrev,
-  onNext,
   onClose,
 }: {
   requirement: InterviewRequirement
   requirementType: RequirementType
   currentIndex: number
   totalCount: number
-  onPrev?: () => void
-  onNext?: () => void
   onClose: () => void
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const hasPrev = !!onPrev && currentIndex > 0
-  const hasNext = !!onNext && currentIndex < totalCount - 1
 
   const shortTitle =
     requirement.requirement_text.length > 80
@@ -51,31 +45,6 @@ export function MatchInterviewHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          {(hasPrev || hasNext) && (
-            <>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
-                disabled={!hasPrev}
-                onClick={onPrev}
-                aria-label="Previous requirement"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
-                disabled={!hasNext}
-                onClick={onNext}
-                aria-label="Next requirement"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <div className="mx-1 h-4 w-px bg-border" />
-            </>
-          )}
           <Button
             size="icon"
             variant="ghost"

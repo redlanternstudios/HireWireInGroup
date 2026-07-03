@@ -969,7 +969,7 @@ export async function executeMarkSessionComplete(
     const { data: session, error } = await supabase
       .from("coach_sessions")
       .update({
-        status: "completed",
+        status: "closed",
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.session_id || context.sessionId)
@@ -995,7 +995,7 @@ export async function executeMarkSessionComplete(
 
     return {
       success: true,
-      data: { session_id: session.id, status: "completed" },
+      data: { session_id: session.id, status: "closed" },
       metadata: { tool_call_id: context.toolCallId },
     }
   } catch (err) {

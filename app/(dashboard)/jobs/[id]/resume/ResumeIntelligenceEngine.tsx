@@ -156,7 +156,51 @@ interface Props {
   analysis: AnalysisData | null
 }
 
+interface ResumeProvenanceEntry {
+  bulletText: string
+  evidenceTitle: string
+  matchedRequirement: string | null
+  whyIncluded: string | null
+  claimConfidence: "high" | "medium" | "low" | null
+  proofSnippets: string[]
+  riskFlags: string[]
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : []
+}
+
+function readResumeProvenance(value: JobData["resume_provenance"]): ResumeProvenanceEntry[] {
+  return (value ?? []).flatMap((entry) => {
+    const bulletText = stringValue(entry.bullet_text)
+    if (!bulletText) return []
+
+    const confidence = stringValue(entry.claim_confidence)
+    return [{
+      bulletText,
+      evidenceTitle:
+        stringValue(entry.evidence_title) ??
+        stringValue(entry.source_evidence_title) ??
+        "Career evidence",
+      matchedRequirement: stringValue(entry.matched_requirement_text),
+      whyIncluded: stringValue(entry.why_included) ?? stringValue(entry.match_reason),
+      claimConfidence:
+        confidence === "high" || confidence === "medium" || confidence === "low"
+          ? confidence
+          : null,
+      proofSnippets: stringArray(entry.proof_snippets),
+      riskFlags: stringArray(entry.risk_flags),
+    }]
+  })
+}
 
 function weightBar(weight: number) {
   const pct = (weight / 10) * 100
@@ -474,6 +518,7 @@ export function ResumeIntelligenceEngine({ jobId, job, analysis }: Props) {
   const hasDocuments = !!(job.generated_resume || job.edited_resume)
   const activeResume = job.edited_resume || job.generated_resume
   const activeStatus = job.status
+  const resumeProvenance = readResumeProvenance(job.resume_provenance)
 
   const fitColor =
     job.fit === "HIGH"
@@ -794,6 +839,75 @@ export function ResumeIntelligenceEngine({ jobId, job, analysis }: Props) {
                 </ul>
               </div>
             )}
+          </div>
+        </Section>
+      )}
+
+      {resumeProvenance.length > 0 && (
+        <Section
+          icon={CheckCircle2}
+          label="Why This Resume Fits"
+          badge={
+            <span className="ml-1 text-[10px] text-muted-foreground">
+              {resumeProvenance.length} supported claim{resumeProvenance.length === 1 ? "" : "s"}
+            </span>
+          }
+        >
+          <div className="space-y-3 pt-4">
+            <p className="text-xs leading-5 text-muted-foreground">
+              Every resume claim below is connected to your evidence and the job requirement it supports.
+            </p>
+            {resumeProvenance.map((entry, index) => (
+              <article key={`${entry.bulletText}-${index}`} className="rounded-xl border border-border bg-background p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium leading-6 text-foreground">
+                    {entry.bulletText}
+                  </p>
+                  {entry.claimConfidence ? (
+                    <Badge variant="outline" className="shrink-0 text-[10px] capitalize">
+                      {entry.claimConfidence} confidence
+                    </Badge>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-muted/40 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Your evidence
+                    </p>
+                    <p className="mt-1 text-xs font-medium text-foreground">
+                      {entry.evidenceTitle}
+                    </p>
+                    {entry.proofSnippets.length > 0 ? (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {entry.proofSnippets[0]}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-lg bg-primary/5 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                      Job requirement
+                    </p>
+                    <p className="mt-1 text-xs font-medium text-foreground">
+                      {entry.matchedRequirement ?? "Supports the role strategy"}
+                    </p>
+                    {entry.whyIncluded ? (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {entry.whyIncluded}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {entry.riskFlags.length > 0 ? (
+                  <div className="mt-3 flex items-start gap-2 text-xs text-amber-700">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{entry.riskFlags.join(", ")}</span>
+                  </div>
+                ) : null}
+              </article>
+            ))}
           </div>
         </Section>
       )}

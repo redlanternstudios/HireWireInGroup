@@ -27,9 +27,11 @@ export async function POST(
     const { supabase, userId } = auth
     const { draftId } = await params
 
-    const { error } = await supabase.from("coach_evidence_drafts")
+    const { data: rejectedDraft, error } = await supabase.from("coach_evidence_drafts")
       .update({ status: "rejected", updated_at: new Date().toISOString() })
       .eq("id", draftId).eq("user_id", userId).eq("status", "pending")
+      .select("id")
+      .maybeSingle()
 
     if (error) {
       logCoachDraftRejectError("reject_draft", error, {
@@ -39,6 +41,13 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: "update_failed", user_message: "Failed to reject draft." },
         { status: 500 }
+      )
+    }
+
+    if (!rejectedDraft) {
+      return NextResponse.json(
+        { success: false, error: "not_found", user_message: "That pending draft was not found." },
+        { status: 404 }
       )
     }
 

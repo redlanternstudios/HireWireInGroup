@@ -1,26 +1,22 @@
 "use client"
 
-import { ChevronRight, SkipForward, Sparkles } from "lucide-react"
+import { SkipForward, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Bottom strip shown when there is a next requirement to navigate to */
 export function InterviewActionBar({
   onSkip,
-  onNext,
-  hasNext,
   disabled = false,
   className,
 }: {
   onSkip: () => void
-  onNext: () => void
-  hasNext: boolean
   disabled?: boolean
   className?: string
 }) {
   return (
     <div
       className={cn(
-        "shrink-0 flex items-center justify-between border-t border-border/50 bg-background/90 backdrop-blur-sm px-5 py-2.5",
+        "shrink-0 flex items-center justify-between gap-4 border-t border-border/50 bg-background/90 backdrop-blur-sm px-5 py-2.5",
         className,
       )}
     >
@@ -32,14 +28,9 @@ export function InterviewActionBar({
         <SkipForward className="h-3.5 w-3.5" />
         Skip this claim
       </button>
-      <button
-        onClick={onNext}
-        disabled={!hasNext || disabled}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 py-1.5 text-xs font-semibold text-foreground shadow-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
-      >
-        Next requirement
-        <ChevronRight className="h-3.5 w-3.5" />
-      </button>
+      <p className="text-right text-[11px] text-muted-foreground">
+        Confirm proof or skip to continue.
+      </p>
     </div>
   )
 }

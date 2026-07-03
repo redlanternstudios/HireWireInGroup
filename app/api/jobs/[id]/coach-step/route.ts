@@ -8,8 +8,8 @@ import { createClient } from "@/lib/supabase/server"
 import { requireUser } from "@/lib/supabase/require-user"
 
 type CoachStepBody =
-  | { action: "answer"; gap: string; requirementId?: string; answer: string; force_save?: boolean }
-  | { action: "skip"; gap?: string; requirementId?: string }
+  | { action: "answer"; gap: string; requirementId?: string; answer: string; force_save?: boolean; sessionId?: string | null }
+  | { action: "skip"; gap?: string; requirementId?: string; sessionId?: string | null }
   | { action: "complete" }
 
 export async function POST(
@@ -79,7 +79,7 @@ export async function POST(
     }
 
     const output = await routeToolCall({
-      sessionId: `coach-step:${id}:${body.requirementId}`,
+      sessionId: body.sessionId ?? `coach-step:${id}:${body.requirementId}`,
       jobId: id,
       toolName: "skipRequirement",
       args: {
@@ -97,6 +97,14 @@ export async function POST(
         { status: output.result.error?.startsWith("Conflict") ? 409 : 500 },
       )
     }
+
+    await completeAnchoredSession({
+      supabase,
+      userId,
+      jobId: id,
+      requirementId: body.requirementId,
+      sessionId: body.sessionId,
+    })
 
     const snapshot = await loadCoachStepSnapshot(supabase, userId, id)
     return NextResponse.json({
@@ -146,7 +154,7 @@ export async function POST(
   }
 
   const output = await routeToolCall({
-    sessionId: `coach-step:${id}:${body.requirementId}`,
+    sessionId: body.sessionId ?? `coach-step:${id}:${body.requirementId}`,
     jobId: id,
     toolName: "confirmProof",
     args: {
@@ -165,6 +173,14 @@ export async function POST(
     )
   }
 
+  await completeAnchoredSession({
+    supabase,
+    userId,
+    jobId: id,
+    requirementId: body.requirementId,
+    sessionId: body.sessionId,
+  })
+
   const snapshot = await loadCoachStepSnapshot(supabase, userId, id)
   const data =
     output.result.data && typeof output.result.data === "object" && !Array.isArray(output.result.data)
@@ -177,6 +193,44 @@ export async function POST(
     evidenceMapVersion: snapshot.evidenceMapVersion,
     coachStep: snapshot.coachStep,
   })
+}
+
+async function completeAnchoredSession({
+  supabase,
+  userId,
+  jobId,
+  requirementId,
+  sessionId,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  userId: string
+  jobId: string
+  requirementId: string
+  sessionId?: string | null
+}) {
+  if (!sessionId) return
+
+  const { error } = await supabase
+    .from("coach_sessions")
+    .update({
+      status: "closed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .eq("job_id", jobId)
+    .eq("gap_requirement_id", requirementId)
+    .eq("status", "active")
+
+  if (error) {
+    console.error("[HireWire] failed to complete coach session", {
+      session_id: sessionId,
+      job_id: jobId,
+      requirement_id: requirementId,
+      user_id: userId,
+      error: error.message,
+    })
+  }
 }
 
 async function loadCoachStepSnapshot(

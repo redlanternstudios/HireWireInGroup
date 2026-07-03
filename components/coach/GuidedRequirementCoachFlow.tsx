@@ -17,42 +17,23 @@ export function GuidedRequirementCoachFlow({
   jobId,
   jobTitle,
   company,
-  score,
-  status,
   requirementMatches,
-  evidenceItems,
   requestedRequirementId,
-  generationBlocked = false,
 }: {
   jobId: string
   jobTitle: string
   company: string
-  score?: number | null
-  status?: string
   requirementMatches: RequirementEvidenceMatch[]
-  evidenceItems: Array<{
-    id: string
-    source_title: string | null
-    source_type: string | null
-  }>
   requestedRequirementId?: string | null
-  generationBlocked?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
   const unresolvedMatches = useMemo(() => {
-    const required = requirementMatches.filter(
+    return requirementMatches.filter(
       (match) => match.priority === "required" && isUnresolved(match.status),
-    )
-    const preferred = requirementMatches.filter(
-      (match) => match.priority === "preferred" && isUnresolved(match.status),
-    )
-    const keyword = requirementMatches.filter(
-      (match) => match.priority === "keyword" && isUnresolved(match.status),
-    )
-    return [...required, ...preferred, ...keyword]
+    ).slice(0, 8)
   }, [requirementMatches])
 
   const initialIndex = useMemo(() => {
@@ -82,8 +63,6 @@ export function GuidedRequirementCoachFlow({
   const active = unresolvedMatches[safeActiveIndex] ?? null
 
   if (!active) return null
-
-  const stepLabel = `${safeActiveIndex + 1} of ${unresolvedMatches.length}`
 
   const setResolveParam = (requirementId: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -153,8 +132,6 @@ export function GuidedRequirementCoachFlow({
         jobId={jobId}
         jobTitle={jobTitle}
         company={company}
-        score={score}
-        status={status}
         gaps={[active.requirement_text]}
         requirement={{
           requirement_id: active.requirement_id,
@@ -166,30 +143,8 @@ export function GuidedRequirementCoachFlow({
           proof_needed: active.proof_needed,
           coach_question: active.evidence_questions?.[0],
         }}
-        evidenceItems={evidenceItems}
-        progressLabel={stepLabel}
-        showGenerationUnlock={generationBlocked}
         totalCount={unresolvedMatches.length}
         currentIndex={safeActiveIndex}
-        onPrev={() => {
-          if (safeActiveIndex > 0) {
-            const prevIndex = safeActiveIndex - 1
-            const prev = unresolvedMatches[prevIndex]
-            setActiveIndex(prevIndex)
-            if (prev) setResolveParam(prev.requirement_id)
-          }
-        }}
-        onNext={() => {
-          const nextIndex = safeActiveIndex + 1
-          if (nextIndex < unresolvedMatches.length) {
-            const next = unresolvedMatches[nextIndex]
-            setActiveIndex(nextIndex)
-            if (next) setResolveParam(next.requirement_id)
-          } else {
-            setResolveParam(null)
-            setFlowOpen(false)
-          }
-        }}
       />
     </div>
   )

@@ -10,6 +10,10 @@ import type {
 import { matchRequirementToEvidence } from "./matchRequirementToEvidence"
 import { normalizeRequirement } from "./normalizeRequirement"
 import { getEvidenceUsageRule } from "@/lib/truthserum"
+import {
+  sanitizeKeywordList,
+  sanitizeRequirementList,
+} from "./requirement-quality"
 
 type BuildEvidenceMapParams = {
   supabase: SupabaseClient
@@ -52,15 +56,15 @@ function buildRequirementInputs(
   analysis: Record<string, unknown> | null,
   job: Record<string, unknown> | null
 ): RequirementInput[] {
-  const required = safeArray(analysis?.qualifications_required).map((text): RequirementInput => ({
+  const required = sanitizeRequirementList(analysis?.qualifications_required, 8).map((text): RequirementInput => ({
     text,
     priority: "required" as RequirementPriority,
   }))
-  const preferred = safeArray(analysis?.qualifications_preferred).map((text): RequirementInput => ({
+  const preferred = sanitizeRequirementList(analysis?.qualifications_preferred, 5).map((text): RequirementInput => ({
     text,
     priority: "preferred" as RequirementPriority,
   }))
-  const keywords = safeArray(analysis?.keywords).map((text): RequirementInput => ({
+  const keywords = sanitizeKeywordList(analysis?.keywords, 15).map((text): RequirementInput => ({
     text,
     priority: "keyword" as RequirementPriority,
   }))
@@ -306,7 +310,12 @@ export async function buildEvidenceMapForJob({
   userId,
   jobId,
 }: BuildEvidenceMapParams): Promise<CanonicalJobEvidenceMap> {
-  const [{ data: analysis }, { data: evidenceCandidates }, { data: existingJob }] = await Promise.all([
+  const [
+    { data: analysis },
+    { data: evidenceCandidates },
+    { data: existingJob },
+    { data: proveFitDecisions },
+  ] = await Promise.all([
     supabase
       .from("job_analyses")
       .select("qualifications_required, qualifications_preferred, responsibilities, keywords, ats_phrases")
@@ -326,6 +335,11 @@ export async function buildEvidenceMapForJob({
       .eq("id", jobId)
       .eq("user_id", userId)
       .maybeSingle(),
+    supabase
+      .from("prove_fit_decisions")
+      .select("requirement_id, decision, skip_reason, claim_text, evidence_id, updated_at")
+      .eq("job_id", jobId)
+      .eq("user_id", userId),
   ])
   const existingMap =
     existingJob?.evidence_map &&
@@ -355,14 +369,41 @@ export async function buildEvidenceMapForJob({
       evidenceCandidates: evidenceCandidates ?? [],
     }), existingById.get(requirement.id ?? ""))
   )
-  const requirementMatchesWithDecisions = requirement_matches.map((match) => ({
-    ...match,
-    proof_decision: match.proof_decision ?? (
-      match.status === "met" && match.matched_evidence_ids.length > 0
-        ? "auto_mapped"
-        : "needs_judgment"
-    ),
-  }))
+  const decisionByRequirementId = new Map(
+    (proveFitDecisions ?? []).map((decision) => [decision.requirement_id, decision]),
+  )
+  const requirementMatchesWithDecisions = requirement_matches.map((match) => {
+    const authority = decisionByRequirementId.get(match.requirement_id)
+
+    if (authority?.decision === "skipped") {
+      return {
+        ...match,
+        proof_decision: "skipped" as const,
+        skip_reason: authority.skip_reason ?? "User chose to skip this claim.",
+        skipped_at: authority.updated_at ?? match.skipped_at,
+        reasoning: "User explicitly skipped this requirement; generated materials must not claim it.",
+        riskFlags: Array.from(new Set([...(match.riskFlags ?? []), "user_skipped"])),
+      }
+    }
+
+    if (authority?.decision === "confirmed") {
+      return {
+        ...match,
+        proof_decision: "confirmed" as const,
+        user_claim: authority.claim_text ?? match.user_claim,
+        confirmed_at: authority.updated_at ?? match.confirmed_at,
+      }
+    }
+
+    return {
+      ...match,
+      proof_decision: match.proof_decision ?? (
+        match.status === "met" && match.matched_evidence_ids.length > 0
+          ? "auto_mapped"
+          : "needs_judgment"
+      ),
+    }
+  })
   const coverage_summary = buildCoverageSummary(requirementMatchesWithDecisions)
   const capability_packets = requirementMatchesWithDecisions.map(match =>
     buildCapabilityPacket(match, (evidenceCandidates ?? []) as Record<string, unknown>[])

@@ -187,6 +187,27 @@ export async function POST(
       })
     }
 
+    const { error: sessionCompleteError } = await supabase
+      .from("coach_sessions")
+      .update({
+        status: "closed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", draft.session_id)
+      .eq("user_id", userId)
+      .eq("job_id", anchoredJobId)
+      .eq("gap_requirement_id", anchoredRequirementId)
+
+    if (sessionCompleteError) {
+      logCoachDraftConfirmError("complete_session", sessionCompleteError, {
+        draft_id: draftId,
+        session_id: draft.session_id,
+        job_id: anchoredJobId,
+        user_id: userId,
+        requirement_id: anchoredRequirementId,
+      })
+    }
+
     await handleDomainEvent({
       supabase,
       event_type: "evidence_mapped",

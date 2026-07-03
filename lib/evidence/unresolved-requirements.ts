@@ -4,6 +4,7 @@ import type {
   RequirementEvidenceMatch,
 } from "@/lib/evidence/types"
 import { requirementAnchorId } from "@/lib/coach/requirement-type"
+import { isActionableRequirementText } from "@/lib/evidence/requirement-quality"
 
 type ProveFitDecisionAuthority =
   | string
@@ -77,7 +78,7 @@ function getDecisionAuthorityRequirementIds(value: unknown): Set<string> {
       }
 
       const row = asRecord(decision)
-      if (row?.decision === "confirmed") {
+      if (row?.decision === "confirmed" || row?.decision === "skipped") {
         add(row.requirement_id)
       }
     })
@@ -105,13 +106,14 @@ function hasUsablePacket(
 export function isRequirementResolved(
   match: RequirementEvidenceMatch,
   evidenceMap: CanonicalJobEvidenceMap,
-  confirmedAuthorityRequirementIds: Set<string>,
+  resolvedAuthorityRequirementIds: Set<string>,
 ): boolean {
+  if (resolvedAuthorityRequirementIds.has(match.requirement_id)) return true
   if (match.proof_decision === "skipped") return true
   if (match.proof_decision === "auto_mapped") return true
   if (
     match.proof_decision === "confirmed" &&
-    confirmedAuthorityRequirementIds.has(match.requirement_id)
+    resolvedAuthorityRequirementIds.has(match.requirement_id)
   ) {
     return true
   }
@@ -130,18 +132,21 @@ export function listUnresolvedRequirements(
   const evidenceMap = asEvidenceMap(jobOrEvidenceMap)
   if (!evidenceMap) return []
 
-  const confirmedAuthorityRequirementIds = getDecisionAuthorityRequirementIds(jobOrEvidenceMap)
+  const resolvedAuthorityRequirementIds = getDecisionAuthorityRequirementIds(jobOrEvidenceMap)
 
   return evidenceMap.requirement_matches
     .filter((match) =>
       typeof match.requirement_id === "string" &&
       match.requirement_id.trim().length > 0 &&
-      !isRequirementResolved(match, evidenceMap, confirmedAuthorityRequirementIds)
+      match.priority === "required" &&
+      isActionableRequirementText(match.requirement_text) &&
+      !isRequirementResolved(match, evidenceMap, resolvedAuthorityRequirementIds)
     )
     .sort((a, b) => {
       const rank = { required: 0, preferred: 1, keyword: 2 }
       return rank[a.priority] - rank[b.priority]
     })
+    .slice(0, 8)
     .map((match) => ({
       id: match.requirement_id,
       text: match.requirement_text,
