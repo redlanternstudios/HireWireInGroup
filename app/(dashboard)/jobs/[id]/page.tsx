@@ -456,6 +456,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 Generate a tailored resume and cover letter for this role.
               </p>
               <div className="space-y-2">
+                <Link
+                  href={`/coach?job=${job.id}`}
+                  className="block w-full rounded-lg border border-primary/25 bg-primary/5 px-4 py-2.5 text-center text-sm font-semibold text-primary hover:bg-primary/10"
+                >
+                  Tailor with coach
+                </Link>
                 <GenerateButton jobId={job.id} disabled={!readiness.canGenerate} disabledReason={readiness.nextAction?.description} />
                 {isFreePlan && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

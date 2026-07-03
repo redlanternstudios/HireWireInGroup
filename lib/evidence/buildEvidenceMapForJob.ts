@@ -143,7 +143,7 @@ function mergeExistingMatch(
     nextMatch.status === "met" ? "met" :
     existingMatch.proof_decision === "skipped" ? existingMatch.status :
     hasConfirmedEvidence && nextMatch.status === "gap" ? "partial" :
-    existingMatch.status === "met" ? "met" :
+    existingMatch.proof_decision === "confirmed" && existingMatch.status === "met" ? "met" :
     existingMatch.status === "partial" ? "partial" :
     nextMatch.status
 
@@ -162,9 +162,12 @@ function mergeExistingMatch(
       ...(nextMatch.riskFlags ?? []),
       ...(existingMatch.riskFlags ?? []),
     ])),
-    proof_decision: existingMatch.proof_decision ?? (
-      status === "met" && matched_evidence_ids.length > 0 ? "auto_mapped" : nextMatch.proof_decision
-    ),
+    proof_decision:
+      existingMatch.proof_decision === "skipped" || existingMatch.proof_decision === "confirmed"
+        ? existingMatch.proof_decision
+        : status === "met" && matched_evidence_ids.length > 0
+          ? "auto_mapped"
+          : "needs_judgment",
     user_claim: existingMatch.user_claim,
     skip_reason: existingMatch.skip_reason,
     confirmed_at: existingMatch.confirmed_at,
@@ -325,7 +328,7 @@ export async function buildEvidenceMapForJob({
     supabase
       .from("evidence_library")
       .select(
-        "id, source_title, source_type, role_name, company_name, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate"
+        "id, source_title, source_type, role_name, company_name, date_range, responsibilities, tools_used, outcomes, industries, proof_snippet, confidence_level, is_user_approved, visibility_status, is_active, what_not_to_overstate"
       )
       .eq("user_id", userId)
       .eq("is_active", true),

@@ -158,11 +158,12 @@ export function evaluateReadiness(
 ): ReadinessResult {
   const voiceIntegrity = isVoiceIntegrityPassed(job.voice_drift_result ?? null);
   const coachStep = getCoachStepState(job);
+  const evidenceReady = hasRequiredEvidenceCoverage(job);
   const checklist = {
     resume: !!job.generated_resume,
     coverLetter: !!job.generated_cover_letter,
-    evidence: hasRequiredEvidenceCoverage(job),
-    coach: coachStep.complete,
+    evidence: evidenceReady,
+    coach: coachStep.complete || evidenceReady,
     quality: job.quality_passed === true,
     voiceIntegrity,
   };

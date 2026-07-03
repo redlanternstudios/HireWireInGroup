@@ -57,7 +57,7 @@ export const metadata = {
     "Strategic guidance grounded in your pipeline and Career Context.",
 };
 
-async function getCoachContext() {
+async function getCoachContext(focusedJobId?: string | null) {
   try {
     const supabase = await createClient();
     const {
@@ -128,6 +128,10 @@ async function getCoachContext() {
       evaluatedJobs.find(({ readiness }) => readiness.outcome !== "applied")
         ?.job ??
       null;
+    const focusedJob =
+      (focusedJobId
+        ? jobs.find((job) => job.id === focusedJobId)
+        : null) ?? topJob;
 
     const urgentReady =
       recentEvents.find(
@@ -145,6 +149,7 @@ async function getCoachContext() {
       recentEvents,
       urgentReady,
       topJob,
+      focusedJob,
       hasNoEvidence: evidenceCount === 0,
       hasNoPipeline: activeJobs === 0,
     };
@@ -202,8 +207,16 @@ function StatRow({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default async function CoachPage() {
-  const ctx = await getCoachContext();
+export default async function CoachPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ job?: string | string[] }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const jobParam = resolvedSearchParams.job;
+  const focusedJobId = Array.isArray(jobParam) ? jobParam[0] : jobParam;
+  const ctx = await getCoachContext(focusedJobId ?? null);
+  const focusedJob = ctx?.focusedJob ?? null;
 
   const evidenceStatus =
     !ctx || ctx.evidenceCount === 0
@@ -270,7 +283,20 @@ export default async function CoachPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Main chat panel */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border/70">
-          <CoachChat className="h-full" />
+          <CoachChat
+            className="h-full"
+            jobContext={
+              focusedJob
+                ? {
+                    jobId: focusedJob.id,
+                    title: focusedJob.role_title ?? "Untitled role",
+                    company: focusedJob.company_name ?? "",
+                    score: focusedJob.score ?? null,
+                    status: focusedJob.status ?? undefined,
+                  }
+                : undefined
+            }
+          />
         </div>
 
         {/* ── Right context rail ── */}

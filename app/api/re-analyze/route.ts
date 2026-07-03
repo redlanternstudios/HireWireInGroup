@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Fetch the existing job to get its URL
     const { data: job, error: jobError } = await supabase
       .from("jobs")
-      .select("id, job_url, status")
+      .select("id, job_url, job_description, status, role_title, company_name")
       .eq("id", job_id)
       .eq("user_id", userId)
       .is("deleted_at", null)
@@ -58,17 +58,15 @@ export async function POST(request: NextRequest) {
       .eq("id", job_id)
       .eq("user_id", userId)
 
-    // Delete any stale analysis/scores rows so re-insert works cleanly
-    await Promise.all([
-      supabase.from("job_analyses").delete().eq("job_id", job_id).eq("user_id", userId),
-      supabase.from("job_scores").delete().eq("job_id", job_id),
-    ])
-
     // Run analyzeJobCore — it will find the existing job by URL and return early
     // with the duplicate response, so we bypass that by deleting first then calling
     // the core function differently. Instead, we call the HTTP analyze endpoint
     // logic directly, bypassing duplicate detection for re-analysis.
-    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId)
+    const result = await reAnalyzeExistingJob(job.job_url, job_id, supabase, userId, {
+      roleTitle: job.role_title,
+      companyName: job.company_name,
+      jobDescription: job.job_description,
+    })
 
     if (!result.success) {
       // Restore the previous status on failure
@@ -217,7 +215,12 @@ async function reAnalyzeExistingJob(
   jobUrl: string,
   jobId: string,
   supabase: ServerSupabase,
-  userId: string
+  userId: string,
+  existingIdentity: {
+    roleTitle?: string | null
+    companyName?: string | null
+    jobDescription?: string | null
+  },
 ): Promise<{ success: true; job: unknown } | { success: false; error: string }> {
   // Fetch page
   let pageContent: string
@@ -234,6 +237,21 @@ async function reAnalyzeExistingJob(
     pageContent = parsed.text
   } catch (e) {
     return { success: false, error: `Failed to fetch: ${e instanceof Error ? e.message : "unknown"}` }
+  }
+
+  const fetchedListingInsteadOfJob =
+    pageContent.length < 300 ||
+    /today'?s top \d[\d,+]* .* jobs in/i.test(pageContent) ||
+    /leverage your professional network, and get hired/i.test(pageContent)
+  if (fetchedListingInsteadOfJob) {
+    const savedDescription = existingIdentity.jobDescription?.trim() ?? ""
+    if (savedDescription.length < 300) {
+      return {
+        success: false,
+        error: "The source returned a job search listing instead of the saved job posting. The existing analysis was preserved.",
+      }
+    }
+    pageContent = savedDescription
   }
 
   // Extract structured data through the canonical AI Gateway
@@ -279,6 +297,22 @@ async function reAnalyzeExistingJob(
 
   const title = analysis.title || "Unknown Position"
   const company = analysis.company || "Unknown Company"
+  const normalizedExistingTitle = String(existingIdentity.roleTitle ?? "").toLowerCase()
+  const normalizedNextTitle = title.toLowerCase()
+  const existingTitleTokens = normalizedExistingTitle.split(/\W+/).filter((token) => token.length > 2)
+  const titleStillMatches =
+    existingTitleTokens.length === 0 ||
+    existingTitleTokens.some((token) => normalizedNextTitle.includes(token))
+  if (
+    title === "Unknown Position" ||
+    company === "Unknown Company" ||
+    !titleStillMatches
+  ) {
+    return {
+      success: false,
+      error: "The fetched posting identity did not match the saved job. The existing analysis was preserved.",
+    }
+  }
   const seniority = normalizeSeniority(analysis.seniority_level)
 
   // Load evidence for scoring
@@ -362,7 +396,7 @@ async function reAnalyzeExistingJob(
   }
 
   // Insert fresh analysis record
-  const { error: analysisError } = await supabase.from("job_analyses").insert({
+  const analysisPayload = {
     user_id: userId,
     job_id: jobId,
     title,
@@ -383,22 +417,45 @@ async function reAnalyzeExistingJob(
     soc_category: analysis.soc_category ?? null,
     analysis_version: "3.0-explainable",
     analysis_model: "claude-sonnet",
-  })
-  if (analysisError) console.error("Analysis insert error:", analysisError)
+  }
+  const analysisUpdate = await supabase
+    .from("job_analyses")
+    .update(analysisPayload)
+    .eq("job_id", jobId)
+    .eq("user_id", userId)
+    .select("id")
+  const analysisWrite = analysisUpdate.error || (analysisUpdate.data?.length ?? 0) > 0
+    ? analysisUpdate
+    : await supabase.from("job_analyses").insert(analysisPayload).select("id")
+  if (analysisWrite.error) {
+    console.error("Analysis write error:", analysisWrite.error)
+    return { success: false, error: `Failed to save analysis: ${analysisWrite.error.message}` }
+  }
 
   // Insert fresh scores record
-  const { error: scoresError } = await supabase.from("job_scores").insert({
+  const scoresPayload = {
     job_id: jobId,
-    overall_score: explainableFit.score,
+    overall_score: Math.round(explainableFit.score),
     confidence_score: explainableFit.confidence === "high" ? 0.9 : explainableFit.confidence === "medium" ? 0.7 : 0.5,
-    skills_match: dimensionScores.skills,
-    experience_relevance: dimensionScores.experience,
-    evidence_quality: dimensionScores.evidence,
-    seniority_alignment: dimensionScores.seniority,
-    ats_keywords: dimensionScores.ats,
+    skills_match: Math.round(dimensionScores.skills),
+    experience_relevance: Math.round(dimensionScores.experience),
+    evidence_quality: Math.round(dimensionScores.evidence),
+    seniority_alignment: Math.round(dimensionScores.seniority),
+    ats_keywords: Math.round(dimensionScores.ats),
     scoring_version: "3.0-explainable",
-  })
-  if (scoresError) console.error("Scores insert error:", scoresError)
+  }
+  const scoresUpdate = await supabase
+    .from("job_scores")
+    .update(scoresPayload)
+    .eq("job_id", jobId)
+    .select("id")
+  const scoresWrite = scoresUpdate.error || (scoresUpdate.data?.length ?? 0) > 0
+    ? scoresUpdate
+    : await supabase.from("job_scores").insert(scoresPayload).select("id")
+  if (scoresWrite.error) {
+    console.error("Scores write error:", scoresWrite.error)
+    return { success: false, error: `Failed to save scores: ${scoresWrite.error.message}` }
+  }
 
   // Run orchestration (coaching, matching, etc.)
   await runJobFlow({

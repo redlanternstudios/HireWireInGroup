@@ -15,6 +15,7 @@ type EvidenceCandidate = {
   source_type: string
   role_name?: string | null
   company_name?: string | null
+  date_range?: string | null
   responsibilities?: string[] | null
   tools_used?: string[] | null
   outcomes?: string[] | null
@@ -22,6 +23,64 @@ type EvidenceCandidate = {
   proof_snippet?: string | null
   confidence_level?: "high" | "medium" | "low" | null
   is_user_approved?: boolean | null
+}
+
+function requiredYears(requirement: string): number | null {
+  const match = requirement.match(/\b(\d{1,2})\+?\s+years?\b/i)
+  return match ? Number(match[1]) : null
+}
+
+function parseDateRangeMonths(dateRange: string | null | undefined): [number, number] | null {
+  if (!dateRange) return null
+  const years = dateRange.match(/\b(19|20)\d{2}\b/g)?.map(Number) ?? []
+  if (years.length === 0) return null
+
+  const start = years[0] * 12
+  const endYear = /present|current/i.test(dateRange)
+    ? new Date().getFullYear()
+    : years[years.length - 1]
+  return [start, (endYear + 1) * 12]
+}
+
+function coveredExperienceMonths(evidence: EvidenceCandidate[]): number {
+  const intervals = evidence
+    .filter((item) => item.source_type === "work_experience")
+    .map((item) => parseDateRangeMonths(item.date_range))
+    .filter((interval): interval is [number, number] => interval !== null)
+    .sort((a, b) => a[0] - b[0])
+
+  const merged: Array<[number, number]> = []
+  for (const interval of intervals) {
+    const previous = merged[merged.length - 1]
+    if (!previous || interval[0] > previous[1]) {
+      merged.push([...interval])
+    } else {
+      previous[1] = Math.max(previous[1], interval[1])
+    }
+  }
+
+  return merged.reduce((total, [start, end]) => total + Math.max(0, end - start), 0)
+}
+
+function isDurationRelevantWork(requirement: string, evidence: EvidenceCandidate): boolean {
+  if (evidence.source_type !== "work_experience") return false
+  const genericTokens = new Set([
+    "year",
+    "years",
+    "more",
+    "proven",
+    "related",
+    "experience",
+    "required",
+    "minimum",
+    "plus",
+  ])
+  const domainTokens = tokenize(requirement).filter(
+    (token) => !genericTokens.has(token) && !/^\d+$/.test(token),
+  )
+  if (domainTokens.length === 0) return false
+  const roleTokens = new Set(tokenize([evidence.role_name, evidence.source_title].filter(Boolean).join(" ")))
+  return domainTokens.some((token) => roleTokens.has(token))
 }
 
 function buildEvidenceText(evidence: EvidenceCandidate): string {
@@ -156,13 +215,27 @@ export function matchRequirementToEvidence(params: {
     .filter(item => item.status === "met" || item.status === "partial")
     .sort((a, b) => b.overlap - a.overlap)
 
+  const yearsNeeded = requiredYears(params.requirement)
+  const relevantWorkEvidence = scored
+    .map((item) => item.evidence)
+    .filter((item) => isDurationRelevantWork(params.requirement, item))
+  const durationVerified =
+    yearsNeeded === null ||
+    coveredExperienceMonths(relevantWorkEvidence) >= yearsNeeded * 12
   const bestStatus: RequirementMatchStatus =
-    scored.some(item => item.status === "met")
+    !durationVerified && relevantWorkEvidence.length > 0
+      ? "partial"
+      : !durationVerified
+        ? "gap"
+        : scored.some(item => item.status === "met")
       ? "met"
       : scored.some(item => item.status === "partial")
         ? "partial"
         : "gap"
-  const matchedEvidence = scored.slice(0, 5).map(item => item.evidence)
+  const matchedEvidence = (yearsNeeded === null
+    ? scored.map((item) => item.evidence)
+    : relevantWorkEvidence
+  ).slice(0, 5)
   const bestMethod: RequirementMatchMethod =
     scored.find(item => item.status === "met")?.method ??
     scored[0]?.method ??
@@ -173,6 +246,9 @@ export function matchRequirementToEvidence(params: {
   const riskFlags: string[] = []
   if (scored.some(item => item.hasSeniorityGap)) {
     riskFlags.push("seniority_mismatch")
+  }
+  if (!durationVerified) {
+    riskFlags.push("duration_unverified")
   }
 
   return {
@@ -194,7 +270,9 @@ export function matchRequirementToEvidence(params: {
     confidence,
     match_method: bestStatus === "gap" ? "fuzzy" : bestMethod,
     reasoning:
-      bestStatus === "gap"
+      !durationVerified && yearsNeeded !== null
+        ? `The available dated, relevant work evidence does not verify ${yearsNeeded}+ years.`
+        : bestStatus === "gap"
         ? "No evidence met the normalized requirement with enough confidence."
         : `Matched through ${bestMethod} logic using ${matchedEvidence.length} evidence item(s).`,
     riskFlags: riskFlags.length > 0 ? riskFlags : undefined,

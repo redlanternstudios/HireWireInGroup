@@ -14,7 +14,6 @@ type CoverageDecision = {
   evidence_id?: string | null
   claim_text?: string | null
   skip_reason?: string | null
-  session_id?: string | null
   updated_at?: string | null
   created_at?: string | null
 }
@@ -142,9 +141,7 @@ export function applyProofDecisionsToMatches(
         skip_reason: null,
         confirmed_at: decision.updated_at ?? decision.created_at ?? match.confirmed_at,
         skipped_at: null,
-        mapped_by_session_ids: decision.session_id
-          ? Array.from(new Set([...(match.mapped_by_session_ids ?? []), decision.session_id]))
-          : match.mapped_by_session_ids,
+        mapped_by_session_ids: match.mapped_by_session_ids,
         riskFlags: (match.riskFlags ?? []).filter((flag) =>
           !["missing_evidence", "no_packet_evidence", "partial_match", "user_skipped"].includes(flag)
         ),
@@ -184,7 +181,7 @@ export async function deriveMatchingComplete({
 
   const { data: decisions, error } = await supabase
     .from("prove_fit_decisions")
-    .select("requirement_id, decision, evidence_id, claim_text, skip_reason, session_id, created_at, updated_at")
+    .select("requirement_id, decision, evidence_id, claim_text, skip_reason, created_at, updated_at")
     .eq("user_id", userId)
     .eq("job_id", jobId)
     .order("updated_at", { ascending: true })

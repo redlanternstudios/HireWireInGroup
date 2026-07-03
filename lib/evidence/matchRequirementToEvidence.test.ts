@@ -151,4 +151,34 @@ describe("matchRequirementToEvidence", () => {
     assert.equal(result.status, "met")
     assert.ok(!result.riskFlags?.includes("seniority_mismatch"))
   })
+
+  it("does not verify a years requirement from undated or insufficient evidence", () => {
+    const result = matchRequirementToEvidence({
+      requirement: "10+ years of proven experience in product management or related roles",
+      priority: "required" as RequirementPriority,
+      evidenceCandidates: [
+        {
+          id: "dated_pm",
+          source_title: "Senior Product Manager",
+          source_type: "work_experience",
+          role_name: "Senior Product Manager",
+          company_name: "SignalWorks",
+          date_range: "2021 - 2025",
+          responsibilities: ["Owned product roadmap planning"],
+          confidence_level: "high",
+        },
+        {
+          id: "degree",
+          source_title: "Bachelor of Science in Business",
+          source_type: "education",
+          company_name: "University",
+          confidence_level: "high",
+        },
+      ],
+    })
+
+    assert.equal(result.status, "partial")
+    assert.ok(result.riskFlags?.includes("duration_unverified"))
+    assert.deepEqual(result.matched_evidence_ids, ["dated_pm"])
+  })
 })

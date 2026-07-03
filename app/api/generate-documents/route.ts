@@ -1778,12 +1778,45 @@ export async function POST(request: NextRequest) {
         : Array.isArray(sourceResumeData?.experience)
           ? sourceResumeData.experience
           : [];
+    const verifiedEducation = Array.from(
+      new Map(
+        allEvidence
+          .filter((item: EvidenceRecord) =>
+            item.source_type === "education" &&
+            /\b(bachelor|master|mba|phd|doctor|associate|b\.?s\.?|m\.?s\.?)\b/i.test(item.source_title) &&
+            typeof item.company_name === "string" &&
+            item.company_name.trim().length > 0 &&
+            item.company_name !== "<UNKNOWN>",
+          )
+          .map((item: EvidenceRecord) => {
+            const yearMatches = item.date_range?.match(/\b(19|20)\d{2}\b/g) ?? []
+            const year = yearMatches[yearMatches.length - 1]
+            return {
+              degree: item.source_title,
+              school: item.company_name as string,
+              year,
+            }
+          })
+          .map((education) => {
+            const normalizedDegree = education.degree.toLowerCase()
+            const level =
+              normalizedDegree.includes("bachelor") ? "bachelor" :
+              normalizedDegree.includes("master") || /\bm\.?s\.?\b/.test(normalizedDegree) ? "master" :
+              normalizedDegree.includes("doctor") || normalizedDegree.includes("phd") ? "doctor" :
+              normalizedDegree.includes("associate") ? "associate" :
+              normalizedDegree
+            return [`${level}|${education.school.toLowerCase()}`, education] as const
+          }),
+      ).values(),
+    );
     const effectiveEducation =
-      Array.isArray(profile?.education) && profile.education.length > 0
-        ? profile.education
-        : Array.isArray(sourceResumeData?.education)
+      verifiedEducation.length > 0
+        ? verifiedEducation
+        : Array.isArray(sourceResumeData?.education) && sourceResumeData.education.length > 0
           ? sourceResumeData.education
-          : [];
+          : Array.isArray(profile?.education)
+            ? profile.education
+            : [];
 
     // NOTE: profileContext is built for completeness but is NOT injected into AI prompts.
     // Bias guard 2.1: name would need stripping here if this context were ever added to a prompt.

@@ -16,6 +16,7 @@ import { isActionableRequirementText } from "@/lib/evidence/requirement-quality"
 
 export const dynamic = "force-dynamic"
 
+// Keep the live proof state server rendered so coach decisions cannot reopen from stale client state.
 function asCanonicalEvidenceMap(value: unknown): CanonicalJobEvidenceMap | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const map = value as CanonicalJobEvidenceMap
@@ -92,6 +93,8 @@ export default async function EvidenceMatchPage({
       .select("matched_skills, known_gaps, qualifications_required, responsibilities")
       .eq("job_id", id)
       .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     supabase
       .from("prove_fit_decisions")
@@ -255,6 +258,9 @@ export default async function EvidenceMatchPage({
                 <summary className="cursor-pointer text-sm font-semibold text-foreground">
                   Show what HireWire checked ({requirementMatches.length})
                 </summary>
+                <div className="mt-3">
+                  <RebuildEvidenceMapButton jobId={id} />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   This is context only. The Match Interview handles anything that needs your judgment.
                 </p>
@@ -341,8 +347,23 @@ export default async function EvidenceMatchPage({
             </div>
           )}
 
+          {requirementMatches.length === 0 && (analysisPresent || gaps.length > 0) && (
+            <div className="hw-card border-l-4 border-l-amber-500 px-5 py-4">
+              <p className="text-sm font-semibold">Evidence map needs rebuilding</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The job requirements are saved. Rebuild their Career Context matches before continuing the interview.
+              </p>
+              <div className="mt-3">
+                <RebuildEvidenceMapButton jobId={id} />
+              </div>
+            </div>
+          )}
+
           {/* No analysis yet */}
-          {requirementMatches.length === 0 && requirements.length === 0 && matchedSkills.length === 0 && (
+          {requirementMatches.length === 0 &&
+            requirements.length === 0 &&
+            matchedSkills.length === 0 &&
+            gaps.length === 0 && (
             <div className="hw-empty">
               <div className="hw-empty-icon">
                 <AlertCircle className="h-5 w-5 text-muted-foreground" />

@@ -128,7 +128,14 @@ export async function POST(request: Request) {
       }))
 
     // ── Parallel data fetch ───────────────────────────────────────────────────
-    const [profileResult, evidenceResult, recentJobsResult, activeJobResult, outcomesResult] = await Promise.all([
+    const [
+      profileResult,
+      evidenceResult,
+      recentJobsResult,
+      activeJobResult,
+      activeAnalysisResult,
+      outcomesResult,
+    ] = await Promise.all([
       supabase
         .from("user_profile")
         .select("full_name, name, title, summary, skills, tools, domains, certifications, education, experience, location")
@@ -140,7 +147,7 @@ export async function POST(request: Request) {
         .eq("user_id", userId)
         .eq("is_active", true)
         .order("updated_at", { ascending: false })
-        .limit(20),
+        .limit(200),
       supabase
         .from("jobs")
         .select("id, role_title, company_name, status, score, score_gaps, gap_clarifications, gaps_addressed, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map")
@@ -151,11 +158,21 @@ export async function POST(request: Request) {
       jobId
         ? supabase
             .from("jobs")
-            .select("id, role_title, company_name, job_description, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, responsibilities, qualifications_required, qualifications_preferred, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
+            .select("id, role_title, company_name, job_description, status, score, score_gaps, score_strengths, gap_clarifications, gaps_addressed, applied_at, generated_resume, generated_cover_letter, quality_passed, evidence_map, voice_drift_result")
             .eq("id", jobId)
             .eq("user_id", userId)
             .is("deleted_at", null)
             .single()
+        : Promise.resolve({ data: null, error: null }),
+      jobId
+        ? supabase
+            .from("job_analyses")
+            .select("responsibilities, qualifications_required, qualifications_preferred")
+            .eq("job_id", jobId)
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       supabase
         .from("application_outcomes")
@@ -169,7 +186,23 @@ export async function POST(request: Request) {
     const evidenceLibrary = Array.isArray(evidenceResult.data) ? evidenceResult.data : []
     const recentJobs = Array.isArray(recentJobsResult.data) ? recentJobsResult.data : []
     const activeJob = activeJobResult.data
+    const activeAnalysis = activeAnalysisResult.data
     const recentOutcomes = Array.isArray(outcomesResult.data) ? outcomesResult.data : []
+
+    if (activeJobResult.error) {
+      console.error("[HireWire] coach active job load failed", {
+        job_id: jobId,
+        user_id: userId,
+        error: activeJobResult.error.message,
+      })
+    }
+    if (activeAnalysisResult.error) {
+      console.error("[HireWire] coach active analysis load failed", {
+        job_id: jobId,
+        user_id: userId,
+        error: activeAnalysisResult.error.message,
+      })
+    }
 
     // ── Build coaching context ────────────────────────────────────────────────
     const fitScore = activeJob?.score ?? jobContext?.score ?? 0
@@ -267,7 +300,8 @@ export async function POST(request: Request) {
         evidenceLibrary.slice(0, 12).map((e) => {
           const proof = e.proof_snippet || [...(e.responsibilities ?? []), ...(e.outcomes ?? [])].slice(0, 2).join("; ")
           const tools = Array.isArray(e.tools_used) && e.tools_used.length > 0 ? ` Tools: ${e.tools_used.slice(0, 6).join(", ")}.` : ""
-          return `- ${e.source_title} (${e.source_type}${e.company_name ? `, ${e.company_name}` : ""}): ${String(proof || "No proof snippet").slice(0, 240)}.${tools}`
+          const dates = e.date_range ? `, ${e.date_range}` : ""
+          return `- ${e.source_title} (${e.source_type}${e.company_name ? `, ${e.company_name}` : ""}${dates}): ${String(proof || "No proof snippet").slice(0, 240)}.${tools}`
         }).join("\n")
     }
 
@@ -276,7 +310,42 @@ export async function POST(request: Request) {
       systemPrompt += `\n\n## Current Job Context\n- Title: ${jobContext.title}\n- Company: ${jobContext.company}${jobContext.score != null ? `\n- Fit Score: ${jobContext.score}%` : ""}${jobContext.status ? `\n- Status: ${jobContext.status}` : ""}`
     }
     if (activeJob) {
-      systemPrompt += `\n\n## Active Job Analysis\n- Required qualifications: ${formatList(activeJob.qualifications_required)}\n- Responsibilities: ${formatList(activeJob.responsibilities)}\n- Score gaps: ${formatList(activeJob.score_gaps)}\n- Score strengths: ${formatList(activeJob.score_strengths)}`
+      systemPrompt += `\n\n## Active Job Analysis\n- Required qualifications: ${formatList(activeAnalysis?.qualifications_required)}\n- Preferred qualifications: ${formatList(activeAnalysis?.qualifications_preferred)}\n- Responsibilities: ${formatList(activeAnalysis?.responsibilities)}\n- Score gaps: ${formatList(activeJob.score_gaps)}\n- Score strengths: ${formatList(activeJob.score_strengths)}`
+
+      const requirementMatches = Array.isArray(activeEvidenceMap?.requirement_matches)
+        ? activeEvidenceMap.requirement_matches
+        : []
+      const evidenceByTitle = new Map(
+        evidenceLibrary.map((item) => [
+          String(item.source_title ?? ""),
+          item.date_range ? `${item.source_title} (${item.date_range})` : String(item.source_title ?? ""),
+        ]),
+      )
+      const describeRequirement = (match: Record<string, unknown>) => {
+        const text = String(match.requirement_text ?? match.requirement_id ?? "Unknown requirement")
+        const decision = String(match.proof_decision ?? "needs_judgment")
+        const evidence = Array.isArray(match.matched_evidence_titles)
+          ? match.matched_evidence_titles
+              .filter((item): item is string => typeof item === "string")
+              .map((item) => evidenceByTitle.get(item) ?? item)
+              .slice(0, 5)
+          : []
+        return `- ${text} | decision: ${decision} | evidence: ${evidence.length > 0 ? evidence.join(", ") : "none"}`
+      }
+      const requiredDecisions = requirementMatches
+        .filter((match) => match.priority === "required")
+        .map(describeRequirement)
+
+      if (requiredDecisions.length > 0) {
+        systemPrompt += `\n\n## Authoritative Requirement Decisions
+These decisions control resume generation. Name them exactly when discussing the package.
+${requiredDecisions.join("\n")}
+
+Rules:
+- A skipped requirement must be named as intentionally skipped and must never appear as a resume claim.
+- A confirmed or auto mapped requirement may be used only within the listed evidence.
+- A needs judgment requirement must be resolved before recommending generation.`
+      }
     }
     if (recentOutcomes.length > 0) {
       systemPrompt += `\n\n## Prior Application Outcomes\nUse these only for strategy and pattern recognition. Do not change readiness decisions because of outcomes.\n` +
