@@ -49,6 +49,24 @@ export function isBoilerplateRequirement(value: unknown): boolean {
   return false
 }
 
+/**
+ * Strips DECORATION pollution from a real requirement's text: standalone long
+ * numeric ids (e.g. "Own ERP migrations 1779675718093") and leading
+ * qualification-label prefixes ("Required qualifications: ..."). Safe for
+ * display; does not drop the requirement. Returns the cleaned string (falls
+ * back to the trimmed original if cleaning would empty it).
+ */
+export function normalizeRequirementText(value: unknown): string {
+  if (typeof value !== "string") return ""
+  const cleaned = value
+    .replace(/^\s*(required|preferred|basic|minimum)\s+qualifications:?\s*/i, "")
+    .replace(/\b\d{5,}\b/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim()
+  return cleaned.length >= 3 ? cleaned : normalizeText(value)
+}
+
 export function isActionableRequirementText(value: unknown): value is string {
   if (typeof value !== "string") return false
 

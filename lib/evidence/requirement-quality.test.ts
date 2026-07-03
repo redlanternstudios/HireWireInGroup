@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isBoilerplateRequirement } from "./requirement-quality"
+import { isBoilerplateRequirement, normalizeRequirementText } from "./requirement-quality"
 
 describe("isBoilerplateRequirement", () => {
   it("drops posting headlines (X is hiring a Y)", () => {
@@ -21,5 +21,21 @@ describe("isBoilerplateRequirement", () => {
     expect(isBoilerplateRequirement("7+ years in product management")).toBe(false)
     expect(isBoilerplateRequirement("Required qualifications: 7+ years in product management")).toBe(false)
     expect(isBoilerplateRequirement("Cross-functional leadership")).toBe(false)
+  })
+})
+
+describe("normalizeRequirementText", () => {
+  it("strips appended numeric id pollution", () => {
+    expect(normalizeRequirementText("Own ERP migrations 1779675718093")).toBe("Own ERP migrations")
+  })
+  it("strips leading qualification-label prefix", () => {
+    expect(normalizeRequirementText("Required qualifications: 7+ years in product management"))
+      .toBe("7+ years in product management")
+  })
+  it("leaves clean requirements unchanged", () => {
+    expect(normalizeRequirementText("Cross-functional leadership")).toBe("Cross-functional leadership")
+  })
+  it("falls back to original when cleaning would empty it", () => {
+    expect(normalizeRequirementText("12345678")).toBe("12345678")
   })
 })

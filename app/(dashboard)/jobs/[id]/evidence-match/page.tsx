@@ -10,6 +10,7 @@ import { AnalyzeJobButton } from "../AnalyzeJobButton"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requirements"
 import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore"
+import { normalizeRequirementText, isBoilerplateRequirement } from "@/lib/evidence/requirement-quality"
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
@@ -118,8 +119,10 @@ export default async function EvidenceMatchPage({
   ].filter(Boolean)
 
   const evidenceMap = asCanonicalEvidenceMap(job.evidence_map)
-  const requirementMatches = (evidenceMap?.requirement_matches ?? []).filter((match) =>
-    isActionableRequirementText(match.requirement_text),
+  const requirementMatches = (evidenceMap?.requirement_matches ?? []).filter(
+    (match) =>
+      isActionableRequirementText(match.requirement_text) &&
+      !isBoilerplateRequirement(match.requirement_text),
   )
   const mapBuildError =
     job.evidence_map && typeof job.evidence_map === "object" && !Array.isArray(job.evidence_map)
@@ -141,23 +144,11 @@ export default async function EvidenceMatchPage({
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
   const fit = computeFitScore(requirementMatches)
   const matchScore = fit.fitScore
-  const requiredTotal = requirementMatches.filter((match) => match.priority === "required").length
-  const requiredVerified = requirementMatches.filter(
-    (match) =>
-      match.priority === "required" &&
-      (match.proof_decision === "auto_mapped" || match.proof_decision === "confirmed"),
-  ).length
-  const requiredSkipped = requirementMatches.filter(
-    (match) =>
-      match.priority === "required" &&
-      match.proof_decision === "skipped",
-  ).length
   const unresolvedRequirements = listUnresolvedRequirements(jobWithDecisionAuthority)
   const unresolvedRequirementIds = new Set(unresolvedRequirements.map((match) => match.id))
   const normalizedRequirementMatches = requirementMatches.map((match) =>
     normalizeFixableMatch(match, unresolvedRequirementIds),
   )
-  const proofGaps = unresolvedRequirements
   const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
 
   return (
@@ -182,26 +173,26 @@ export default async function EvidenceMatchPage({
         </p>
       </div>
 
-      {/* Status strip */}
+      {/* Status strip — all metrics derive from computeFitScore (single source) */}
       <div className="hw-metrics">
         <div className="hw-stat">
           <span className={cn("hw-stat-value", matchScore === null ? "text-muted-foreground" : fit.meetsThreshold ? "text-emerald-600" : "text-amber-600")}>{matchScore !== null ? `${matchScore}/100` : "—"}</span>
           <span className="hw-stat-label">Fit Score</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-primary">{requiredTotal}</span>
+          <span className="hw-stat-value text-primary">{fit.requiredTotal}</span>
           <span className="hw-stat-label">Role Signals</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-emerald-600">{requiredVerified}</span>
+          <span className="hw-stat-value text-emerald-600">{fit.requiredResolved}</span>
           <span className="hw-stat-label">Verified</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value text-amber-600">{proofGaps.length}</span>
+          <span className="hw-stat-value text-amber-600">{fit.requiredGaps}</span>
           <span className="hw-stat-label">Need Judgment</span>
         </div>
         <div className="hw-stat">
-          <span className="hw-stat-value">{requiredSkipped}</span>
+          <span className="hw-stat-value">{fit.requiredSkipped}</span>
           <span className="hw-stat-label">Skipped</span>
         </div>
       </div>
@@ -308,7 +299,7 @@ export default async function EvidenceMatchPage({
                             {status.label}
                           </span>
                         </div>
-                        <h2 className="mt-2 text-sm font-semibold text-foreground">{match.requirement_text}</h2>
+                        <h2 className="mt-2 text-sm font-semibold text-foreground">{normalizeRequirementText(match.requirement_text)}</h2>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {match.employer_intent ?? match.normalized_requirement}
                         </p>
