@@ -603,14 +603,14 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
         source_evidence_id: string
         source_role: string
         source_company: string
-        matched_requirement?: string
+        matched_requirement?: string | null
         keywords_used: string[]
       }) => ({
         bullet_text: b.bullet_text,
         source_evidence_id: b.source_evidence_id,
         source_role: b.source_role,
         source_company: b.source_company,
-        matched_requirement: b.matched_requirement,
+        matched_requirement: b.matched_requirement ?? undefined,
         keywords_used: b.keywords_used,
       })),
       {
@@ -803,7 +803,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
       source_role: b.source_role,
       source_company: b.source_company,
       matched_requirement_id: undefined,
-      matched_requirement_text: b.matched_requirement,
+      matched_requirement_text: b.matched_requirement ?? undefined,
       claim_confidence: "high" as const,
       keywords_covered: b.keywords_used,
       risk_flags: [],
