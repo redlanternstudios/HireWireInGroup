@@ -53,6 +53,7 @@ import { checkVoiceDrift } from "@/lib/voice/voice-drift-check";
 import type { VoiceProfile, VoiceDriftResult } from "@/lib/voice/voice-types";
 import { emitDomainEventWithClient } from "@/lib/domain-events/emit-event";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
+import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore";
 import { buildEvidenceMapForJob } from "@/lib/evidence/buildEvidenceMapForJob";
 import { recordUsage } from "@/lib/paywall/usage";
 
@@ -1694,6 +1695,27 @@ export async function POST(request: NextRequest) {
           error: "prove_fit_required",
           user_message:
             "Run Prove Fit before generating so HireWire only uses confirmed, auto-matched, or intentionally skipped claims.",
+          next_action: {
+            label: "Prove Fit",
+            href: `/jobs/${job_id}/evidence-match`,
+          },
+        },
+        { status: 409 },
+      );
+    }
+
+    // Fit gate (control layer) — coverage-based fit must clear FIT_THRESHOLD
+    // unless the caller explicitly overrides. Single source of truth: computeFitScore.
+    const fitGate = computeFitScore(canonicalRequirements as any);
+    const fitOverride = body?.override === true;
+    if (fitGate.hasSignal && !fitGate.meetsThreshold && !fitOverride) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "fit_below_threshold",
+          fit_score: fitGate.fitScore,
+          threshold: FIT_THRESHOLD,
+          user_message: `Fit is ${fitGate.fitScore}% — below the ${FIT_THRESHOLD}% bar. Prove more required signals, or resubmit with override to generate anyway.`,
           next_action: {
             label: "Prove Fit",
             href: `/jobs/${job_id}/evidence-match`,

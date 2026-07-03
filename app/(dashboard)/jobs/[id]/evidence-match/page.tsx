@@ -9,6 +9,7 @@ import { RebuildEvidenceMapButton } from "@/components/jobs/RebuildEvidenceMapBu
 import { AnalyzeJobButton } from "../AnalyzeJobButton"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requirements"
+import { computeFitScore, FIT_THRESHOLD } from "@/lib/evidence/fitScore"
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
@@ -138,7 +139,8 @@ export default async function EvidenceMatchPage({
   }
   const readiness = evaluateReadiness(jobWithDecisionAuthority)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
-  const matchScore = typeof job.score === "number" ? job.score : null
+  const fit = computeFitScore(requirementMatches)
+  const matchScore = fit.fitScore
   const requiredTotal = requirementMatches.filter((match) => match.priority === "required").length
   const requiredVerified = requirementMatches.filter(
     (match) =>
@@ -183,8 +185,8 @@ export default async function EvidenceMatchPage({
       {/* Status strip */}
       <div className="hw-metrics">
         <div className="hw-stat">
-          <span className="hw-stat-value text-primary">{matchScore !== null ? `${matchScore}/100` : "—"}</span>
-          <span className="hw-stat-label">Match Score</span>
+          <span className={cn("hw-stat-value", matchScore === null ? "text-muted-foreground" : fit.meetsThreshold ? "text-emerald-600" : "text-amber-600")}>{matchScore !== null ? `${matchScore}/100` : "—"}</span>
+          <span className="hw-stat-label">Fit Score</span>
         </div>
         <div className="hw-stat">
           <span className="hw-stat-value text-primary">{requiredTotal}</span>
@@ -236,13 +238,13 @@ export default async function EvidenceMatchPage({
                 />
               )}
 
-              {requiredGaps.length === 0 && (
+              {requiredGaps.length === 0 && fit.meetsThreshold && (
                 <div className="hw-card border-l-4 border-l-emerald-500 px-5 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="hw-section-label mb-1">Fit is proved enough to continue.</p>
+                      <p className="hw-section-label mb-1">Fit proved — all go ({matchScore}%).</p>
                       <p className="text-sm text-muted-foreground">
-                        HireWire will generate from confirmed, auto-matched, or intentionally skipped claims.
+                        Fit is at or above the {FIT_THRESHOLD}% bar. HireWire will generate from confirmed and auto-matched claims.
                       </p>
                     </div>
                     <Link href={`/jobs/${id}`} className="shrink-0">
@@ -250,6 +252,18 @@ export default async function EvidenceMatchPage({
                         Return to job <ArrowRight className="h-3.5 w-3.5" />
                       </Button>
                     </Link>
+                  </div>
+                </div>
+              )}
+
+              {requiredGaps.length === 0 && !fit.meetsThreshold && (
+                <div className="hw-card border-l-4 border-l-amber-500 px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="hw-section-label mb-1">Keep proving — fit is {matchScore ?? 0}%, below the {FIT_THRESHOLD}% bar.</p>
+                    <p className="text-sm text-muted-foreground">
+                      You&apos;ve cleared the required prompts, but too many were skipped or unproven to confidently apply.
+                      Confirm real evidence for more required signals to reach {FIT_THRESHOLD}% before generating.
+                    </p>
                   </div>
                 </div>
               )}

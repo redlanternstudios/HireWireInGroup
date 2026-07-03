@@ -31,20 +31,22 @@ export function GenerateButton({
   const [error, setError] = useState<string | null>(null)
   const [blockedRequirements, setBlockedRequirements] = useState<BlockedRequirement[]>([])
   const [nextActionHref, setNextActionHref] = useState<string | null>(null)
+  const [fitBlocked, setFitBlocked] = useState(false)
   const router = useRouter()
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (override = false) => {
     if (disabled) return
     setIsLoading(true)
     setError(null)
     setBlockedRequirements([])
     setNextActionHref(null)
+    if (!override) setFitBlocked(false)
 
     try {
       const res = await fetch("/api/generate-documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobId }),
+        body: JSON.stringify({ job_id: jobId, override }),
       })
       const data = await res.json().catch(() => ({}))
 
@@ -100,6 +102,15 @@ export function GenerateButton({
           if (data.next_action?.href && typeof data.next_action.href === "string") {
             setNextActionHref(data.next_action.href)
           }
+        } else if (data.error === "fit_below_threshold") {
+          setError(
+            data.user_message ??
+              `Fit is ${data.fit_score}% — below the ${data.threshold}% bar.`
+          )
+          setFitBlocked(true)
+          if (data.next_action?.href && typeof data.next_action.href === "string") {
+            setNextActionHref(data.next_action.href)
+          }
         } else if (data.error === "generation_limit_reached") {
           setError(
             data.user_message ??
@@ -125,12 +136,33 @@ export function GenerateButton({
   return (
     <div className="space-y-2">
       <button
-        onClick={handleGenerate}
+        onClick={() => handleGenerate()}
         disabled={isLoading || disabled}
         className="w-full rounded-lg hw-btn-primary px-4 py-2.5 text-sm disabled:opacity-50 transition-all"
       >
         {isLoading ? "Generating documents…" : "Generate resume & cover letter"}
       </button>
+      {fitBlocked && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-left">
+          <p className="text-xs text-amber-800">
+            Fit is below the bar. Prove more required signals for a stronger resume — or generate anyway.
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            {nextActionHref && (
+              <a href={nextActionHref} className="text-xs font-semibold text-amber-900 underline">
+                Prove Fit
+              </a>
+            )}
+            <button
+              onClick={() => handleGenerate(true)}
+              disabled={isLoading}
+              className="text-xs font-semibold text-amber-900 underline disabled:opacity-50"
+            >
+              Generate anyway
+            </button>
+          </div>
+        </div>
+      )}
       {disabled && disabledReason && (
         <p className="text-xs text-amber-600 text-center">{disabledReason}</p>
       )}
