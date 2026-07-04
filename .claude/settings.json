@@ -3,6 +3,7 @@
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
+        "hooks": [{"type":"command","command":"echo '[CLAUDE EDIT] '$(date +%H:%M)' '$CLAUDE_TOOL_INPUT_FILE_PATH >> .claude/task_log.txt"}]
         "hooks": [
           {
             "type": "command",
@@ -14,6 +15,11 @@
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
+        "hooks": [{"type":"command","command":"npx tsc --noEmit 2>&1 | head -15"}]
+      }
+    ]
+  }
+}
         "hooks": [
           {
             "type": "command",
