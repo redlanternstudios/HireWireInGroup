@@ -23,13 +23,26 @@ function getBrowserSupabaseConfig() {
   return { supabaseUrl, supabaseAnonKey };
 }
 
-const { supabaseUrl, supabaseAnonKey } = getBrowserSupabaseConfig();
+// Lazy singleton pattern to prevent multiple GoTrueClient instances
+let supabaseInstance: ReturnType<typeof createBrowserClient> | null = null;
 
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+function getSupabaseClient() {
+  if (!supabaseInstance) {
+    const { supabaseUrl, supabaseAnonKey } = getBrowserSupabaseConfig();
+    supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey);
+  }
+  return supabaseInstance;
+}
 
-// Named factory for components that need a fresh client reference.
+export const supabase = new Proxy({} as ReturnType<typeof createBrowserClient>, {
+  get: (target, prop) => {
+    return getSupabaseClient()[prop as keyof typeof supabaseInstance];
+  },
+});
+
+// Named factory for components that need the singleton client reference.
 export function createClient() {
-  return supabase;
+  return getSupabaseClient();
 }
 
 // React hook — returns the singleton supabase client and the live session.
@@ -38,16 +51,17 @@ export function useSupabase() {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    const client = getSupabaseClient();
+    client.auth.getSession().then(({ data }) => {
       setSession(data.session);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, s) => {
       setSession(s);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  return { supabase, session };
+  return { supabase: getSupabaseClient(), session };
 }
