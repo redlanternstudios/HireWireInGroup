@@ -155,6 +155,23 @@ function evidenceFixHref(job: ReadinessJob): string {
   return buildEvidenceFixHref(job.id, listUnresolvedRequirements(job)[0]?.id ?? null);
 }
 
+function improveFitWithCoachHref(job: ReadinessJob): string {
+  if (!job.id) return "/coach";
+  const evidenceMap = job.evidence_map as CanonicalJobEvidenceMap | null;
+  const firstUnresolvedId = listUnresolvedRequirements(job)[0]?.id ?? null;
+  const firstSkippedRequiredId =
+    evidenceMap?.requirement_matches.find(
+      (match) =>
+        match.priority === "required" &&
+        match.proof_decision === "skipped",
+    )?.requirement_id ?? null;
+  const requirementId = firstUnresolvedId ?? firstSkippedRequiredId;
+  const requirementParam = requirementId
+    ? `&req=${encodeURIComponent(requirementId)}`
+    : "";
+  return `/coach?job=${encodeURIComponent(job.id)}${requirementParam}`;
+}
+
 export function evaluateReadiness(
   job: ReadinessJob & { voice_drift_result?: any },
 ): ReadinessResult {
@@ -305,9 +322,9 @@ function getNextAction(
 
   if (!checklist.fit) {
     return {
-      label: "Improve fit",
-      href: job.id ? `/jobs/${job.id}/evidence-match` : "/jobs",
-      description: `Confirm more real evidence until verified fit is above ${FIT_THRESHOLD}%.`,
+      label: "Improve fit with coach",
+      href: improveFitWithCoachHref(job),
+      description: `Talk through real experience with the coach until verified fit is above ${FIT_THRESHOLD}%.`,
     };
   }
 

@@ -326,7 +326,9 @@ export function CoachChat({
                   </div>
                 </div>
                 <p className="text-sm text-white/70 leading-relaxed">
-                  {jobContext
+                  {gapContext?.gap
+                    ? `We're improving your fit for: ${gapContext.gap.requirement}`
+                    : jobContext
                     ? `I'm focused on ${jobContext.title} at ${jobContext.company}. Let's build the strongest possible application.`
                     : "I'm your strategic career coach. I can help with job search strategy, interview prep, evidence building, and improving your materials."}
                 </p>

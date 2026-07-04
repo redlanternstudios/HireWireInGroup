@@ -219,14 +219,48 @@ function StatRow({
 export default async function CoachPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string | string[] }>;
+  searchParams: Promise<{
+    job?: string | string[];
+    req?: string | string[];
+  }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const jobParam = resolvedSearchParams.job;
+  const requirementParam = resolvedSearchParams.req;
   const focusedJobId = Array.isArray(jobParam) ? jobParam[0] : jobParam;
+  const focusedRequirementId = Array.isArray(requirementParam)
+    ? requirementParam[0]
+    : requirementParam;
   const ctx = await getCoachContext(focusedJobId ?? null);
   const focusedJob = ctx?.focusedJob ?? null;
   const focusedFitScore = ctx?.focusedFitScore ?? null;
+  const focusedEvidenceMap = focusedJob
+    ? asCanonicalEvidenceMap(focusedJob.evidence_map)
+    : null;
+  const focusedRequirement = focusedRequirementId
+    ? focusedEvidenceMap?.requirement_matches.find(
+        (match) => match.requirement_id === focusedRequirementId,
+      )
+    : null;
+  const gapContext =
+    focusedJob && focusedRequirement
+      ? {
+          jobTitle: focusedJob.role_title ?? "this role",
+          company: focusedJob.company_name ?? "this company",
+          gap: {
+            requirement_id: focusedRequirement.requirement_id,
+            requirement: focusedRequirement.requirement_text,
+            category: focusedRequirement.expectation_type ?? focusedRequirement.priority,
+            coach_question:
+              focusedRequirement.recovery_question ??
+              focusedRequirement.evidence_questions?.[0] ??
+              `Tell me about real experience that could support: ${focusedRequirement.requirement_text}`,
+          },
+        }
+      : undefined;
+  const initialMessage = focusedRequirement
+    ? `Help me improve my fit for this exact requirement: "${focusedRequirement.requirement_text}". Ask me one question at a time about experience I can prove. Turn a supported answer into an evidence draft for my confirmation, then connect confirmed evidence back to this job. Do not invent anything or change my resume before I confirm the evidence.`
+    : undefined;
 
   const evidenceStatus =
     !ctx || ctx.evidenceCount === 0
@@ -306,6 +340,8 @@ export default async function CoachPage({
                   }
                 : undefined
             }
+            gapContext={gapContext}
+            initialMessage={initialMessage}
           />
         </div>
 
