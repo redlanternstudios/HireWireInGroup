@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { HireWireLogo } from "@/components/hirewire-logo"
+import { BackButton } from "@/components/back-button"
 
 export default function AuthLayout({
   children,
@@ -8,6 +9,9 @@ export default function AuthLayout({
 }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-8 gap-6">
+      <div className="absolute top-4 left-4">
+        <BackButton fallbackHref="/" label="Back" />
+      </div>
       <Link href="/" aria-label="HireWire home">
         <HireWireLogo variant="color" size="md" />
       </Link>

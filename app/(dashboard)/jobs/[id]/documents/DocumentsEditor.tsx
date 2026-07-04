@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -24,6 +24,11 @@ import {
 } from "@/lib/resume-formats";
 import { ResumePreviewPanel } from "@/components/documents/ResumePreviewPanel";
 import { ResumeExportMenu } from "@/components/documents/ResumeExportMenu";
+import { supabase } from "@/lib/supabase/client";
+import GovernancePanel from "./GovernancePanel";
+import VerificationBadge from "./VerificationBadge";
+import type { Verdict } from "./VerificationBadge";
+import { ShieldCheck } from "lucide-react";
 
 type Job = {
   id: string;
@@ -44,6 +49,17 @@ type Job = {
   package_review_status?: string | null;
   generation_timestamp?: string | null;
   last_edited_at?: string | null;
+};
+
+type Claim = {
+  id: string;
+  claim_text: string;
+  section: string;
+  position: number;
+  evidence_ids: string[];
+  claim_grounded: boolean;
+  governance_verdict: string | null;
+  provenance_ref: Record<string, unknown> | null;
 };
 
 interface DocumentsEditorProps {
@@ -81,6 +97,51 @@ export default function DocumentsEditor({
   const savedResumeContent = job.edited_resume ?? originalResume;
   // True when the textarea has changes the user hasn't saved yet
   const resumeHasUnsavedChanges = resume !== savedResumeContent;
+
+  // ── Governance / provenance state ────────────────────────────────────────
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
+  const [showProvenance, setShowProvenance] = useState(false);
+
+  // Fetch claims on mount — cancellable to prevent stale-result race on job.id change
+  useEffect(() => {
+    let cancelled = false;
+    const fetchClaims = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data } = await supabase
+        .from("generated_claims")
+        .select("*")
+        .eq("job_id", job.id)
+        .eq("user_id", user.id)
+        .order("position", { ascending: true });
+      if (data && !cancelled) setClaims(data);
+    };
+    fetchClaims();
+    return () => {
+      cancelled = true;
+    };
+  }, [job.id]);
+
+  // Find the claim matching a bullet line (fuzzy match on first 50 chars)
+  const findClaim = useCallback(
+    (line: string): Claim | null => {
+      const clean = line.replace(/^[•\-\*]\s*/, "").trim();
+      if (!clean) return null;
+      return (
+        claims.find(
+          (c) =>
+            c.claim_text.slice(0, 50) === clean.slice(0, 50) ||
+            c.claim_text.toLowerCase().slice(0, 50) ===
+              clean.toLowerCase().slice(0, 50),
+        ) ?? null
+      );
+    },
+    [claims],
+  );
+  // ── End governance state ─────────────────────────────────────────────────
 
   const flash = (msg: string, ms = 2500) => {
     setStatus(msg);
@@ -220,8 +281,18 @@ export default function DocumentsEditor({
     }
   };
 
+  // Parse resume into lines for provenance view
+  const resumeLines = resume.split("\n");
+
   return (
     <>
+      {/* GovernancePanel — mounted at root, controlled by selectedClaimId */}
+      <GovernancePanel
+        jobId={job.id}
+        claimId={selectedClaimId}
+        onClose={() => setSelectedClaimId(null)}
+      />
+
       <ResumePreviewPanel
         open={showPreview}
         onOpenChange={setShowPreview}
@@ -336,6 +407,21 @@ export default function DocumentsEditor({
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-base font-semibold text-foreground">Resume</h2>
             <div className="flex items-center gap-2">
+              {claims.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowProvenance((p) => !p)}
+                  className={[
+                    "inline-flex items-center gap-1.5 rounded border px-3 py-1 text-xs transition-colors",
+                    showProvenance
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border hover:bg-muted",
+                  ].join(" ")}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {showProvenance ? "Edit Mode" : "Provenance"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleCopy(resume, "Resume")}
@@ -365,12 +451,63 @@ export default function DocumentsEditor({
               />
             </div>
           </div>
-          <textarea
-            value={resume}
-            onChange={(e) => setResume(e.target.value)}
-            className="h-112 w-full rounded border border-border bg-background p-3 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            spellCheck
-          />
+
+          {showProvenance ? (
+            <div className="rounded border border-border bg-muted/30 p-4 font-mono text-sm space-y-1 min-h-[28rem] overflow-y-auto">
+              {resumeLines.map((line, i) => {
+                const claim = findClaim(line);
+                const verdict = (claim?.governance_verdict as Verdict) ?? null;
+                const isBullet =
+                  /^[•\-\*]\s/.test(line.trim()) ||
+                  line.trim().startsWith("•");
+                return (
+                  <div
+                    key={i}
+                    className={[
+                      "flex items-start gap-2 py-0.5",
+                      isBullet && claim
+                        ? "group cursor-pointer rounded px-1 hover:bg-background"
+                        : "",
+                    ].join(" ")}
+                    onClick={() => {
+                      if (isBullet && claim) setSelectedClaimId(claim.id);
+                    }}
+                  >
+                    <span className="flex-1 whitespace-pre-wrap text-foreground">
+                      {line || " "}
+                    </span>
+                    {isBullet && (
+                      <span className="shrink-0 mt-0.5">
+                        <VerificationBadge
+                          verdict={verdict}
+                          evidenceCount={
+                            claim
+                              ? Array.isArray(claim.evidence_ids)
+                                ? claim.evidence_ids.length
+                                : 0
+                              : undefined
+                          }
+                          onClick={
+                            claim
+                              ? () => setSelectedClaimId(claim.id)
+                              : undefined
+                          }
+                          compact
+                        />
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <textarea
+              value={resume}
+              onChange={(e) => setResume(e.target.value)}
+              className="h-112 w-full rounded border border-border bg-background p-3 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              spellCheck
+            />
+          )}
         </section>
 
         <Section

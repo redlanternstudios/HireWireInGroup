@@ -3,7 +3,7 @@
 // Premium subscription management hook for HireWire
 // This file must have .tsx extension for JSX support
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 import { 
   type PlanType, 
   type UsageState, 
@@ -59,7 +59,6 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
 
   const refreshUsage = useCallback(async () => {
     try {
-      const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       
       if (!user) {

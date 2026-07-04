@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
+import { NavigationControls } from '@/components/navigation-controls'
 import { PremiumProvider } from '@/hooks/use-premium'
 
 export default async function DashboardLayout({
@@ -35,6 +36,7 @@ export default async function DashboardLayout({
         <SidebarInset>
           <header className="flex h-10 items-center gap-2 border-b border-border/60 px-4 bg-background/80 backdrop-blur-sm">
             <SidebarTrigger className="-ml-1" />
+            <NavigationControls fallbackHref="/dashboard" className="ml-auto" />
           </header>
           <main className="flex-1 px-5 py-5">
             {children}

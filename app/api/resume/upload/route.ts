@@ -1,555 +1,223 @@
 /**
  * POST /api/resume/upload
  *
- * Canonical resume upload route. Single flow:
- *   1. Extract text (PDF / DOCX / TXT / JSON body)
- *   2. Store raw record in source_resumes (filename, content_text)
- *   3. Parse via lib/resumeParser → ParsedResume (canonical shape)
+ * Accepts a resume as multipart/form-data (file) or JSON ({text}).
+ * Supported files: text/plain (.txt). PDF/DOCX not yet supported.
+ *
+ * Flow:
+ *   1. Extract text from request
+ *   2. Store raw record in source_resumes
+ *   3. Parse via Groq → ParsedResume
  *   4. Update source_resumes.parsed_data
- *   5. Pre-fill user_profile if fields are empty
- *   6. Map to evidence rows via lib/mapResumeToEvidence
- *   7. Deduplicate + insert / update evidence_library
- *   8. Return canonical summary
+ *   5. Map to evidence rows via mapResumeToEvidence
+ *   6. Deduplicate against existing evidence for this user
+ *   7. Insert new rows / update skills rows
+ *   8. Return summary
  */
 
-import { type NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { parseResumeText } from "@/lib/resumeParser";
-import { isAnthropicConfigured } from "@/lib/ai/gateway";
-import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence";
-import {
-  extractEducationFromResumeText,
-  buildEducationEvidenceRows,
-} from "@/lib/resume/extractEducation";
-import { handleDomainEvent } from "@/lib/domain-events";
-import { detectEvidenceDuplicates } from "@/lib/evidence/duplicates";
-import {
-  buildProfileContext,
-  isContextEngineEnabled,
-  mirrorProfileContext,
-} from "@/lib/context-engine";
-import { requireUser } from "@/lib/supabase/require-user";
-
-export const maxDuration = 60;
-
-// Extract text from PDF
-async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  const pdfParse = (await import("pdf-parse")).default;
-  const data = await pdfParse(buffer);
-  return data.text;
-}
-
-// Extract text from DOCX
-async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
-  const mammoth = await import("mammoth");
-  const result = await mammoth.extractRawText({ buffer });
-  return result.value;
-}
+import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
+import { parseResumeText } from "@/lib/resumeParser"
+import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
 
 export async function POST(request: NextRequest) {
-  try {
-    const auth = await requireUser();
-    if (!auth.ok) return auth.response;
-    const { supabase, userId } = auth;
+  const supabase = await createClient()
 
-    // ── 1. Extract text ──────────────────────────────────────────────────────
-    let rawText = "";
-    let filename = "resume.txt";
-    let mimeType = "text/plain";
-
-    const contentType = request.headers.get("content-type") ?? "";
-
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
-      const file = formData.get("file") as File | null;
-      const textField = formData.get("text") as string | null;
-
-      if (file) {
-        filename = file.name;
-        mimeType = file.type || "text/plain";
-
-        if (file.size > 10 * 1024 * 1024) {
-          return NextResponse.json(
-            { error: "File too large. Maximum size is 10MB." },
-            { status: 400 },
-          );
-        }
-
-        const buffer = Buffer.from(await file.arrayBuffer());
-        try {
-          if (file.type === "application/pdf") {
-            rawText = await extractTextFromPDF(buffer);
-          } else if (
-            file.type ===
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-            file.type === "application/msword"
-          ) {
-            rawText = await extractTextFromDOCX(buffer);
-          } else {
-            rawText = await file.text();
-          }
-        } catch (extractError) {
-          console.error("Text extraction error:", extractError);
-          return NextResponse.json(
-            { error: "Failed to extract text from file." },
-            { status: 400 },
-          );
-        }
-      } else if (textField) {
-        rawText = textField;
-        filename = "pasted_resume.txt";
-        mimeType = "text/plain";
-      }
-    } else if (contentType.includes("application/json")) {
-      const body = await request.json();
-      rawText = body.text ?? "";
-      filename = body.filename ?? "resume.txt";
-      mimeType = "text/plain";
+  // Auth check — getUser() verifies the token against the Supabase API.
+  // If middleware is inactive (e.g. v0 sandbox, deprecated middleware convention),
+  // the session cookie may be present but the token unrefreshed. Fall back to
+  // getSession() which reads the JWT directly from the cookie without verification.
+  let userId: string | undefined
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    userId = user.id
+  } else {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      userId = session.user.id
     }
+  }
 
-    if (!rawText || rawText.trim().length < 50) {
-      return NextResponse.json(
-        { error: "No resume text received or text too short." },
-        { status: 400 },
-      );
-    }
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
 
-    // ── 2. Store raw record ──────────────────────────────────────────────────
-    const { data: sourceResume, error: insertResumeError } = await supabase
-      .from("source_resumes")
-      .insert({
-        user_id: userId,
-        file_name: filename,
-        parsed_text: rawText,
-        file_type: mimeType,
-        parse_status: "pending",
-      })
-      .select("id")
-      .single();
+  // ── 1. Extract text from the request ──────────────────────────────────────
+  let resumeText = ""
+  let filename = "resume.txt"
 
-    if (insertResumeError || !sourceResume) {
-      console.error("source_resumes insert error:", insertResumeError);
-      return NextResponse.json(
-        {
-          error: "Failed to store resume record",
-          detail: insertResumeError?.message,
-        },
-        { status: 500 },
-      );
-    }
+  const contentType = request.headers.get("content-type") ?? ""
 
-    const sourceResumeId = sourceResume.id;
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData()
+    const file = formData.get("file") as File | null
+    const textField = formData.get("text") as string | null
 
-    // ── 3. Parse via Claude ──────────────────────────────────────────────────
+    if (file) {
+      filename = file.name
+      const fileType = file.type
 
-    if (!isAnthropicConfigured()) {
-      await supabase.from("source_resumes").delete().eq("id", sourceResumeId);
-      return NextResponse.json(
-        {
-          error:
-            "AI Gateway is not configured. Add AI_GATEWAY_API_KEY to enable resume parsing.",
-        },
-        { status: 500 },
-      );
-    }
-
-    let parsed;
-    try {
-      parsed = await parseResumeText(rawText);
-    } catch (parseError) {
-      console.error("Resume parse error:", parseError);
-      await supabase.from("source_resumes").delete().eq("id", sourceResumeId);
-      return NextResponse.json(
-        { error: "Failed to parse resume. Please try again." },
-        { status: 500 },
-      );
-    }
-
-    // ── 4. Update source_resumes with parsed_data ────────────────────────────
-    await supabase
-      .from("source_resumes")
-      .update({
-        parsed_data: parsed,
-        parse_status: "completed",
-        parsed_at: new Date().toISOString(),
-      })
-      .eq("id", sourceResumeId);
-
-    if (isContextEngineEnabled()) {
-      const context = buildProfileContext({
-        userId,
-        sourceId: sourceResumeId,
-        sourceType: "resume",
-        sourceLabel: filename,
-        rawText,
-        parsedData: parsed as unknown as Record<string, unknown>,
-      });
-      void mirrorProfileContext({ supabase, userId, context });
-    }
-
-    // ── 4b. Extract and insert education evidence rows ───────────────────────
-    const educationEntries = await extractEducationFromResumeText(rawText);
-
-    if (educationEntries.length > 0) {
-      const educationRows = buildEducationEvidenceRows(
-        educationEntries,
-        userId,
-        sourceResumeId,
-      );
-
-      const { error: eduError } = await supabase
-        .from("evidence_library")
-        .upsert(educationRows, {
-          onConflict: "user_id,source_title,source_type",
-          ignoreDuplicates: false,
-        });
-
-      if (eduError) {
-        console.error(
-          "[resume/upload] Education evidence insert error:",
-          eduError,
-        );
-      }
-    }
-    // ── End education injection ──────────────────────────────────────────────
-
-    // ── 5. Pre-fill user_profile if fields are empty ─────────────────────────
-    const { data: profile } = await supabase
-      .from("user_profile")
-      .select("full_name, location, summary, skills, email, phone")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (profile) {
-      const updates: Record<string, unknown> = {};
-      if (!profile.full_name && parsed.full_name)
-        updates.full_name = parsed.full_name;
-      if (!profile.location && parsed.location)
-        updates.location = parsed.location;
-      if (!profile.summary && parsed.summary) updates.summary = parsed.summary;
-      if (!profile.skills || profile.skills.length === 0) {
-        const allSkills = [...(parsed.skills ?? []), ...(parsed.tools ?? [])];
-        if (allSkills.length > 0) updates.skills = allSkills;
-      }
-      if (!profile.email && parsed.email) updates.email = parsed.email;
-      if (!profile.phone && parsed.phone) updates.phone = parsed.phone;
-
-      // Write parsed links into user_profile_links (canonical table)
-      const linkCandidates: { link_type: string; url: string }[] = [];
-      if (parsed.linkedin_url)
-        linkCandidates.push({
-          link_type: "linkedin",
-          url: parsed.linkedin_url,
-        });
-      if (parsed.github_url)
-        linkCandidates.push({ link_type: "github", url: parsed.github_url });
-      if (parsed.website_url)
-        linkCandidates.push({ link_type: "website", url: parsed.website_url });
-
-      if (linkCandidates.length > 0) {
-        const { data: existingLinks } = await supabase
-          .from("user_profile_links")
-          .select("link_type")
-          .eq("user_id", userId);
-        const existingTypes = new Set(
-          (existingLinks || []).map((l) => l.link_type),
-        );
-        const toInsert = linkCandidates
-          .filter((l) => !existingTypes.has(l.link_type))
-          .map((l) => ({
-            user_id: userId,
-            link_type: l.link_type,
-            url: l.url,
-            is_primary: true,
-            is_user_approved: true,
-            source: "parsed_resume",
-            parse_status: "pending",
-          }));
-        if (toInsert.length > 0) {
-          await supabase.from("user_profile_links").insert(toInsert);
-        }
-      }
-
-      if (Object.keys(updates).length > 0) {
-        updates.updated_at = new Date().toISOString();
-        await supabase
-          .from("user_profile")
-          .update(updates)
-          .eq("user_id", userId);
-      }
-    }
-
-    // ── 6. Map to evidence rows ──────────────────────────────────────────────
-    // Education is handled by step 4b (extractEducation) which populates proof_snippet.
-    // Filter it out here to avoid duplicate rows with a different source_title format.
-    const candidateRows = mapResumeToEvidence(parsed).filter(
-      (r) => r.source_type !== "education",
-    );
-
-    if (candidateRows.length === 0) {
-      return NextResponse.json({
-        message: "Resume stored but no evidence rows could be extracted.",
-        source_resume_id: sourceResumeId,
-        inserted: 0,
-        updated: 0,
-        skipped: 0,
-        evidence: [],
-        full_name: parsed.full_name ?? null,
-        location: parsed.location ?? null,
-        summary: parsed.summary ?? null,
-        skills: [...(parsed.skills ?? []), ...(parsed.tools ?? [])],
-        experience_count: parsed.work_experience?.length ?? 0,
-      });
-    }
-
-    // ── 7. Deduplicate against existing evidence ─────────────────────────────
-    const { data: existing } = await supabase
-      .from("evidence_library")
-      .select(
-        "id, source_type, source_title, role_name, company_name, date_range, responsibilities, tools_used, outcomes, proof_snippet",
-      )
-      .eq("user_id", userId);
-
-    const existingMap = new Map<string, string>();
-    for (const row of existing ?? []) {
-      const key = [
-        row.source_type ?? "",
-        (row.source_title ?? "").toLowerCase().trim(),
-        (row.role_name ?? "").toLowerCase().trim(),
-        (row.company_name ?? "").toLowerCase().trim(),
-        (row.date_range ?? "").toLowerCase().trim(),
-      ].join("|");
-      existingMap.set(key, row.id);
-    }
-
-    let rowsToInsert: typeof candidateRows = [];
-    const skillsToUpdate: Array<{ id: string; tools_used: string[] | null }> =
-      [];
-    let skippedCount = 0;
-
-    for (const row of candidateRows) {
-      const key = dedupeKey(row);
-      const existingId = existingMap.get(key);
-      if (!existingId) {
-        rowsToInsert.push(row);
-      } else if (row.source_type === "skill") {
-        skillsToUpdate.push({ id: existingId, tools_used: row.tools_used });
-      } else {
-        skippedCount++;
-      }
-    }
-
-    const duplicateCandidates = detectEvidenceDuplicates(rowsToInsert, existing ?? []);
-    const duplicateIndexes = new Set(
-      duplicateCandidates.map((candidate) => candidate.group_id.replace("evidence-duplicate-", "")),
-    );
-    rowsToInsert = rowsToInsert.filter((_row, index) => !duplicateIndexes.has(String(index)));
-    skippedCount += duplicateCandidates.length;
-
-    // ── 8a. Update existing skill rows ───────────────────────────────────────
-    for (const update of skillsToUpdate) {
-      await supabase
-        .from("evidence_library")
-        .update({
-          tools_used: update.tools_used,
-          source_resume_id: sourceResumeId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", update.id)
-        .eq("user_id", userId);
-    }
-
-    // ── 8b. Insert new evidence rows ─────────────────────────────────────────
-    let inserted: Array<{
-      id: string;
-      source_type: string;
-      source_title: string;
-    }> = [];
-
-    if (rowsToInsert.length > 0) {
-      const { data: insertedData, error: evidenceError } = await supabase
-        .from("evidence_library")
-        .upsert(
-          rowsToInsert.map((row) => ({
-            ...row,
-            user_id: userId,
-            source_resume_id: sourceResumeId,
-          })),
-          {
-            // ignoreDuplicates: true → ON CONFLICT DO NOTHING
-            // Client-side dedupeKey uses 5 fields; DB constraint is 3 (user_id,source_title,source_type).
-            // Rows that pass the client-side check but still conflict in the DB are silently skipped
-            // rather than throwing a 23505 / 409.
-            onConflict: "user_id,source_title,source_type",
-            ignoreDuplicates: true,
-          },
-        )
-        .select("id, source_type, source_title");
-
-      if (evidenceError) {
-        console.error("evidence_library insert error:", evidenceError);
+      if (fileType === "application/pdf" ||
+          fileType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+          fileType === "application/msword") {
         return NextResponse.json(
-          {
-            error: "Failed to insert evidence rows",
-            detail: evidenceError.message,
-          },
-          { status: 500 },
-        );
+          { error: "PDF and Word upload not yet supported. Please paste your resume text or upload a .txt file." },
+          { status: 415 }
+        )
       }
 
-      inserted = insertedData ?? [];
+      resumeText = await file.text()
+    } else if (textField) {
+      resumeText = textField
     }
+  } else if (contentType.includes("application/json")) {
+    const body = await request.json()
+    resumeText = body.text ?? ""
+    filename = body.filename ?? "resume.txt"
+  }
 
-    // ── 9. Insert candidate_resume_versions and return for integrity scoring ──
-    const { data: resumeVersion, error: versionError } = await supabase
-      .from("candidate_resume_versions")
-      .insert({
-        user_id: userId,
-        file_name: filename,
-        file_type: mimeType,
-        parsed_text: rawText,
-        upload_source: "upload",
-      })
-      .select("id")
-      .single();
+  if (!resumeText.trim()) {
+    return NextResponse.json({ error: "No resume text received" }, { status: 400 })
+  }
 
-    if (versionError || !resumeVersion) {
-      return NextResponse.json(
-        { error: "Failed to save resume version" },
-        { status: 500 },
-      );
-    }
-
-    // Extract bullets for integrity scoring
-    const bullets = (
-      Array.isArray(parsed.work_experience) ? parsed.work_experience : []
-    ).flatMap((w) =>
-      Array.isArray(w.responsibilities) ? w.responsibilities : [],
-    );
-
-    void handleDomainEvent({
-      supabase,
-      event_type: "resume_uploaded",
-      job_id: null,
+  // ── 2. Store raw record in source_resumes ─────────────────────────────────
+  const { data: sourceResume, error: insertResumeError } = await supabase
+    .from("source_resumes")
+    .insert({
       user_id: userId,
-      source: "system",
-      payload: {
-        source_resume_id: sourceResumeId,
-        filename,
-        evidence_inserted: inserted.length,
-        evidence_updated: skillsToUpdate.length,
-        education_count: educationEntries.length,
-      },
-    });
-    if (inserted.length > 0 || skillsToUpdate.length > 0 || educationEntries.length > 0) {
-      void handleDomainEvent({
-        supabase,
-        event_type: "evidence_added",
-        job_id: null,
-        user_id: userId,
-        source: "system",
-        payload: {
-          source_resume_id: sourceResumeId,
-          filename,
-          evidence_inserted: inserted.length,
-          evidence_updated: skillsToUpdate.length,
-          education_count: educationEntries.length,
-          via: "resume_upload",
-        },
-      });
-    }
+      filename,
+      content_text: resumeText,
+    })
+    .select("id")
+    .single()
 
-    return NextResponse.json({
-      message: "Resume processed successfully",
-      resume_version_id: resumeVersion.id,
-      bullets,
-      source_resume_id: sourceResumeId,
-      inserted: inserted.length,
-      updated: skillsToUpdate.length,
-      skipped: skippedCount,
-      duplicates_found: duplicateCandidates.length,
-      duplicate_candidates: duplicateCandidates,
-      education_count: educationEntries.length,
-      evidence: inserted.map((e) => ({
-        id: e.id,
-        type: e.source_type,
-        title: e.source_title,
-      })),
-      full_name: parsed.full_name ?? null,
-      location: parsed.location ?? null,
-      summary: parsed.summary ?? null,
-      skills: [...(parsed.skills ?? []), ...(parsed.tools ?? [])],
-      experience_count: parsed.work_experience?.length ?? 0,
-    });
-  } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
-  }
-}
-
-// GET - Retrieve user's source resumes
-export async function GET() {
-  try {
-    const auth = await requireUser();
-    if (!auth.ok) return auth.response;
-    const { supabase, userId } = auth;
-
-    const { data: resumes, error } = await supabase
-      .from("source_resumes")
-      .select("id, file_name, parsed_text, parsed_data, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      return NextResponse.json(
-        { error: "Failed to fetch resumes" },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({ resumes });
-  } catch (error) {
-    console.error("Fetch error:", error);
+  if (insertResumeError || !sourceResume) {
+    console.error("source_resumes insert error:", insertResumeError)
     return NextResponse.json(
-      { error: "Failed to fetch resumes" },
-      { status: 500 },
-    );
+      { error: "Failed to store resume record", detail: insertResumeError?.message },
+      { status: 500 }
+    )
   }
-}
 
-// DELETE - Remove a source resume
-export async function DELETE(request: NextRequest) {
+  const sourceResumeId = sourceResume.id
+
+  // ── 3. Parse via Groq ─────────────────────────────────────────────────────
+  let parsed
   try {
-    const auth = await requireUser();
-    if (!auth.ok) return auth.response;
-    const { supabase, userId } = auth;
-
-    const { searchParams } = new URL(request.url);
-    const resumeId = searchParams.get("id");
-
-    if (!resumeId) {
-      return NextResponse.json(
-        { error: "Resume ID required" },
-        { status: 400 },
-      );
-    }
-
-    const { error } = await supabase
-      .from("source_resumes")
-      .delete()
-      .eq("id", resumeId)
-      .eq("user_id", userId);
-
-    if (error) {
-      return NextResponse.json(
-        { error: "Failed to delete resume" },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Delete error:", error);
-    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
+    parsed = await parseResumeText(resumeText)
+  } catch (parseError) {
+    console.error("Resume parse error:", parseError)
+    await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
+    return NextResponse.json(
+      { error: "Failed to parse resume. Ensure GROQ_API_KEY is configured." },
+      { status: 500 }
+    )
   }
+
+  // ── 4. Update source_resumes with parsed_data ─────────────────────────────
+  await supabase
+    .from("source_resumes")
+    .update({ parsed_data: parsed })
+    .eq("id", sourceResumeId)
+
+  // ── 5. Map to evidence rows ───────────────────────────────────────────────
+  const candidateRows = mapResumeToEvidence(parsed)
+
+  if (candidateRows.length === 0) {
+    return NextResponse.json({
+      message: "Resume stored but no evidence rows could be extracted.",
+      source_resume_id: sourceResumeId,
+      inserted: 0,
+      updated: 0,
+      skipped: 0,
+    })
+  }
+
+  // ── 6. Deduplicate against existing evidence ──────────────────────────────
+  const { data: existing } = await supabase
+    .from("evidence_library")
+    .select("id, source_type, source_title, role_name, company_name, date_range")
+    .eq("user_id", userId)
+
+  const existingMap = new Map<string, string>() // dedupeKey → row id
+  for (const row of existing ?? []) {
+    const key = [
+      row.source_type ?? "",
+      (row.source_title ?? "").toLowerCase().trim(),
+      (row.role_name ?? "").toLowerCase().trim(),
+      (row.company_name ?? "").toLowerCase().trim(),
+      (row.date_range ?? "").toLowerCase().trim(),
+    ].join("|")
+    existingMap.set(key, row.id)
+  }
+
+  const rowsToInsert: typeof candidateRows = []
+  const skillsToUpdate: Array<{ id: string; tools_used: string[] | null; source_resume_id: string }> = []
+  let skippedCount = 0
+
+  for (const row of candidateRows) {
+    const key = dedupeKey(row)
+    const existingId = existingMap.get(key)
+
+    if (!existingId) {
+      rowsToInsert.push(row)
+    } else if (row.source_type === "skill") {
+      skillsToUpdate.push({
+        id: existingId,
+        tools_used: row.tools_used,
+        source_resume_id: sourceResumeId,
+      })
+    } else {
+      skippedCount++
+    }
+  }
+
+  // ── 7a. Update existing skills rows ──────────────────────────────────────
+  for (const update of skillsToUpdate) {
+    await supabase
+      .from("evidence_library")
+      .update({
+        tools_used: update.tools_used,
+        source_resume_id: update.source_resume_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", update.id)
+      .eq("user_id", userId)
+  }
+
+  // ── 7b. Insert new evidence rows ──────────────────────────────────────────
+  let inserted: Array<{ id: string; source_type: string; source_title: string }> = []
+
+  if (rowsToInsert.length > 0) {
+    const { data: insertedData, error: evidenceError } = await supabase
+      .from("evidence_library")
+      .insert(
+        rowsToInsert.map((row) => ({
+          ...row,
+          user_id: userId,
+          source_resume_id: sourceResumeId,
+        }))
+      )
+      .select("id, source_type, source_title")
+
+    if (evidenceError) {
+      console.error("evidence_library insert error:", evidenceError)
+      return NextResponse.json(
+        { error: "Failed to insert evidence rows", detail: evidenceError.message },
+        { status: 500 }
+      )
+    }
+
+    inserted = insertedData ?? []
+  }
+
+  // ── 8. Return summary ─────────────────────────────────────────────────────
+  return NextResponse.json({
+    message: "Resume processed successfully",
+    source_resume_id: sourceResumeId,
+    inserted: inserted.length,
+    updated: skillsToUpdate.length,
+    skipped: skippedCount,
+    evidence: inserted.map((e) => ({ id: e.id, type: e.source_type, title: e.source_title })),
+  })
 }

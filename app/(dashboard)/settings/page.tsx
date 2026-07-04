@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { LogOut, Trash2, Loader2, User, CreditCard, ChevronRight } from "lucide-react"
@@ -12,7 +12,6 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     setSigningOut(true)
-    const supabase = createClient()
     await supabase.auth.signOut()
     router.push("/")
   }
