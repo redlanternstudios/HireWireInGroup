@@ -26,7 +26,7 @@ type EvidenceCandidate = {
 }
 
 function requiredYears(requirement: string): number | null {
-  const match = requirement.match(/\b(\d{1,2})\+?\s+years?\b/i)
+  const match = requirement.match(/\b(\d{1,2})(?:\+|\s+or\s+more)?\s+years?\b/i)
   return match ? Number(match[1]) : null
 }
 

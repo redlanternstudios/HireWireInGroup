@@ -181,4 +181,25 @@ describe("matchRequirementToEvidence", () => {
     assert.ok(result.riskFlags?.includes("duration_unverified"))
     assert.deepEqual(result.matched_evidence_ids, ["dated_pm"])
   })
+
+  it("recognizes an or more years requirement and enforces dated duration", () => {
+    const result = matchRequirementToEvidence({
+      requirement: "10 or more years of proven product management or related experience",
+      priority: "required",
+      evidenceCandidates: [
+        {
+          id: "four_year_pm",
+          source_title: "Senior Product Manager",
+          source_type: "work_experience",
+          role_name: "Senior Product Manager",
+          date_range: "2021-2025",
+          responsibilities: ["Owned product management strategy"],
+          confidence_level: "high",
+        },
+      ],
+    })
+
+    assert.equal(result.status, "partial")
+    assert.ok(result.riskFlags?.includes("duration_unverified"))
+  })
 })

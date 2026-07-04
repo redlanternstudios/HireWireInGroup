@@ -126,19 +126,22 @@ function mergeExistingMatch(
 ): RequirementEvidenceMatch {
   if (!existingMatch) return nextMatch
 
+  const preserveExistingEvidence = existingMatch.proof_decision === "confirmed"
   const matched_evidence_ids = Array.from(new Set([
     ...nextMatch.matched_evidence_ids,
-    ...existingMatch.matched_evidence_ids,
+    ...(preserveExistingEvidence ? existingMatch.matched_evidence_ids : []),
   ]))
   const matched_evidence_titles = Array.from(new Set([
     ...nextMatch.matched_evidence_titles,
-    ...existingMatch.matched_evidence_titles,
+    ...(preserveExistingEvidence ? existingMatch.matched_evidence_titles : []),
   ]))
   const evidence_types = Array.from(new Set([
     ...nextMatch.evidence_types,
-    ...existingMatch.evidence_types,
+    ...(preserveExistingEvidence ? existingMatch.evidence_types : []),
   ]))
-  const hasConfirmedEvidence = matched_evidence_ids.length > nextMatch.matched_evidence_ids.length
+  const hasConfirmedEvidence =
+    preserveExistingEvidence &&
+    matched_evidence_ids.length > nextMatch.matched_evidence_ids.length
   const status =
     nextMatch.status === "met" ? "met" :
     existingMatch.proof_decision === "skipped" ? existingMatch.status :
