@@ -166,21 +166,35 @@ export default function OnboardingPage() {
     }
   }
 
-  const handleSelectPath = (path: "job" | "evidence" | "explore" | "coach") => {
-    switch (path) {
-      case "job":
-        router.push("/jobs/new")
-        break
-      case "evidence":
-        router.push("/profile")
-        break
-      case "coach":
-        router.push("/coach")
-        break
-      case "explore":
-        router.push("/")
-        break
+  const handleSelectPath = async (path: "job" | "evidence" | "explore" | "coach") => {
+    // Mark onboarding complete — the single exit point from onboarding into the
+    // app. Without this, (dashboard)/layout.tsx bounces every user back to
+    // /onboarding forever, because user_profile.onboarding_complete defaults to
+    // false and nothing else ever flips it. This is the last required step.
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { error: completeError } = await supabase
+          .from("user_profile")
+          .update({ onboarding_complete: true })
+          .eq("user_id", user.id)
+        if (completeError) throw completeError
+      }
+    } catch (err) {
+      console.error("Failed to mark onboarding complete:", err)
+      setError("Couldn't finish setting up your account. Please try again.")
+      return
     }
+
+    const destination =
+      path === "job"
+        ? "/jobs/new"
+        : path === "evidence"
+          ? "/profile"
+          : path === "coach"
+            ? "/coach"
+            : "/dashboard" // "explore" — go to the app, not the marketing page
+    router.push(destination)
     router.refresh()
   }
 

@@ -15,36 +15,41 @@ import { CLAUDE_MODELS } from "@/lib/ai/gateway"
 
 // ── Zod schemas for structured extraction ─────────────────────────────────
 
+// NOTE: OpenAI strict json_schema mode (used by the AI gateway) requires every
+// property to be listed in `required`. `.optional()` / `.default()` break it with
+// "'required' ... must include every key". Use `.nullable()` instead — the field
+// is present-but-nullable, which strict mode accepts. The consumer
+// (mapResumeToEvidence) is already null-safe (?? [], ?.length, ?? null).
 const WorkExperienceSchema = z.object({
   role: z.string().describe("Job title / role name"),
   company: z.string().describe("Employer name"),
-  date_range: z.string().optional().describe("e.g. Jan 2020 – Mar 2023"),
-  location: z.string().optional(),
-  responsibilities: z.array(z.string()).optional().describe("Key responsibilities or bullet points"),
-  tools_used: z.array(z.string()).optional().describe("Technologies, tools, frameworks mentioned"),
-  outcomes: z.array(z.string()).optional().describe("Measurable results or achievements"),
+  date_range: z.string().nullable().describe("e.g. Jan 2020 – Mar 2023"),
+  location: z.string().nullable(),
+  responsibilities: z.array(z.string()).nullable().describe("Key responsibilities or bullet points"),
+  tools_used: z.array(z.string()).nullable().describe("Technologies, tools, frameworks mentioned"),
+  outcomes: z.array(z.string()).nullable().describe("Measurable results or achievements"),
 })
 
 const EducationSchema = z.object({
   degree: z.string().describe("Degree name e.g. BSc Computer Science"),
   school: z.string().describe("Institution name"),
-  field: z.string().optional().describe("Field of study if separate from degree name"),
-  date_range: z.string().optional().describe("e.g. 2015 – 2019"),
-  honors: z.string().optional().describe("Honors, GPA, distinctions"),
+  field: z.string().nullable().describe("Field of study if separate from degree name"),
+  date_range: z.string().nullable().describe("e.g. 2015 – 2019"),
+  honors: z.string().nullable().describe("Honors, GPA, distinctions"),
 })
 
 const CertificationSchema = z.object({
   name: z.string(),
-  issuer: z.string().optional(),
-  date: z.string().optional(),
+  issuer: z.string().nullable(),
+  date: z.string().nullable(),
 })
 
 const ProjectSchema = z.object({
   name: z.string(),
-  description: z.string().optional(),
-  tech_stack: z.array(z.string()).optional(),
-  outcomes: z.array(z.string()).optional(),
-  url: z.string().optional(),
+  description: z.string().nullable(),
+  tech_stack: z.array(z.string()).nullable(),
+  outcomes: z.array(z.string()).nullable(),
+  url: z.string().nullable(),
 })
 
 const ParsedResumeSchema = z.object({
@@ -53,17 +58,17 @@ const ParsedResumeSchema = z.object({
   skills: z.array(z.string()).describe("Soft and hard skills listed in skills section"),
   tools: z.array(z.string()).describe("Technical tools, languages, frameworks, platforms"),
   domains: z.array(z.string()).describe("Industry domains, subject areas"),
-  certifications: z.array(CertificationSchema).default([]),
-  projects: z.array(ProjectSchema).default([]),
+  certifications: z.array(CertificationSchema).nullable(),
+  projects: z.array(ProjectSchema).nullable(),
   // Contact info
-  full_name: z.string().optional().describe("Candidate full name"),
-  email: z.string().optional().describe("Email address"),
-  phone: z.string().optional().describe("Phone number"),
-  location: z.string().optional().describe("City, state or country"),
-  summary: z.string().optional().describe("Professional summary or objective"),
-  linkedin_url: z.string().optional().describe("LinkedIn profile URL if present"),
-  github_url: z.string().optional().describe("GitHub profile URL if present"),
-  website_url: z.string().optional().describe("Personal website or portfolio URL if present"),
+  full_name: z.string().nullable().describe("Candidate full name"),
+  email: z.string().nullable().describe("Email address"),
+  phone: z.string().nullable().describe("Phone number"),
+  location: z.string().nullable().describe("City, state or country"),
+  summary: z.string().nullable().describe("Professional summary or objective"),
+  linkedin_url: z.string().nullable().describe("LinkedIn profile URL if present"),
+  github_url: z.string().nullable().describe("GitHub profile URL if present"),
+  website_url: z.string().nullable().describe("Personal website or portfolio URL if present"),
 })
 
 /**
