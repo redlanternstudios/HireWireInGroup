@@ -158,12 +158,14 @@ describe("Sign-up → Onboarding spine (real API)", () => {
       inserted: number
       evidence?: Array<{ id: string; title: string }>
       error?: string
+      detail?: string
     }>(session, "/api/resume/upload", { method: "POST", body: { text: FIXTURE_RESUME } })
 
-    // Resume parsing requires GROQ_API_KEY. If the env lacks it, this is an env
-    // limitation, not a code defect — skip rather than fail (like the auth steps).
-    if (res.status === 500 && /GROQ_API_KEY/i.test(res.body?.error ?? "")) {
-      return t.skip("GROQ_API_KEY not configured — resume parse step needs it")
+    // Resume parsing routes through the AI gateway (OPENAI_API_KEY / AI_GATEWAY_API_KEY).
+    // If the env has no gateway key, that's an env limitation, not a code defect —
+    // skip rather than fail (like the auth steps).
+    if (res.status === 500 && /gateway is not connected|AI_GATEWAY_API_KEY|OPENAI_API_KEY/i.test(res.body?.detail ?? "")) {
+      return t.skip("AI gateway not configured (OPENAI_API_KEY / AI_GATEWAY_API_KEY) — resume parse needs it")
     }
     assert.equal(res.status, 200, `resume upload failed: ${JSON.stringify(res.body)}`)
     assert.ok(
