@@ -11,6 +11,16 @@ import { useState, Suspense } from 'react'
 import { Loader2, Mail } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
+function getAuthRedirect(path: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.location.origin
+  return `${baseUrl}/auth/callback?redirect=${encodeURIComponent(path)}`
+}
+
+function isUnconfirmedEmailError(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('email not confirmed') || normalized.includes('email_not_confirmed')
+}
+
 const EmailInput = dynamic(
   () => Promise.resolve(({ value, onChange, disabled }: { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; disabled: boolean }) => (
     <Input
@@ -44,7 +54,10 @@ function LoginForm() {
   const [email, setEmail] = useState<string>('')
   const [password, setPassword] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [canResendConfirmation, setCanResendConfirmation] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isResendingConfirmation, setIsResendingConfirmation] = useState(false)
   const [isMagicLinkSent, setIsMagicLinkSent] = useState(false)
   const [authMode, setAuthMode] = useState<'password' | 'magic'>('password')
   const router = useRouter()
@@ -56,13 +69,14 @@ function LoginForm() {
     const supabase = createClient()
     setIsLoading(true)
     setError(null)
+    setNotice(null)
+    setCanResendConfirmation(false)
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.location.origin
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${baseUrl}/auth/callback?redirect=${encodeURIComponent(redirectTo)}`,
+          emailRedirectTo: getAuthRedirect(redirectTo),
         },
       })
       if (error) throw error
@@ -79,6 +93,8 @@ function LoginForm() {
     const supabase = createClient()
     setIsLoading(true)
     setError(null)
+    setNotice(null)
+    setCanResendConfirmation(false)
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -91,9 +107,38 @@ function LoginForm() {
         router.push(redirectTo)
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password')
+      const message = err instanceof Error ? err.message : 'Invalid email or password'
+      setError(message)
+      setCanResendConfirmation(isUnconfirmedEmailError(message))
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    if (!email.trim() || isResendingConfirmation) return
+
+    const supabase = createClient()
+    setIsResendingConfirmation(true)
+    setError(null)
+    setNotice(null)
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+        options: {
+          emailRedirectTo: getAuthRedirect('/onboarding'),
+        },
+      })
+
+      if (error) throw error
+      setNotice('Confirmation email sent again. Check inbox, spam, and promotions.')
+      setCanResendConfirmation(false)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to resend confirmation email')
+    } finally {
+      setIsResendingConfirmation(false)
     }
   }
 
@@ -155,6 +200,31 @@ function LoginForm() {
               <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
                 {error}
               </p>
+            )}
+
+            {notice && (
+              <p className="text-sm text-emerald-700 bg-emerald-50 p-3 rounded-md">
+                {notice}
+              </p>
+            )}
+
+            {canResendConfirmation && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11 font-semibold"
+                onClick={handleResendConfirmation}
+                disabled={isResendingConfirmation}
+              >
+                {isResendingConfirmation ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending confirmation...
+                  </>
+                ) : (
+                  'Resend confirmation email'
+                )}
+              </Button>
             )}
 
             <Button type="submit" className="w-full h-11 font-semibold" disabled={isLoading}>

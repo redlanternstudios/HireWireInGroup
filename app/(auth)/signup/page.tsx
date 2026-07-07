@@ -10,13 +10,20 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Loader2, CheckCircle2 } from 'lucide-react'
 
+function getAuthRedirect(path: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.location.origin
+  return `${baseUrl}/auth/callback?redirect=${encodeURIComponent(path)}`
+}
+
 export default function SignUpPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [isResending, setIsResending] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const router = useRouter()
 
@@ -25,6 +32,7 @@ export default function SignUpPage() {
     const supabase = createClient()
     setIsLoading(true)
     setError(null)
+    setNotice(null)
 
     if (!agreedToTerms) {
       setError('Please agree to the Terms of Service and Privacy Policy to continue.')
@@ -45,12 +53,14 @@ export default function SignUpPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.location.origin
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${baseUrl}/auth/callback?redirect=/onboarding`,
+          emailRedirectTo: getAuthRedirect('/onboarding'),
+          data: {
+            product: 'hirewire',
+          },
         },
       })
       if (error) throw error
@@ -59,6 +69,32 @@ export default function SignUpPage() {
       setError(err instanceof Error ? err.message : 'Failed to create account')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    if (!email.trim() || isResending) return
+
+    const supabase = createClient()
+    setIsResending(true)
+    setError(null)
+    setNotice(null)
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+        options: {
+          emailRedirectTo: getAuthRedirect('/onboarding'),
+        },
+      })
+
+      if (error) throw error
+      setNotice('Confirmation email sent again. Check inbox, spam, and promotions.')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to resend confirmation email')
+    } finally {
+      setIsResending(false)
     }
   }
 
@@ -76,6 +112,31 @@ export default function SignUpPage() {
           <p className="text-sm text-muted-foreground text-center">
             Click the link to verify your account, then sign in to get started.
           </p>
+          {notice && (
+            <p className="text-sm text-emerald-700 bg-emerald-50 p-3 rounded-md text-center">
+              {notice}
+            </p>
+          )}
+          {error && (
+            <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md text-center">
+              {error}
+            </p>
+          )}
+          <Button
+            variant="outline"
+            className="w-full h-11 font-semibold"
+            onClick={handleResendConfirmation}
+            disabled={isResending}
+          >
+            {isResending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Sending confirmation...
+              </>
+            ) : (
+              'Resend confirmation email'
+            )}
+          </Button>
           <Button className="w-full h-11 font-semibold" onClick={() => router.push('/login')}>
             Go to sign in
           </Button>
