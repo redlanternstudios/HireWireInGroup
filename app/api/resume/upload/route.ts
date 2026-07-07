@@ -85,8 +85,9 @@ export async function POST(request: NextRequest) {
     .from("source_resumes")
     .insert({
       user_id: userId,
-      filename,
-      content_text: resumeText,
+      file_name: filename,
+      file_type: "text/plain", // PDFs/Word are rejected above; only plain text reaches here
+      parsed_text: resumeText,
     })
     .select("id")
     .single()
