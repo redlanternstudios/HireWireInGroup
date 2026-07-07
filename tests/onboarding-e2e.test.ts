@@ -23,13 +23,13 @@
  *   1. Sign-up dispatches a confirmation email (NOT rate-limited)  ← bug regression
  *   2. Onboarding "profile" step upserts user_profile (assert via REST)
  *   3. Onboarding "resume" step creates evidence via /api/resume/upload
- *   4. Cleanup — remove evidence created by this run
+ *   4. Completing onboarding unlocks the dashboard (no redirect loop)
  */
 
 import { describe, it, before, after } from "node:test"
 import assert from "node:assert/strict"
 import fetch from "node-fetch"
-import { signIn, apiRequest, testRunId, type Session } from "./helpers/api-client.js"
+import { signIn, apiRequest, testRunId, BASE_URL, type Session } from "./helpers/api-client.js"
 
 function cleanEnv(v: string | undefined): string {
   return (v ?? "").trim().replace(/^['"]|['"]$/g, "").replace(/[\r\n\t]/g, "")
@@ -118,7 +118,9 @@ describe("Sign-up → Onboarding spine (real API)", () => {
     if (!session) return t.skip("set E2E_TEST_EMAIL / E2E_TEST_PASSWORD to run authenticated steps")
 
     const fullName = `Onboarding Test ${RUN_ID}`
-    const upsert = await fetch(`${SUPABASE_URL}/rest/v1/user_profile`, {
+    // on_conflict=user_id mirrors the page's supabase.upsert(..., { onConflict: "user_id" }).
+    // Without it PostgREST conflicts on the PK (id) and 409s when the row exists.
+    const upsert = await fetch(`${SUPABASE_URL}/rest/v1/user_profile?on_conflict=user_id`, {
       method: "POST",
       headers: {
         apikey: ANON_KEY,
@@ -158,12 +160,56 @@ describe("Sign-up → Onboarding spine (real API)", () => {
       error?: string
     }>(session, "/api/resume/upload", { method: "POST", body: { text: FIXTURE_RESUME } })
 
+    // Resume parsing requires GROQ_API_KEY. If the env lacks it, this is an env
+    // limitation, not a code defect — skip rather than fail (like the auth steps).
+    if (res.status === 500 && /GROQ_API_KEY/i.test(res.body?.error ?? "")) {
+      return t.skip("GROQ_API_KEY not configured — resume parse step needs it")
+    }
     assert.equal(res.status, 200, `resume upload failed: ${JSON.stringify(res.body)}`)
     assert.ok(
       (res.body.inserted ?? 0) >= 1,
       `expected >= 1 evidence entry, got ${res.body.inserted}`,
     )
     for (const e of res.body.evidence ?? []) createdEvidenceIds.push(e.id)
+  })
+
+  // -------------------------------------------------------------------------
+  // Step 4 — completing onboarding must UNLOCK the app. (dashboard)/layout.tsx
+  // redirects any profile with onboarding_complete=false back to /onboarding,
+  // and the column defaults to false — so if onboarding never flips it, every
+  // user is bounced back forever. Assert the gate opens once the flag is set.
+  // -------------------------------------------------------------------------
+  it("completing onboarding unlocks the dashboard (no redirect loop)", async (t) => {
+    if (!session) return t.skip("set E2E_TEST_EMAIL / E2E_TEST_PASSWORD to run authenticated steps")
+
+    const cookie = session.cookies.map((c) => c.split(";")[0]).join("; ")
+
+    // Set the completion flag exactly as the onboarding page's final step does.
+    const patch = await fetch(
+      `${SUPABASE_URL}/rest/v1/user_profile?user_id=eq.${session.userId}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: ANON_KEY,
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ onboarding_complete: true }),
+      },
+    )
+    assert.ok(patch.ok, `could not set onboarding_complete: ${patch.status}`)
+
+    // The dashboard is a server component that redirect()s incomplete users.
+    // With the flag set it must render instead of bouncing to /onboarding.
+    const res = await fetch(`${BASE_URL}/dashboard`, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    })
+    const location = res.headers.get("location") ?? ""
+    assert.ok(
+      !location.includes("/onboarding"),
+      `dashboard still redirects to onboarding after completion (status ${res.status}, location ${location})`,
+    )
   })
 
   after(async () => {
