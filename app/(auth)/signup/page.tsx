@@ -239,7 +239,7 @@ export default function SignUpPage() {
                   Creating account...
                 </>
               ) : (
-                'Sign up'
+                'Create Account'
               )}
             </Button>
           </div>
