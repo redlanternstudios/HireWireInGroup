@@ -11,6 +11,7 @@
     "test:api": "node tests/api-routes.test.mjs",
     "test:evidence": "node --env-file-if-exists=.env.test --import tsx --test lib/evidence/matchRequirementToEvidence.test.ts",
     "test:e2e:api": "node --env-file-if-exists=.env.test --import tsx --test tests/real-api-e2e.test.ts",
+    "test:e2e:onboarding": "node --env-file-if-exists=.env.test --import tsx --test tests/onboarding-e2e.test.ts",
     "test:e2e:all": "node --env-file-if-exists=.env.test --import tsx --test 'tests/**/*.test.ts'",
     "test:e2e:updownstream": "tsx tests/updownstream-e2e.ts",
     "test:context": "tsx tests/context-engine.test.ts",
