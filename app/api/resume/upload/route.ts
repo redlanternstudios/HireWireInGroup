@@ -102,15 +102,18 @@ export async function POST(request: NextRequest) {
 
   const sourceResumeId = sourceResume.id
 
-  // ── 3. Parse via Groq ─────────────────────────────────────────────────────
+  // ── 3. Parse via the AI gateway (OpenAI / AI_GATEWAY_API_KEY) ──────────────
   let parsed
   try {
     parsed = await parseResumeText(resumeText)
   } catch (parseError) {
     console.error("Resume parse error:", parseError)
     await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
+    // Surface the real cause instead of blaming Groq — the parser routes through
+    // lib/ai/gateway, which needs OPENAI_API_KEY or AI_GATEWAY_API_KEY.
+    const detail = parseError instanceof Error ? parseError.message : String(parseError)
     return NextResponse.json(
-      { error: "Failed to parse resume. Ensure GROQ_API_KEY is configured." },
+      { error: "Failed to parse resume.", detail },
       { status: 500 }
     )
   }
