@@ -1,4 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import {
   createGateway,
   generateText as aiGenerateText,
@@ -10,6 +11,10 @@ import { writeAiAuditEvent } from "./audit"
 
 const DEFAULT_OPENAI_MODEL = "gpt-4o"
 const DEFAULT_OPENAI_FAST_MODEL = "gpt-4o-mini"
+// Google Gemini — the free primary provider. gemini-2.5-flash gives strong
+// reasoning + native structured output at no cost; flash-lite for cheap/fast paths.
+const DEFAULT_GOOGLE_MODEL = "gemini-2.5-flash"
+const DEFAULT_GOOGLE_FAST_MODEL = "gemini-2.5-flash-lite"
 const DEFAULT_TIMEOUT_MS = 30000
 const STRUCTURED_OUTPUT_INCOMPATIBLE_MODEL_PATTERNS = [
   /(^|\/)llama/i,
@@ -21,7 +26,7 @@ const STRUCTURED_OUTPUT_INCOMPATIBLE_MODEL_PATTERNS = [
 ]
 
 export const AI_GATEWAY_UNCONFIGURED_MESSAGE =
-  "AI Gateway is not connected in this environment. Add AI_GATEWAY_API_KEY or OPENAI_API_KEY to enable live AI."
+  "AI Gateway is not connected in this environment. Add GOOGLE_GENERATIVE_AI_API_KEY (free, preferred), OPENAI_API_KEY, or AI_GATEWAY_API_KEY to enable live AI."
 
 export class AiGatewayConfigurationError extends Error {
   constructor() {
@@ -44,6 +49,12 @@ type AiTelemetry = {
 type ProviderConfig =
   | {
       configured: true
+      provider: "google"
+      apiKey: string
+      keySource: "GOOGLE_GENERATIVE_AI_API_KEY" | "GEMINI_API_KEY"
+    }
+  | {
+      configured: true
       provider: "openai"
       apiKey: string
       keySource: "OPENAI_API_KEY" | "AI_GATEWAY_API_KEY"
@@ -62,6 +73,21 @@ type ProviderConfig =
     }
 
 function getProviderConfig(): ProviderConfig {
+  // Google Gemini first — the free primary provider. Set GOOGLE_GENERATIVE_AI_API_KEY
+  // (or GEMINI_API_KEY) to use it; falls back to OpenAI / gateway when absent.
+  const googleApiKey =
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim()
+  if (googleApiKey && !isPlaceholderApiKey(googleApiKey)) {
+    return {
+      configured: true,
+      provider: "google",
+      apiKey: googleApiKey,
+      keySource: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
+        ? "GOOGLE_GENERATIVE_AI_API_KEY"
+        : "GEMINI_API_KEY",
+    }
+  }
+
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim()
   if (openAiApiKey && !isPlaceholderApiKey(openAiApiKey)) {
     return {
@@ -120,6 +146,9 @@ function getTimeoutMs() {
 }
 
 function getConfiguredModelName() {
+  if (getProviderConfig().provider === "google") {
+    return process.env.GEMINI_MODEL?.trim() || DEFAULT_GOOGLE_MODEL
+  }
   return getStructuredCompatibleModelName(
     process.env.OPENAI_MODEL?.trim(),
     DEFAULT_OPENAI_MODEL
@@ -127,6 +156,9 @@ function getConfiguredModelName() {
 }
 
 function getConfiguredFastModelName() {
+  if (getProviderConfig().provider === "google") {
+    return process.env.GEMINI_FAST_MODEL?.trim() || DEFAULT_GOOGLE_FAST_MODEL
+  }
   return getStructuredCompatibleModelName(
     process.env.OPENAI_FAST_MODEL?.trim(),
     DEFAULT_OPENAI_FAST_MODEL
@@ -161,9 +193,17 @@ function toGatewayModelId(modelName: string) {
   return modelName.includes("/") ? modelName : `openai/${modelName}`
 }
 
+function toGoogleModelId(modelName: string) {
+  return modelName.startsWith("google/") ? modelName.slice("google/".length) : modelName
+}
+
 function getModel(modelName: string) {
   const config = getProviderConfig()
   if (!config.configured) throw new AiGatewayConfigurationError()
+
+  if (config.provider === "google") {
+    return createGoogleGenerativeAI({ apiKey: config.apiKey })(toGoogleModelId(modelName))
+  }
 
   if (config.provider === "openai") {
     return createOpenAI({ apiKey: config.apiKey })(toOpenAiModelId(modelName))
@@ -185,13 +225,17 @@ export function getAiGatewayStatus() {
     configured: config.configured,
     provider: config.provider,
     model:
-      config.provider === "gateway"
-        ? toGatewayModelId(configuredModel)
-        : toOpenAiModelId(configuredModel),
+      config.provider === "google"
+        ? toGoogleModelId(configuredModel)
+        : config.provider === "gateway"
+          ? toGatewayModelId(configuredModel)
+          : toOpenAiModelId(configuredModel),
     fastModel:
-      config.provider === "gateway"
-        ? toGatewayModelId(configuredFastModel)
-        : toOpenAiModelId(configuredFastModel),
+      config.provider === "google"
+        ? toGoogleModelId(configuredFastModel)
+        : config.provider === "gateway"
+          ? toGatewayModelId(configuredFastModel)
+          : toOpenAiModelId(configuredFastModel),
     timeoutMs: getTimeoutMs(),
     keySource: config.keySource,
   }
