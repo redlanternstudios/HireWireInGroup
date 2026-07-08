@@ -21,6 +21,7 @@
     "claude_ai_os_v2_constitution.md",
     "memory/**",
     "docs/CORE_JOURNEY_MAP.md",
+    "docs/PROOF_STANDARD.md",
     "app/(dashboard)/dashboard/page.tsx",
     "app/(dashboard)/jobs/[id]/GenerateButton.tsx",
     "app/(dashboard)/jobs/[id]/evidence-match/page.tsx",
@@ -94,7 +95,8 @@
   "verification": [
     "npx tsc --noEmit",
     "npm run lint",
-    "npm run build"
+    "npm run build",
+    "docs/PROOF_STANDARD.md: attach live evidence for the specific claim — a clean build is not proof the feature works"
   ],
   "requiresHumanApprovalFor": [
     "auth",
