@@ -54,3 +54,8 @@ VERIFIED: The route now keeps production admin behavior when `SUPABASE_SERVICE_R
 
 COMPLETE for local E2E account to generated resume.
 PARTIAL for hosted email configuration because sender and redirect still point to Amina.
+# Superseded
+
+VERIFIED: This receipt used a synthetic candidate and is not acceptable as HireWire product proof.
+
+Use `docs/ops/HIREWIRE_RORY_UNBIASED_E2E_RECEIPT_20260707.md` instead.

@@ -1,0 +1,17 @@
+RORY SEMEAH
+San Diego, CA | hirewire.cdx.20260707183739@yopmail.com
+
+PROFESSIONAL SUMMARY
+Accomplished Technical Product Manager specializing in enterprise SaaS solutions, AI integration, and workflow automation. Proven success in leading complex projects from inception to deployment, enhancing operational efficiency and product innovation.
+
+PROFESSIONAL EXPERIENCE
+• Led the design and deployment of a multi-tenant operations platform using Next.js, Supabase, and Vercel, streamlining operations across various tenants.
+• Launched HireWire, an AI-driven career workflow platform, enhancing job matching and resume optimization with confidence-based routing engines.
+• Guided Agile execution to deliver AI-powered workflow automation on the Xvantage platform, reducing manual operational load in over 20 countries.
+• Redesigned support workflows and introduced CI/CD automation, clearing a 1,000+ ticket backlog and maintaining over 95% SLA compliance.
+• Coordinated complex SAP and cloud platform migrations, ensuring seamless integration and enhanced system reliability.
+
+CORE COMPETENCIES
+Product Strategy, SQL, AI Platforms, Enterprise SaaS, Roadmapping, Agile Methodologies, Cloud Architecture, APIs, Integrations, Workflow Automation
+
+EDUCATION
