@@ -31,7 +31,7 @@ import {
 } from "@/lib/bullet-enhancer"
 import {
   extractKnownProducts,
-  buildProfileKnowledge,
+  normalizeProfileLinks,
 } from "@/lib/profile-knowledge-resolver"
 import {
   suggestTemplate,
@@ -126,6 +126,21 @@ async function loadEvidenceLibrary(supabase: SupabaseDataClient, userId: string)
   }
 
   return evidence || []
+}
+
+async function loadProfileLinks(supabase: SupabaseDataClient, userId: string) {
+  const { data: links, error } = await supabase
+    .from("user_profile_links")
+    .select("link_type, url, is_primary")
+    .eq("user_id", userId)
+    .order("is_primary", { ascending: false })
+    .order("created_at", { ascending: true })
+
+  if (error) {
+    return []
+  }
+
+  return links || []
 }
 
 async function loadJobAnalysis(supabase: SupabaseDataClient, jobId: string, userId: string) {
@@ -294,8 +309,9 @@ export async function POST(request: NextRequest) {
       .eq("user_id", userId)
 
     // Load all required data in parallel — all queries scoped to user_id
-    const [profile, allEvidence, jobData, sourceResume] = await Promise.all([
+    const [profile, profileLinks, allEvidence, jobData, sourceResume] = await Promise.all([
       loadUserProfile(supabase, userId),
+      loadProfileLinks(supabase, userId),
       loadEvidenceLibrary(supabase, userId),
       loadJobAnalysis(supabase, job_id, userId),
       loadSourceResume(supabase, userId),
@@ -381,6 +397,13 @@ export async function POST(request: NextRequest) {
     const effectiveSkills = (profile.skills?.length > 0 ? profile.skills : sourceResumeData?.skills) || []
     const effectiveExperience = (profile.experience?.length > 0 ? profile.experience : sourceResumeData?.experience) || []
     const effectiveEducation = (profile.education?.length > 0 ? profile.education : sourceResumeData?.education) || []
+    const normalizedProfileLinks = normalizeProfileLinks(profileLinks)
+    const mergedLinks = {
+      linkedin: profile.linkedin_url || normalizedProfileLinks.linkedin,
+      github: profile.github_url || normalizedProfileLinks.github,
+      portfolio: profile.website_url || normalizedProfileLinks.portfolio,
+      website: profile.website_url || normalizedProfileLinks.website,
+    }
 
     const profileContext = `
 CANDIDATE PROFILE:
@@ -389,6 +412,13 @@ Location: ${effectiveLocation}
 Summary: ${effectiveSummary}
 
 Skills: ${effectiveSkills.join(", ")}
+${mergedLinks.linkedin || mergedLinks.github || mergedLinks.portfolio || mergedLinks.website ? `
+Public Links:
+${mergedLinks.linkedin ? `- LinkedIn: ${mergedLinks.linkedin}` : ""}
+${mergedLinks.github ? `- GitHub: ${mergedLinks.github}` : ""}
+${mergedLinks.portfolio ? `- Portfolio: ${mergedLinks.portfolio}` : ""}
+${mergedLinks.website ? `- Website: ${mergedLinks.website}` : ""}
+` : ""}
 
 Work Experience:
 ${effectiveExperience.map((exp: { title: string; company: string; start_date?: string; end_date?: string; description?: string; bullets?: string[] }) => `
@@ -627,7 +657,7 @@ Write 5-8 achievement bullets that the candidate could confidently discuss in an
         location: profile.location,
         summary: profile.summary,
         skills: profile.skills,
-        links: profile.links as { portfolio?: string; linkedin?: string; github?: string } | undefined,
+        links: mergedLinks,
         experience: (profile.experience || []).map((exp: { title?: string; company?: string; description?: string }) => ({
           title: exp.title || "",
           company: exp.company || "",

@@ -333,7 +333,7 @@ export interface NormalizedProfileLinks {
  * Also accepts legacy flat object shape for backward compatibility.
  */
 export function normalizeProfileLinks(
-  links: Array<{ link_type: string; url: string; is_primary?: boolean }> | { portfolio?: string; linkedin?: string; github?: string } | null | undefined
+  links: Array<{ link_type: string; url: string; is_primary?: boolean }> | { portfolio?: string; linkedin?: string; github?: string; website?: string } | null | undefined
 ): NormalizedProfileLinks {
   if (!links) return {}
 
@@ -343,6 +343,7 @@ export function normalizeProfileLinks(
       linkedin: links.linkedin,
       github: links.github,
       portfolio: links.portfolio,
+      website: links.website,
     }
   }
 
@@ -371,7 +372,7 @@ export function buildProfileKnowledge(
     location?: string
     summary?: string
     skills?: string[]
-    links?: Array<{ link_type: string; url: string; is_primary?: boolean }> | { portfolio?: string; linkedin?: string; github?: string } | null
+    links?: Array<{ link_type: string; url: string; is_primary?: boolean }> | { portfolio?: string; linkedin?: string; github?: string; website?: string } | null
     experience?: Array<{ title: string; company: string; description?: string }>
   },
   evidence: EvidenceRecord[]

@@ -201,7 +201,7 @@ export function enhanceBulletsBatch(
     location?: string
     summary?: string
     skills?: string[]
-    links?: { portfolio?: string; linkedin?: string; github?: string }
+    links?: { portfolio?: string; linkedin?: string; github?: string; website?: string }
     experience?: Array<{ title: string; company: string; description?: string }>
   },
   evidence: EvidenceRecord[]

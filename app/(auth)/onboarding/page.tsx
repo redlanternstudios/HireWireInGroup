@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { LinkedInImportWidget } from "@/components/dashboard/LinkedInImportWidget"
+import { ParseGithubUrlButton } from "@/components/ParseGithubButton"
 import {
   Loader2,
   Briefcase,
@@ -27,7 +29,7 @@ import { HireWireLogo } from "@/components/hirewire-logo"
 import { CoachChat } from "@/components/coach-chat"
 import { toast } from "sonner"
 
-type OnboardingStep = "welcome" | "profile" | "resume" | "evidence" | "path"
+type OnboardingStep = "welcome" | "profile" | "sources" | "resume" | "evidence" | "path"
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<OnboardingStep>("welcome")
@@ -42,6 +44,10 @@ export default function OnboardingPage() {
   const [headline, setHeadline] = useState("")
   const [summary, setSummary] = useState("")
   const [skills, setSkills] = useState<string[]>([])
+  const [linkedinUrl, setLinkedinUrl] = useState("")
+  const [githubUrl, setGithubUrl] = useState("")
+  const [websiteUrl, setWebsiteUrl] = useState("")
+  const [otherLinks, setOtherLinks] = useState("")
 
   // Resume upload state
   const [resumeText, setResumeText] = useState("")
@@ -55,8 +61,9 @@ export default function OnboardingPage() {
     switch (step) {
       case "welcome": return 0
       case "profile": return 25
-      case "resume": return 50
-      case "evidence": return 75
+      case "sources": return 45
+      case "resume": return 65
+      case "evidence": return 85
       case "path": return 100
       default: return 0
     }
@@ -76,6 +83,59 @@ export default function OnboardingPage() {
         input.value = ""
       }
     }
+  }
+
+  const inferLinkType = (url: string): "linkedin" | "github" | "portfolio" | "website" | "other" => {
+    const lower = url.toLowerCase()
+    if (lower.includes("linkedin.com")) return "linkedin"
+    if (lower.includes("github.com")) return "github"
+    return "other"
+  }
+
+  const parseAdditionalLinks = () =>
+    otherLinks
+      .split(/\n|,/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+  const upsertSourceLinks = async (userId: string) => {
+    const rows = [
+      linkedinUrl.trim(),
+      githubUrl.trim(),
+      websiteUrl.trim(),
+      ...parseAdditionalLinks(),
+    ]
+      .filter(Boolean)
+      .map((url) => ({
+        user_id: userId,
+        link_type: inferLinkType(url),
+        url,
+        label: null,
+        is_primary: url === linkedinUrl.trim() || url === githubUrl.trim() || url === websiteUrl.trim(),
+        source: "onboarding",
+        parse_status: "pending",
+        metadata: null,
+        is_user_approved: true,
+      }))
+
+    if (rows.length === 0) return
+
+    const { data: existingLinks, error: existingError } = await supabase
+      .from("user_profile_links")
+      .select("url")
+      .eq("user_id", userId)
+
+    if (existingError) throw existingError
+
+    const existingUrls = new Set((existingLinks ?? []).map((link) => link.url))
+    const newRows = rows.filter((row) => !existingUrls.has(row.url))
+    if (newRows.length === 0) return
+
+    const { error } = await supabase
+      .from("user_profile_links")
+      .insert(newRows)
+
+    if (error) throw error
   }
 
   const handleCreateProfile = async () => {
@@ -112,10 +172,46 @@ export default function OnboardingPage() {
         )
 
       if (upsertError) throw upsertError
-      setStep("resume")
+      setStep("sources")
     } catch (err) {
       console.error("Error creating profile:", err)
       setError(err instanceof Error ? err.message : "Failed to save profile")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSaveSources = async () => {
+    setIsLoading(true)
+    setError(null)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setError("Not authenticated")
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const { error: upsertError } = await supabase
+        .from("user_profile")
+        .upsert(
+          {
+            user_id: user.id,
+            email: user.email,
+            linkedin_url: linkedinUrl.trim() || null,
+            github_url: githubUrl.trim() || null,
+            website_url: websiteUrl.trim() || null,
+          },
+          { onConflict: "user_id" }
+        )
+
+      if (upsertError) throw upsertError
+      await upsertSourceLinks(user.id)
+      setStep("resume")
+    } catch (err) {
+      console.error("Error saving sources:", err)
+      setError(err instanceof Error ? err.message : "Failed to save sources")
     } finally {
       setIsLoading(false)
     }
@@ -355,6 +451,110 @@ export default function OnboardingPage() {
               <Button
                 className="flex-1 bg-hirewire-red hover:bg-hirewire-red/90"
                 onClick={handleCreateProfile}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ChevronRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // ── SOURCES ──────────────────────────────────────────────────────────────
+
+  if (step === "sources") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+        <Card className="w-full max-w-2xl border-0 shadow-none lg:border lg:shadow-lg">
+          <CardHeader className="text-center">
+            <Progress value={getProgress()} className="mb-4 h-2" />
+            <CardTitle className="text-2xl font-serif">Add your public context</CardTitle>
+            <CardDescription>
+              Give HireWire the links and exports that help the coach read your full story like a recruiter would.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="linkedin-url">LinkedIn profile URL</Label>
+                <Input
+                  id="linkedin-url"
+                  placeholder="https://linkedin.com/in/yourname"
+                  value={linkedinUrl}
+                  onChange={(e) => setLinkedinUrl(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="github-url">GitHub URL</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="github-url"
+                    placeholder="https://github.com/yourusername"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    disabled={isLoading}
+                  />
+                  {githubUrl.trim() && (
+                    <ParseGithubUrlButton githubUrl={githubUrl.trim()} />
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="website-url">Website or portfolio</Label>
+                <Input
+                  id="website-url"
+                  placeholder="https://yourportfolio.com"
+                  value={websiteUrl}
+                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="other-links">Other relevant links</Label>
+                <Textarea
+                  id="other-links"
+                  placeholder="One link per line for other websites, social profiles, or live products that matter."
+                  value={otherLinks}
+                  onChange={(e) => setOtherLinks(e.target.value)}
+                  disabled={isLoading}
+                  rows={4}
+                />
+              </div>
+            </div>
+
+            <LinkedInImportWidget />
+
+            {error && (
+              <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setStep("profile")}
+                disabled={isLoading}
+              >
+                Back
+              </Button>
+              <Button
+                className="flex-1 bg-hirewire-red hover:bg-hirewire-red/90"
+                onClick={handleSaveSources}
                 disabled={isLoading}
               >
                 {isLoading ? (

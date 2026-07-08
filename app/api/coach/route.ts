@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { checkSafety, logSafetyAudit } from "@/lib/safety"
 import { groq, MODELS } from "@/lib/adapters/groq"
 import { GAP_CLARIFICATION_SYSTEM_PROMPT } from "@/lib/coach-prompts/gap-questions"
+import { normalizeProfileLinks } from "@/lib/profile-knowledge-resolver"
 
 export const maxDuration = 60
 
@@ -70,7 +71,24 @@ function createCoachTools(userId: string) {
           .single()
         
         if (!data) return { error: "No profile found. User should complete their profile first." }
-        return data
+
+        const { data: links } = await supabase
+          .from("user_profile_links")
+          .select("link_type, url, is_primary")
+          .eq("user_id", userId)
+          .order("is_primary", { ascending: false })
+          .order("created_at", { ascending: true })
+
+        const normalizedLinks = normalizeProfileLinks(links ?? [])
+        return {
+          ...data,
+          links: {
+            linkedin: data.linkedin_url || normalizedLinks.linkedin || null,
+            github: data.github_url || normalizedLinks.github || null,
+            portfolio: data.website_url || normalizedLinks.portfolio || null,
+            website: data.website_url || normalizedLinks.website || null,
+          },
+        }
       },
     }),
 

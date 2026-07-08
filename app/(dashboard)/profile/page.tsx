@@ -24,6 +24,7 @@ interface ProfileData {
   location: string | null
   summary: string | null
   skills: string[] | null
+  linkedin_url: string | null
   website_url: string | null
   github_url: string | null
 }
@@ -36,7 +37,7 @@ export default function ProfilePage() {
   const router = useRouter()
   const [profile, setProfile] = useState<ProfileData>({
     full_name: "", email: "", phone: "", location: "",
-    summary: "", skills: [], website_url: "", github_url: "",
+    summary: "", skills: [], linkedin_url: "", website_url: "", github_url: "",
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -50,7 +51,7 @@ export default function ProfilePage() {
 
     const { data, error: profileError } = await supabase
       .from("user_profile")
-      .select("full_name, email, phone, location, summary, skills, website_url, github_url")
+      .select("full_name, email, phone, location, summary, skills, linkedin_url, website_url, github_url")
       .eq("user_id", user.id)
       .maybeSingle()
 
@@ -68,6 +69,7 @@ export default function ProfilePage() {
         location: data.location || "",
         summary: data.summary || "",
         skills: Array.isArray(data.skills) ? data.skills : [],
+        linkedin_url: data.linkedin_url || "",
         website_url: data.website_url || "",
         github_url: data.github_url || "",
       })
@@ -94,6 +96,7 @@ export default function ProfilePage() {
           location: profile.location,
           summary: profile.summary,
           skills: profile.skills,
+          linkedin_url: profile.linkedin_url,
           website_url: profile.website_url,
           github_url: profile.github_url,
           updated_at: new Date().toISOString(),
@@ -129,6 +132,7 @@ export default function ProfilePage() {
     strengthItem("Phone",        !!profile.phone?.trim()),
     strengthItem("Summary",      (profile.summary?.trim() || "").length > 40),
     strengthItem("Skills",       (profile.skills?.length ?? 0) >= 3),
+    strengthItem("LinkedIn",     !!profile.linkedin_url?.trim()),
     strengthItem("Website / portfolio", !!profile.website_url?.trim()),
     strengthItem("GitHub",       !!profile.github_url?.trim()),
   ]
@@ -277,11 +281,11 @@ export default function ProfilePage() {
             <Separator />
 
             {/* Summary */}
-            <div className="space-y-1.5">
-              <Label htmlFor="summary" className="flex items-center gap-1.5 text-xs">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground" /> Professional summary
-              </Label>
-              <Textarea
+              <div className="space-y-1.5">
+                <Label htmlFor="summary" className="flex items-center gap-1.5 text-xs">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground" /> Professional summary
+                </Label>
+                <Textarea
                 id="summary"
                 value={profile.summary || ""}
                 onChange={e => setProfile(p => ({ ...p, summary: e.target.value }))}
@@ -330,7 +334,18 @@ export default function ProfilePage() {
           {/* Links */}
           <div className="hw-card p-6 space-y-4">
             <p className="hw-section-label">Links</p>
-            <div className="space-y-3">
+              <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="linkedin_url" className="flex items-center gap-1.5 text-xs">
+                  <User className="h-3.5 w-3.5 text-muted-foreground" /> LinkedIn
+                </Label>
+                <Input
+                  id="linkedin_url"
+                  value={profile.linkedin_url || ""}
+                  onChange={e => setProfile(p => ({ ...p, linkedin_url: e.target.value }))}
+                  placeholder="https://linkedin.com/in/yourname"
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="website_url" className="flex items-center gap-1.5 text-xs">
                   <Globe className="h-3.5 w-3.5 text-muted-foreground" /> Portfolio / Website
