@@ -115,24 +115,45 @@ function parseEducation(lines: string[]) {
   return rows
 }
 
-function parseCertifications(lines: string[]) {
+function parseCertifications(lines: string[], fullName: string | null) {
   return collectSection(lines, "certifications")
-    .filter((line) => !/rory semeah/i.test(line))
+    .filter((line) => !fullName || line.trim().toLowerCase() !== fullName.trim().toLowerCase())
     .map((name) => ({ name, issuer: undefined, date: undefined }))
 }
 
+// Structural, not name-keyed: any non-"Stack:" line starts a new project block;
+// its "Stack:" line (if present) supplies tech_stack; everything else is description.
+// A hardcoded whitelist of project names would only ever match one candidate's resume.
 function parseProjects(lines: string[]) {
   const portfolio = collectSection(lines, "portfolio")
-  const names = ["By Red OS", "HireWire", "Authentic Hadith"]
-  return names
-    .filter((name) => portfolio.some((line) => line.includes(name)))
-    .map((name) => ({
-      name,
-      description: portfolio.join(" ").slice(0, 500),
-      tech_stack: splitCommaList(portfolio.filter((line) => /^Stack:/i.test(line)).map((line) => line.replace(/^Stack:\s*/i, ""))),
-      outcomes: undefined,
-      url: portfolio.find((line) => line.includes(".")) ?? undefined,
-    }))
+  type ProjectBlock = { name: string; descriptionLines: string[]; stackLines: string[] }
+  const blocks: ProjectBlock[] = []
+  let current: ProjectBlock | null = null
+
+  for (const line of portfolio) {
+    if (/^Stack:/i.test(line)) {
+      current?.stackLines.push(line.replace(/^Stack:\s*/i, ""))
+      continue
+    }
+    // A project heading is short, starts with a capital, and — unlike a description
+    // sentence — doesn't end in sentence-ending punctuation.
+    const looksLikeHeading = line.length <= 60 && /^[A-Z0-9]/.test(line) && !/[.!?]$/.test(line)
+    if (looksLikeHeading) {
+      if (current) blocks.push(current)
+      current = { name: line, descriptionLines: [], stackLines: [] }
+      continue
+    }
+    current?.descriptionLines.push(line)
+  }
+  if (current) blocks.push(current)
+
+  return blocks.map((block) => ({
+    name: block.name,
+    description: block.descriptionLines.join(" ").slice(0, 500) || undefined,
+    tech_stack: splitCommaList(block.stackLines),
+    outcomes: undefined,
+    url: [...block.descriptionLines, ...block.stackLines].find((l) => l.includes(".")) ?? undefined,
+  }))
 }
 
 export function parseResumeTextFallback(text: string): ParsedResume {
@@ -151,7 +172,7 @@ export function parseResumeTextFallback(text: string): ParsedResume {
     skills,
     tools: skills,
     domains: skills.filter((skill) => /AI|SaaS|SAP|workflow|enterprise|cloud|automation/i.test(skill)),
-    certifications: parseCertifications(lines),
+    certifications: parseCertifications(lines, contact.full_name),
     projects: parseProjects(lines),
     full_name: contact.full_name ?? undefined,
     email: contact.email ?? undefined,
