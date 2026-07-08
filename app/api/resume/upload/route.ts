@@ -19,6 +19,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { parseResumeText } from "@/lib/resumeParser"
 import { mapResumeToEvidence, dedupeKey } from "@/lib/mapResumeToEvidence"
+import { parseResumeTextFallback } from "@/lib/resume/parseResumeTextFallback"
+
+const RESUME_PARSE_TIMEOUT_MS = 15000
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => clearTimeout(timeout))
+  })
+}
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -104,18 +117,33 @@ export async function POST(request: NextRequest) {
 
   // ── 3. Parse via the AI gateway (OpenAI / AI_GATEWAY_API_KEY) ──────────────
   let parsed
+  let parseMode: "ai" | "fallback" = "ai"
   try {
-    parsed = await parseResumeText(resumeText)
+    parsed = await withTimeout(
+      parseResumeText(resumeText),
+      RESUME_PARSE_TIMEOUT_MS,
+      "Resume AI parse timed out"
+    )
   } catch (parseError) {
     console.error("Resume parse error:", parseError)
-    await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
-    // Surface the real cause instead of blaming Groq — the parser routes through
-    // lib/ai/gateway, which needs OPENAI_API_KEY or AI_GATEWAY_API_KEY.
-    const detail = parseError instanceof Error ? parseError.message : String(parseError)
-    return NextResponse.json(
-      { error: "Failed to parse resume.", detail },
-      { status: 500 }
-    )
+    parsed = parseResumeTextFallback(resumeText)
+    parseMode = "fallback"
+
+    const hasFallbackEvidence =
+      (parsed.work_experience?.length ?? 0) +
+      (parsed.education?.length ?? 0) +
+      (parsed.skills?.length ?? 0) +
+      (parsed.certifications?.length ?? 0) +
+      (parsed.projects?.length ?? 0) > 0
+
+    if (!hasFallbackEvidence) {
+      await supabase.from("source_resumes").delete().eq("id", sourceResumeId)
+      const detail = parseError instanceof Error ? parseError.message : String(parseError)
+      return NextResponse.json(
+        { error: "Failed to parse resume.", detail },
+        { status: 500 }
+      )
+    }
   }
 
   // ── 4. Update source_resumes with parsed_data ─────────────────────────────
@@ -219,6 +247,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     message: "Resume processed successfully",
     source_resume_id: sourceResumeId,
+    parse_mode: parseMode,
     inserted: inserted.length,
     updated: skillsToUpdate.length,
     skipped: skippedCount,

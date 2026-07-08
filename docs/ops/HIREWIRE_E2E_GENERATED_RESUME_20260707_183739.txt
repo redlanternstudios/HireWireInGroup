@@ -1,0 +1,18 @@
+HIREWIRE E2E 20260707183739
+San Diego, CA | hirewire.cdx.20260707183739@yopmail.com
+
+PROFESSIONAL SUMMARY
+Dynamic product leader with extensive experience in AI platforms and enterprise SaaS, specializing in product strategy, customer discovery, and evidence-backed execution. Proven track record of delivering impactful product roadmaps and fostering cross-functional collaboration to drive successful outcomes.
+
+PROFESSIONAL EXPERIENCE
+• Owned the roadmap for an AI workflow platform used by 42,000 monthly active users, enhancing customer success at Northwind Labs.
+• Led discovery with 38 enterprise customers, translating insights into actionable PRDs and quarterly OKRs at Northwind Labs.
+• Partnered with engineering, design, and sales teams to ship 5 major workflow automation releases on schedule, driving product success at Northwind Labs.
+• Increased onboarding activation by 18% through redesigning initial setup flows and leveraging SQL for data analysis at Northwind Labs.
+• Launched a B2B analytics product from scratch, overseeing sprint planning and stakeholder reviews at Acme SaaS.
+• Improved dashboard data freshness from daily to hourly, coordinating API and warehouse updates at Acme SaaS.
+
+CORE COMPETENCIES
+Product Strategy, AI Platforms, Enterprise SaaS, Roadmapping, SQL, Cross-functional Collaboration, Customer Discovery, PRDs, Stakeholder Management
+
+EDUCATION
