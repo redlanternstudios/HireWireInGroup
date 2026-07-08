@@ -97,7 +97,9 @@ const QualityCheckSchema = z.object({
   improvement_suggestions: z.array(z.string()).describe("Specific suggestions to improve weak sections"),
 })
 
-async function loadUserProfile(supabase: ReturnType<typeof createAdminClient>, userId: string) {
+type SupabaseDataClient = ReturnType<typeof createAdminClient> | Awaited<ReturnType<typeof createClient>>
+
+async function loadUserProfile(supabase: SupabaseDataClient, userId: string) {
   const { data: profile, error } = await supabase
     .from("user_profile")
     .select("*")
@@ -111,7 +113,7 @@ async function loadUserProfile(supabase: ReturnType<typeof createAdminClient>, u
   return profile
 }
 
-async function loadEvidenceLibrary(supabase: ReturnType<typeof createAdminClient>, userId: string) {
+async function loadEvidenceLibrary(supabase: SupabaseDataClient, userId: string) {
   const { data: evidence, error } = await supabase
     .from("evidence_library")
     .select("*")
@@ -126,7 +128,7 @@ async function loadEvidenceLibrary(supabase: ReturnType<typeof createAdminClient
   return evidence || []
 }
 
-async function loadJobAnalysis(supabase: ReturnType<typeof createAdminClient>, jobId: string, userId: string) {
+async function loadJobAnalysis(supabase: SupabaseDataClient, jobId: string, userId: string) {
   const { data: job, error } = await supabase
     .from("jobs")
     .select(`
@@ -271,7 +273,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createAdminClient()
+    const hasServerSupabaseKey = Boolean(
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
+    )
+    const supabase: SupabaseDataClient = hasServerSupabaseKey
+      ? createAdminClient()
+      : userClient
 
     // Set status to 'generating' immediately
     await supabase
