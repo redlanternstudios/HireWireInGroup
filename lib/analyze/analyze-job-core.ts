@@ -53,11 +53,11 @@ import {
 } from "@/lib/duplicate-detection";
 import type { createClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
+import type { Job } from "@/lib/types";
 
 function toDbScore(value: number | null | undefined): number {
   return Math.round(Number.isFinite(value ?? NaN) ? value! : 0);
 }
-import type { Job } from "@/lib/types";
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -493,13 +493,14 @@ Instructions: Extract whatever information is available. For any fields that can
       prompt: `Analyze this job posting and extract structured information.
 
 Be precise and extract only what is explicitly stated. Do not invent or assume information.
+Treat role families as neutral labels, not prestige tiers. Preserve the actual mix of signals in the posting and do not bias toward engineering, product, operations, or management just because one category sounds more technical.
 
 Role family options for categorization:
 - AI Technical Product Manager (AI products + technical depth)
 - Technical Product Manager (technical products, systems, APIs)
 - AI Product Manager (AI products, less technical)
 - Product Manager (general product roles)
-- Senior Product Manager (senior IC roles)
+- Senior Product Manager (senior individual contributor PM roles)
 - Systems Product Manager (infrastructure, platform)
 - Workflow Product Manager (automation, process)
 - Analytics Product Manager (data, analytics products)

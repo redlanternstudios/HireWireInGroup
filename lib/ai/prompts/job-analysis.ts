@@ -26,6 +26,8 @@ Parse the provided job posting content and extract:
 - For ATS phrases, extract verbatim phrases from the job description
 - Distinguish between required and preferred qualifications
 - Note any signals about company culture or work style
+- Treat role families as neutral categories, not prestige tiers.
+- Preserve the actual mix of signals in the posting. Do not bias toward engineering, product, operations, or management just because one signal sounds more technical.
 
 ## Fit Signal Analysis
 Evaluate these dimensions based on the posting:
@@ -33,8 +35,8 @@ Evaluate these dimensions based on the posting:
 - Technical requirements: Does it require technical fluency?
 - Workflow focus: Does it involve automation/workflow systems?
 - Startup culture: Is this a startup environment?
-- Engineering focus: Is this primarily an engineering role?
-- People management: Does it require managing people?
+- Engineering focus: Does this role require hands on engineering execution?
+- People management: Does it require managing people? This is a signal, not a value judgment.
 - Product ownership: Level of product ownership expected
 
 Be precise. The extracted data will be used for resume tailoring and fit scoring.`
