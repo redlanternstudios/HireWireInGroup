@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { LinkedInImportWidget } from "@/components/dashboard/LinkedInImportWidget"
@@ -29,7 +30,7 @@ import { HireWireLogo } from "@/components/hirewire-logo"
 import { CoachChat } from "@/components/coach-chat"
 import { toast } from "sonner"
 
-type OnboardingStep = "welcome" | "profile" | "sources" | "resume" | "evidence" | "path"
+type OnboardingStep = "welcome" | "profile" | "sources" | "career" | "resume" | "evidence" | "path"
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<OnboardingStep>("welcome")
@@ -48,6 +49,10 @@ export default function OnboardingPage() {
   const [githubUrl, setGithubUrl] = useState("")
   const [websiteUrl, setWebsiteUrl] = useState("")
   const [otherLinks, setOtherLinks] = useState("")
+  const [targetRole, setTargetRole] = useState("")
+  const [openToOtherRoles, setOpenToOtherRoles] = useState(false)
+  const [otherRoles, setOtherRoles] = useState("")
+  const [careerNotes, setCareerNotes] = useState("")
 
   // Resume upload state
   const [resumeText, setResumeText] = useState("")
@@ -62,8 +67,9 @@ export default function OnboardingPage() {
       case "welcome": return 0
       case "profile": return 25
       case "sources": return 45
-      case "resume": return 65
-      case "evidence": return 85
+      case "career": return 62
+      case "resume": return 74
+      case "evidence": return 88
       case "path": return 100
       default: return 0
     }
@@ -208,10 +214,57 @@ export default function OnboardingPage() {
 
       if (upsertError) throw upsertError
       await upsertSourceLinks(user.id)
-      setStep("resume")
+      setStep("career")
     } catch (err) {
       console.error("Error saving sources:", err)
       setError(err instanceof Error ? err.message : "Failed to save sources")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSaveCareerContext = async () => {
+    if (!targetRole.trim()) {
+      setError("Please tell us what role you are targeting")
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setError("Not authenticated")
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const careerContext = {
+        target_role: targetRole.trim(),
+        open_to_other_roles: openToOtherRoles,
+        other_roles: openToOtherRoles ? otherRoles.trim() || null : null,
+        notes: careerNotes.trim() || null,
+        updated_at: new Date().toISOString(),
+        source: "onboarding",
+      }
+
+      const { error: upsertError } = await supabase
+        .from("user_profile")
+        .upsert(
+          {
+            user_id: user.id,
+            email: user.email,
+            career_context: careerContext,
+          },
+          { onConflict: "user_id" }
+        )
+
+      if (upsertError) throw upsertError
+      setStep("resume")
+    } catch (err) {
+      console.error("Error saving career context:", err)
+      setError(err instanceof Error ? err.message : "Failed to save career context")
     } finally {
       setIsLoading(false)
     }
@@ -383,7 +436,7 @@ export default function OnboardingPage() {
                 <Label htmlFor="headline">Professional headline</Label>
                 <Input
                   id="headline"
-                  placeholder="Senior Product Manager | B2B SaaS | Growth"
+                  placeholder="Senior Operations Lead | B2B SaaS | Workflow Automation"
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
                   disabled={isLoading}
@@ -555,6 +608,116 @@ export default function OnboardingPage() {
               <Button
                 className="flex-1 bg-hirewire-red hover:bg-hirewire-red/90"
                 onClick={handleSaveSources}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ChevronRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // ── CAREER CONTEXT ───────────────────────────────────────────────────────
+
+  if (step === "career") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+        <Card className="w-full max-w-2xl border-0 shadow-none lg:border lg:shadow-lg">
+          <CardHeader className="text-center">
+            <Progress value={getProgress()} className="mb-4 h-2" />
+            <CardTitle className="text-2xl font-serif">Set your target role</CardTitle>
+            <CardDescription>
+              Tell the coach what you are aiming for so it can reverse engineer the gap from the job post.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="target-role">What role are you applying for? *</Label>
+                <Input
+                  id="target-role"
+                  placeholder="Senior Product Manager, Operations Lead, Software Engineer"
+                  value={targetRole}
+                  onChange={(e) => setTargetRole(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+
+              <div className="flex items-start gap-3 rounded-lg border border-border p-4">
+                <Checkbox
+                  id="open-other-roles"
+                  checked={openToOtherRoles}
+                  onCheckedChange={(checked) => setOpenToOtherRoles(checked === true)}
+                  disabled={isLoading}
+                  className="mt-0.5"
+                />
+                <div className="grid gap-1.5">
+                  <Label htmlFor="open-other-roles" className="text-sm font-medium">
+                    I am open to other roles too
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    This helps the coach keep the framing broad when the job post points to adjacent roles.
+                  </p>
+                </div>
+              </div>
+
+              {openToOtherRoles && (
+                <div className="space-y-2">
+                  <Label htmlFor="other-roles">Other roles or positions you are open to</Label>
+                  <Textarea
+                    id="other-roles"
+                    placeholder="Product Owner, Program Manager, Operations Manager, Technical Program Manager"
+                    value={otherRoles}
+                    onChange={(e) => setOtherRoles(e.target.value)}
+                    disabled={isLoading}
+                    rows={3}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="career-notes">Anything the coach should know</Label>
+                <Textarea
+                  id="career-notes"
+                  placeholder="Any context, constraints, or preferences that should shape the resume and gap questions."
+                  value={careerNotes}
+                  onChange={(e) => setCareerNotes(e.target.value)}
+                  disabled={isLoading}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setStep("sources")}
+                disabled={isLoading}
+              >
+                Back
+              </Button>
+              <Button
+                className="flex-1 bg-hirewire-red hover:bg-hirewire-red/90"
+                onClick={handleSaveCareerContext}
                 disabled={isLoading}
               >
                 {isLoading ? (

@@ -89,14 +89,14 @@ After the tag always write:
 CONVERSATION PROGRESSION RULES:
 1. FIRST TURN (required opening): Before asking any question, display a validation check.
    Show the requirement, show the relevant documented experience from User Profile, and explicitly state:
-   a) Does the requirement call for a specific role level or expertise? (e.g., "Lead PM" = leadership, "IC PM" = individual contributor)
-   b) What role levels does the user's documented history show? (e.g., "Technical PM" = individual contributor/specialist level)
-   c) Does it match? If not, acknowledge the gap and explain what you'll ask about.
+    a) Does the requirement call for a specific level or scope? (e.g., "Lead role" = leadership, "specialist role" = individual contributor)
+    b) What level does the user's documented history show? (e.g., "specialist" = individual contributor/specialist level)
+    c) Does it match? If not, acknowledge the gap and explain what you'll ask about.
 
    Example of CORRECT first message:
-   "Requirement: Lead Product Manager (team leadership/strategic direction).
-    Your documented roles: Technical Product Manager, Product Owner (individual contributor/specialist).
-    Gap: You have IC-level PM experience but the role seeks leadership scope. Let me ask about leading or directing product strategy."
+   "Requirement: Lead role (team leadership/strategic direction).
+    Your documented roles: specialist or individual contributor roles.
+    Gap: Your documented scope is narrower than the posting asks for. Let me ask about leading or directing the work."
 
    Then proceed to the actual question about that specific gap.
 

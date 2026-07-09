@@ -245,6 +245,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     : []
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
+  const numericOverallScore = overallScore === null ? null : Number(overallScore)
+  const coachOpeningMessage =
+    numericOverallScore !== null && Number.isFinite(numericOverallScore) && numericOverallScore < 70
+      ? `Your application readiness score is ${Math.round(numericOverallScore)}%. Let's close this gap together.`
+      : undefined
+  const shouldAutoOpenCoach =
+    numericOverallScore !== null && Number.isFinite(numericOverallScore) && numericOverallScore < 70 && !coachStep.complete
   // One action at a time: while the journey's primary step is still Analyze or
   // Prove Fit, don't surface the header "Re-analyze" as a competing action.
   const inEarlyStageAction =
@@ -336,6 +343,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
               jobTitle={jobWithAnalysis.title ?? "this role"}
               company={jobWithAnalysis.company ?? ""}
               requirements={unresolvedRequirements}
+              openingMessage={coachOpeningMessage}
+              autoOpen={shouldAutoOpenCoach}
             />
           )}
           <ReadinessChecklist

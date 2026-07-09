@@ -100,10 +100,12 @@ function reducer(state: PanelState, action: Action): PanelState {
 export function ClarityCoachPanel({
   jobId,
   requirement,
+  openingMessage,
   onResolved,
 }: {
   jobId: string
   requirement: ClarityRequirement
+  openingMessage?: string
   onResolved: (mode: "answer" | "skip") => void
 }) {
   const [state, dispatch] = useReducer(reducer, INITIAL)
@@ -143,7 +145,7 @@ export function ClarityCoachPanel({
               id: makeId(),
               role: "coach",
               type: "question",
-              content: `Let's see if we can prove this from your background:\n\n**"${requirement.requirement_text.slice(0, 100)}"**\n\nI'll ask one question at a time. First — where have you shown this most clearly?`,
+              content: `${openingMessage ? `${openingMessage}\n\n` : ""}Let's see if we can prove this from your background:\n\n**"${requirement.requirement_text.slice(0, 100)}"**\n\nI'll ask one question at a time. First — where have you shown this most clearly?`,
               quickReplies: DEFAULT_QUICK_REPLIES,
               timestamp: new Date(),
             },

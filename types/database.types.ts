@@ -4313,6 +4313,7 @@ export type Database = {
           active_voice_profile: Json | null
           avatar_url: string | null
           certifications: string[] | null
+          career_context: Json | null
           created_at: string | null
           default_voice_mode: string | null
           education: Json | null
@@ -4340,6 +4341,7 @@ export type Database = {
           active_voice_profile?: Json | null
           avatar_url?: string | null
           certifications?: string[] | null
+          career_context?: Json | null
           created_at?: string | null
           default_voice_mode?: string | null
           education?: Json | null
@@ -4367,6 +4369,7 @@ export type Database = {
           active_voice_profile?: Json | null
           avatar_url?: string | null
           certifications?: string[] | null
+          career_context?: Json | null
           created_at?: string | null
           default_voice_mode?: string | null
           education?: Json | null

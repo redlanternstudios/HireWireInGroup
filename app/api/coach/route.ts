@@ -37,6 +37,7 @@ IMPORTANT: When a user asks you to add something to their profile, DO IT immedia
 - When suggesting improvements, be specific and actionable
 - When helping build evidence, ask follow-up questions to extract STAR details (Situation, Task, Action, Result)
 - Format responses with markdown for readability
+- Use the stored onboarding career context first: target role, openness to other roles, and any notes the user saved.
 - Treat every role family and title as a neutral label. Do not assume engineering, product, operations, or management backgrounds are better or worse than one another.
 - Compare the requirement to the user's documented evidence and scope only. Ask about missing scope, not status or prestige.
 
@@ -595,11 +596,30 @@ export async function POST(req: NextRequest) {
 
     // Create tools with userId bound
     const tools = createCoachTools(user.id)
+    const { data: profile } = await supabase
+      .from("user_profile")
+      .select("full_name, headline, summary, career_context")
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    const careerContext = profile && typeof profile.career_context === "object" && !Array.isArray(profile.career_context)
+      ? profile.career_context as Record<string, unknown>
+      : null
+
+    const careerContextLines = careerContext
+      ? [
+          "## Career Context from onboarding",
+          `Target role: ${String(careerContext.target_role ?? "Not set")}`,
+          `Open to other roles: ${String(careerContext.open_to_other_roles ?? "Not set")}`,
+          `Other roles: ${String(careerContext.other_roles ?? "Not set")}`,
+          `Notes: ${String(careerContext.notes ?? "None")}`,
+        ].join("\n")
+      : "## Career Context from onboarding\nTarget role: Not set\nOpen to other roles: Not set\nOther roles: Not set\nNotes: None"
 
     // Build system prompt - add gap clarification mode if context provided
-    let systemPrompt = COACH_SYSTEM_PROMPT
+    let systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${careerContextLines}`
     if (gapContext) {
-      systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${GAP_CLARIFICATION_SYSTEM_PROMPT}\n\n## Current Gap Context\nThe user is asking about gaps for job: "${gapContext.jobTitle}" at "${gapContext.company}".\n${gapContext.gap ? `Specific gap to address: ${gapContext.gap.requirement} (${gapContext.gap.category})` : "Help the user address their evidence gaps for this role."}`
+      systemPrompt = `${systemPrompt}\n\n${GAP_CLARIFICATION_SYSTEM_PROMPT}\n\n## Current Gap Context\nThe user is asking about gaps for job: "${gapContext.jobTitle}" at "${gapContext.company}".\n${gapContext.gap ? `Specific gap to address: ${gapContext.gap.requirement} (${gapContext.gap.category})` : "Help the user address their evidence gaps for this role."}`
     }
 
     const result = streamText({

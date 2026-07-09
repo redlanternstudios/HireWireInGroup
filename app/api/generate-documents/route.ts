@@ -375,6 +375,7 @@ export async function POST(request: NextRequest) {
       location?: string;
       summary?: string;
       skills?: string[];
+      certifications?: string[];
       experience?: Array<{
         title: string;
         company: string;
@@ -395,9 +396,13 @@ export async function POST(request: NextRequest) {
     const effectiveLocation = profile.location || sourceResumeData?.location || "Not provided"
     const effectiveSummary = profile.summary || sourceResumeData?.summary || "Not provided"
     const effectiveSkills = (profile.skills?.length > 0 ? profile.skills : sourceResumeData?.skills) || []
+    const effectiveCertifications = (profile.certifications?.length > 0 ? profile.certifications : sourceResumeData?.certifications) || []
     const effectiveExperience = (profile.experience?.length > 0 ? profile.experience : sourceResumeData?.experience) || []
     const effectiveEducation = (profile.education?.length > 0 ? profile.education : sourceResumeData?.education) || []
     const normalizedProfileLinks = normalizeProfileLinks(profileLinks)
+    const careerContext = profile.career_context && typeof profile.career_context === "object" && !Array.isArray(profile.career_context)
+      ? profile.career_context as Record<string, unknown>
+      : null
     const mergedLinks = {
       linkedin: profile.linkedin_url || normalizedProfileLinks.linkedin,
       github: profile.github_url || normalizedProfileLinks.github,
@@ -412,6 +417,14 @@ Location: ${effectiveLocation}
 Summary: ${effectiveSummary}
 
 Skills: ${effectiveSkills.join(", ")}
+${effectiveCertifications.length > 0 ? `Certifications: ${effectiveCertifications.join(", ")}` : ""}
+${careerContext ? `
+Career Context:
+- Target role: ${String(careerContext.target_role ?? "Not set")}
+- Open to other roles: ${String(careerContext.open_to_other_roles ?? "Not set")}
+- Other roles: ${String(careerContext.other_roles ?? "Not set")}
+${careerContext.notes ? `- Notes: ${String(careerContext.notes)}` : ""}
+` : ""}
 ${mergedLinks.linkedin || mergedLinks.github || mergedLinks.portfolio || mergedLinks.website ? `
 Public Links:
 ${mergedLinks.linkedin ? `- LinkedIn: ${mergedLinks.linkedin}` : ""}
@@ -730,9 +743,12 @@ CORE COMPETENCIES
 ${resumeWithProvenance.skills_section.join(", ")}
 
 EDUCATION
-${(profile.education || []).map((edu: { degree: string; school: string; year?: string }) => 
+${(profile.education || []).map((edu: { degree: string; school: string; year?: string }) =>
   `${edu.degree}, ${edu.school}${edu.year ? ` (${edu.year})` : ""}`
-).join("\n")}`
+).join("\n")}
+${effectiveCertifications.length > 0 ? `
+CERTIFICATIONS
+${effectiveCertifications.map((cert: string) => `• ${cert}`).join("\n")}` : ""}`
 
     // Build premium formatted cover letter with professional signature
     const today = new Date().toLocaleDateString("en-US", { 

@@ -20,6 +20,13 @@ type RecentEvent = {
   created_at: string;
 };
 
+type CareerContext = {
+  target_role?: string | null;
+  open_to_other_roles?: boolean | null;
+  other_roles?: string | string[] | null;
+  notes?: string | null;
+};
+
 const EVENT_LABEL: Record<string, string> = {
   application_submitted: "Application submitted",
   documents_generated: "Documents generated",
@@ -67,7 +74,7 @@ async function getCoachContext() {
 
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    const [jobsResult, evidenceResult, eventsResult] =
+    const [jobsResult, evidenceResult, eventsResult, profileResult] =
       await Promise.all([
         supabase
           .from("jobs")
@@ -87,6 +94,11 @@ async function getCoachContext() {
           .gte("created_at", cutoff)
           .order("created_at", { ascending: false })
           .limit(8),
+        supabase
+          .from("user_profile")
+          .select("career_context")
+          .eq("user_id", user.id)
+          .maybeSingle(),
       ]);
 
     const jobs = jobsResult.data ?? [];
@@ -119,6 +131,7 @@ async function getCoachContext() {
     ).length;
     const evidenceCount = evidence.length;
     const approvedEvidence = evidence.filter((e) => e.is_user_approved).length;
+    const careerContext = profileResult.data?.career_context as CareerContext | null | undefined;
 
     // Find the highest-readiness non-applied job for the "best opportunity" card
     const topJob =
@@ -147,6 +160,7 @@ async function getCoachContext() {
       topJob,
       hasNoEvidence: evidenceCount === 0,
       hasNoPipeline: activeJobs === 0,
+      careerContext,
     };
   } catch {
     return null;
@@ -217,6 +231,12 @@ export default async function CoachPage() {
   const evidenceStrong = evidenceStatus === "Strong";
   const evidenceLow =
     ctx?.evidenceCount === 0 || (ctx?.approvedEvidence ?? 0) < 2;
+  const targetRole = ctx?.careerContext?.target_role?.trim() || null
+  const openToOtherRoles = ctx?.careerContext?.open_to_other_roles
+  const otherRoles = Array.isArray(ctx?.careerContext?.other_roles)
+    ? ctx?.careerContext?.other_roles.filter(Boolean).join(", ")
+    : String(ctx?.careerContext?.other_roles ?? "").trim()
+  const hasCareerContext = !!targetRole || !!otherRoles || openToOtherRoles === true
 
   return (
     <div className="flex flex-col h-[calc(100vh-2.5rem)]">
@@ -280,6 +300,44 @@ export default async function CoachPage() {
             className="shrink-0 p-4 border-b border-white/6"
             style={{ backgroundColor: "#111110" }}
           >
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/40 mb-3">
+              Career context
+            </p>
+            <div className="mb-4 rounded-xl border border-white/8 bg-white/4 px-3 py-2.5">
+              {hasCareerContext ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-white/40">Target role</span>
+                    <span className="text-[11px] font-semibold text-white text-right">
+                      {targetRole || "Not set"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-white/40">Open to other roles</span>
+                    <span className="text-[11px] font-semibold text-white text-right">
+                      {openToOtherRoles ? "Yes" : "No"}
+                    </span>
+                  </div>
+                  {otherRoles && (
+                    <p className="text-[10px] text-white/35 leading-relaxed">
+                      {otherRoles}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium text-white/70">
+                    No target role saved yet
+                  </p>
+                  <Link
+                    href="/profile"
+                    className="text-[10px] text-primary hover:underline font-medium"
+                  >
+                    Add it in your profile →
+                  </Link>
+                </div>
+              )}
+            </div>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/40 mb-3">
               Pipeline at a glance
             </p>

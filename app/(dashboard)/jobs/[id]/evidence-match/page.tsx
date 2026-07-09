@@ -130,7 +130,8 @@ export default async function EvidenceMatchPage({
   }
   const readiness = evaluateReadiness(jobWithDecisionAuthority)
   const hasUrl = !!(job.job_url && !job.job_url.startsWith("manual://"))
-  const matchScore = typeof job.score === "number" ? job.score : null
+  const matchScore =
+    job.score === null || job.score === undefined ? null : Number(job.score)
   const requiredTotal = evidenceMap?.coverage_summary.required_total ?? requirements.length
   const requiredCovered = (evidenceMap?.coverage_summary.required_met ?? 0) + (evidenceMap?.coverage_summary.required_partial ?? 0)
   const unresolvedRequirements = listUnresolvedRequirements(jobWithDecisionAuthority)
@@ -140,6 +141,14 @@ export default async function EvidenceMatchPage({
   )
   const proofGaps = unresolvedRequirements
   const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
+  const firstGap = gaps[0] ?? ""
+  const cleanFirstGap = firstGap.replace(/^Gap:\s*/i, "").trim()
+
+  if (!requestedRequirementId && typeof matchScore === "number" && matchScore < 70 && proofGaps.length > 0) {
+    redirect(
+      `/jobs/${id}/evidence-match?req=${encodeURIComponent(proofGaps[0].requirement_id)}#${requirementAnchorId(proofGaps[0].requirement_id)}`,
+    )
+  }
 
   return (
     <div className="hw-page">
@@ -213,7 +222,7 @@ export default async function EvidenceMatchPage({
                 company={job.company_name ?? "this company"}
                 score={job.score}
                 status={job.status}
-                requirementMatches={normalizedRequirementMatches}
+                requirementMatches={unresolvedRequirements}
                 requestedRequirementId={requestedRequirementId}
                 evidenceItems={(evidenceItems ?? []).map((item) => ({
                   id: item.id,
@@ -328,6 +337,16 @@ export default async function EvidenceMatchPage({
                   score={job.score}
                   status={job.status}
                   gaps={gaps}
+                  requirement={{
+                    requirement_id: `gap:${id}:${cleanFirstGap || "match"}`,
+                    requirement_text: cleanFirstGap || "Unresolved requirement",
+                    requirement_type: "other",
+                    priority: "required",
+                    status: "gap",
+                    current_proof: [],
+                    proof_needed: [cleanFirstGap || "Share a concrete example that proves this requirement."],
+                  }}
+                  autoOpen={typeof matchScore === "number" && matchScore < 70}
                   showGenerationUnlock={!readiness.canGenerate}
                 />
               </div>

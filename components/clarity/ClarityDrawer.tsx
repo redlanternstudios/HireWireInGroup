@@ -25,6 +25,7 @@ export interface ClarityDrawerProps {
   jobId: string
   jobTitle: string
   company: string
+  openingMessage?: string
   /**
    * Snapshot of unresolved requirements taken when the drawer opened. The
    * drawer walks this list by index; "Next unresolved item" advances manually.
@@ -83,6 +84,7 @@ export function ClarityDrawer({
   jobId,
   jobTitle,
   company,
+  openingMessage,
   requirements,
 }: ClarityDrawerProps) {
   const isMobile = useIsMobile()
@@ -218,6 +220,7 @@ export function ClarityDrawer({
               key={current.requirement_id}
               jobId={jobId}
               requirement={current}
+              openingMessage={openingMessage}
               onResolved={handleResolved}
             />
           </>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,15 +17,26 @@ export function ClarityDrawerLauncher({
   jobTitle,
   company,
   requirements,
+  openingMessage,
+  autoOpen = false,
 }: {
   jobId: string
   jobTitle: string
   company: string
   requirements: ClarityRequirement[]
+  openingMessage?: string
+  autoOpen?: boolean
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const autoOpened = useRef(false)
   const count = requirements.length
+
+  useEffect(() => {
+    if (!autoOpen || autoOpened.current || open) return
+    autoOpened.current = true
+    setOpen(true)
+  }, [autoOpen, open])
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
@@ -39,8 +50,7 @@ export function ClarityDrawerLauncher({
         <div className="min-w-0">
           <p className="hw-section-label mb-1">Prove your fit</p>
           <p className="text-sm text-muted-foreground">
-            {count} {count === 1 ? "claim" : "claims"} HireWire can&apos;t verify yet. Work through
-            them with your coach, one at a time.
+            {openingMessage ?? `${count} ${count === 1 ? "claim" : "claims"} HireWire can&apos;t verify yet. Work through them with your coach, one at a time.`}
           </p>
         </div>
         <Button onClick={() => setOpen(true)} size="sm" className="hw-btn-primary shrink-0 gap-1.5">
@@ -55,6 +65,7 @@ export function ClarityDrawerLauncher({
         jobTitle={jobTitle}
         company={company}
         requirements={requirements}
+        openingMessage={openingMessage}
       />
     </div>
   )

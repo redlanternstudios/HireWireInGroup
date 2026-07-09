@@ -1,16 +1,20 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { MessageSquareText, Target } from "lucide-react"
+import { Target } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
-import type { RequirementEvidenceMatch } from "@/lib/evidence/types"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
 
-function isUnresolved(status: RequirementEvidenceMatch["status"]) {
-  return status === "gap" || status === "unknown" || status === "partial"
+type CoachRequirement = {
+  requirement_id: string
+  requirement_text: string
+  priority?: string
+  status?: string
+  matched_evidence_titles?: string[]
+  proof_needed?: string[]
+  evidence_questions?: string[]
 }
 
 export function GuidedRequirementCoachFlow({
@@ -29,7 +33,7 @@ export function GuidedRequirementCoachFlow({
   company: string
   score?: number | null
   status?: string
-  requirementMatches: RequirementEvidenceMatch[]
+  requirementMatches: CoachRequirement[]
   evidenceItems: Array<{
     id: string
     source_title: string | null
@@ -43,15 +47,9 @@ export function GuidedRequirementCoachFlow({
   const searchParams = useSearchParams()
 
   const unresolvedMatches = useMemo(() => {
-    const required = requirementMatches.filter(
-      (match) => match.priority === "required" && isUnresolved(match.status),
-    )
-    const preferred = requirementMatches.filter(
-      (match) => match.priority === "preferred" && isUnresolved(match.status),
-    )
-    const keyword = requirementMatches.filter(
-      (match) => match.priority === "keyword" && isUnresolved(match.status),
-    )
+    const required = requirementMatches.filter((match) => match.priority === "required")
+    const preferred = requirementMatches.filter((match) => match.priority === "preferred")
+    const keyword = requirementMatches.filter((match) => match.priority === "keyword")
     return [...required, ...preferred, ...keyword]
   }, [requirementMatches])
 
@@ -63,17 +61,10 @@ export function GuidedRequirementCoachFlow({
     return idx >= 0 ? idx : 0
   }, [requestedRequirementId, unresolvedMatches])
 
-  const [activeIndex, setActiveIndex] = useState(initialIndex)
-  const [flowOpen, setFlowOpen] = useState(
-    !!requestedRequirementId && unresolvedMatches.length > 0,
-  )
+  const numericScore = Number(score)
+  const autoOpen = Number.isFinite(numericScore) && numericScore < 70 && unresolvedMatches.length > 0
 
-  useEffect(() => {
-    setActiveIndex(initialIndex)
-    if (requestedRequirementId && unresolvedMatches.length > 0) {
-      setFlowOpen(true)
-    }
-  }, [initialIndex, requestedRequirementId, unresolvedMatches.length])
+  const activeIndex = initialIndex
 
   const safeActiveIndex =
     unresolvedMatches.length === 0
@@ -119,34 +110,22 @@ export function GuidedRequirementCoachFlow({
           </p>
         </div>
 
-        {!flowOpen && (
-          <Button
-            size="sm"
-            className="hw-btn-primary gap-1.5 text-xs shrink-0"
-            onClick={() => setFlowOpen(true)}
-            aria-label={`Start Match Interview for ${active.requirement_text}`}
-          >
-            <MessageSquareText className="h-3.5 w-3.5" />
-            Start Match Interview
-          </Button>
-        )}
       </div>
 
       <RequirementCoachModal
-        open={flowOpen}
-        onOpenChange={setFlowOpen}
+        autoOpen={autoOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) router.refresh()
+        }}
         onStepSaved={(mode) => {
           if (mode === "answer" || mode === "skip") {
             const hasNext = safeActiveIndex + 1 < unresolvedMatches.length
             if (hasNext) {
               const nextIndex = safeActiveIndex + 1
               const next = unresolvedMatches[nextIndex]
-              setActiveIndex(nextIndex)
               if (next) setResolveParam(next.requirement_id)
-              setTimeout(() => setFlowOpen(true), 0)
             } else {
               setResolveParam(null)
-              setFlowOpen(false)
             }
           }
         }}
@@ -156,16 +135,16 @@ export function GuidedRequirementCoachFlow({
         score={score}
         status={status}
         gaps={[active.requirement_text]}
-        requirement={{
-          requirement_id: active.requirement_id,
-          requirement_text: active.requirement_text,
-          requirement_type: inferRequirementType(active.requirement_text),
-          priority: active.priority,
-          status: active.status,
-          current_proof: active.matched_evidence_titles,
-          proof_needed: active.proof_needed,
-          coach_question: active.evidence_questions?.[0],
-        }}
+          requirement={{
+            requirement_id: active.requirement_id,
+            requirement_text: active.requirement_text,
+            requirement_type: inferRequirementType(active.requirement_text),
+            priority: active.priority,
+            status: active.status,
+            current_proof: active.matched_evidence_titles ?? [],
+            proof_needed: active.proof_needed ?? [],
+            coach_question: active.evidence_questions?.[0],
+          }}
         evidenceItems={evidenceItems}
         progressLabel={stepLabel}
         showGenerationUnlock={generationBlocked}
@@ -175,7 +154,6 @@ export function GuidedRequirementCoachFlow({
           if (safeActiveIndex > 0) {
             const prevIndex = safeActiveIndex - 1
             const prev = unresolvedMatches[prevIndex]
-            setActiveIndex(prevIndex)
             if (prev) setResolveParam(prev.requirement_id)
           }
         }}
@@ -183,11 +161,9 @@ export function GuidedRequirementCoachFlow({
           const nextIndex = safeActiveIndex + 1
           if (nextIndex < unresolvedMatches.length) {
             const next = unresolvedMatches[nextIndex]
-            setActiveIndex(nextIndex)
             if (next) setResolveParam(next.requirement_id)
           } else {
             setResolveParam(null)
-            setFlowOpen(false)
           }
         }}
       />
