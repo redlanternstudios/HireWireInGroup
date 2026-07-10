@@ -13,7 +13,7 @@ import { Trash2, AlertTriangle, ArrowLeft, Lock } from 'lucide-react';
  * (how many resume claims this evidence backs).
  *
  * Hard constraints:
- * - DEC-001: No business logic. DELETE goes direct to Supabase (RLS-guarded).
+ * - DEC-001: No business logic. DELETE goes through the app route, which is RLS-guarded.
  * - LOCKED items: delete is BLOCKED in the UI and at the DB level (RLS policy).
  * - Downstream impact: show count of resume_claims backed by this evidence
  *   so user knows what they're breaking before confirming.
@@ -23,7 +23,7 @@ import { Trash2, AlertTriangle, ArrowLeft, Lock } from 'lucide-react';
  * 1. Fetch evidence item + count of linked resume_claims
  * 2. If locked: show lock notice, no delete button
  * 3. If unlocked: show impact warning, require typed confirmation if claims > 0
- * 4. On confirm: DELETE evidence_library WHERE id = $id (cascades in DB)
+ * 4. On confirm: DELETE /api/evidence/:id?permanent=true
  * 5. Redirect to Evidence Vault
  */
 
@@ -70,7 +70,7 @@ export function Screen05DeleteEvidence({ evidenceId, onBack, onDeleted }: Props)
         // Fetch evidence item
         const { data: evidenceData, error: evidenceError } = await supabase
           .from('evidence_library')
-          .select('id, title, category, locked')
+          .select('id, source_title, source_type, visibility_status')
           .eq('id', evidenceId)
           .single();
 
@@ -88,9 +88,9 @@ export function Screen05DeleteEvidence({ evidenceId, onBack, onDeleted }: Props)
 
         setItem({
           id: evidenceData.id,
-          title: evidenceData.title,
-          category: evidenceData.category,
-          locked: evidenceData.locked === true,
+          title: evidenceData.source_title,
+          category: evidenceData.source_type,
+          locked: evidenceData.visibility_status === 'locked',
           linkedClaimsCount: count ?? 0,
         });
       } catch (err) {
@@ -110,12 +110,14 @@ export function Screen05DeleteEvidence({ evidenceId, onBack, onDeleted }: Props)
     setDeleteError(null);
 
     try {
-      const { error: deleteError } = await supabase
-        .from('evidence_library')
-        .delete()
-        .eq('id', evidenceId);
+      const response = await fetch(`/api/evidence/${evidenceId}?permanent=true`, {
+        method: 'DELETE',
+      });
 
-      if (deleteError) throw deleteError;
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? 'Failed to delete evidence');
+      }
 
       setDeleteStatus('deleted');
       setTimeout(() => {

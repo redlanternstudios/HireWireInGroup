@@ -6,6 +6,16 @@ import { checkSafety, logSafetyAudit } from "@/lib/safety"
 import { groq, MODELS } from "@/lib/adapters/groq"
 import { GAP_CLARIFICATION_SYSTEM_PROMPT } from "@/lib/coach-prompts/gap-questions"
 import { normalizeProfileLinks } from "@/lib/profile-knowledge-resolver"
+import { COACH_PERSONA_BLOCK } from "@/lib/coach/coach-persona"
+import { upsertCoachEvidence } from "@/lib/coach/evidence-merge"
+import {
+  syncProfileLinksFromProfile,
+  upsertCoachProfileLink,
+  updateCoachProfileLink,
+  removeCoachProfileLink,
+  setPrimaryCoachProfileLink,
+  updateCareerContextRecord,
+} from "@/lib/coach/profile-mutations"
 
 export const maxDuration = 60
 
@@ -17,7 +27,7 @@ const COACH_SYSTEM_PROMPT = `You are HireWire Coach, a strategic career advisor 
 2. **Onboarding Help**: Guide new users through building their evidence library via conversational Q&A
 3. **Action Suggestions**: Proactively suggest next steps based on the user's pipeline state
 4. **Document Editing**: Help improve resumes and cover letters when asked
-5. **Profile Management**: You can directly add/update profile information, work experience, skills, and education when users ask
+5. **Profile Management**: You can directly add/update profile information, work experience, skills, education, links, career context, and evidence when users ask
 
 ## Profile Actions You Can Take
 When users ask you to update their profile, USE YOUR TOOLS to do it directly:
@@ -26,20 +36,16 @@ When users ask you to update their profile, USE YOUR TOOLS to do it directly:
 - **Remove skills**: Use removeSkill to remove skills
 - **Update profile info**: Use updateProfile to change name, location, summary, email, or phone
 - **Add education**: Use addEducation to add degrees/schools
+- **Update career context**: Use updateCareerContext to keep the user's job targets current
+- **Manage links**: Use addProfileLink, updateProfileLink, removeProfileLink, and setPrimaryLink to keep profile and portfolio links canonical
 - **Update job status**: Use updateJobStatus to mark jobs as applied, interviewing, etc.
 - **Save evidence**: Use saveEvidence to document achievements
+- **Delete evidence**: Use deleteEvidence only after the user explicitly confirms they want it removed from active use
+When you touch profile data, keep user_profile and user_profile_links synchronized so there is one canonical source for each confirmed link.
 
 IMPORTANT: When a user asks you to add something to their profile, DO IT immediately using the appropriate tool. Don't just explain how - actually perform the action.
 
-## Communication Style
-- Be concise but warm and encouraging
-- Always ground advice in the user's actual experience and evidence when available
-- When suggesting improvements, be specific and actionable
-- When helping build evidence, ask follow-up questions to extract STAR details (Situation, Task, Action, Result)
-- Format responses with markdown for readability
-- Use the stored onboarding career context first: target role, openness to other roles, and any notes the user saved.
-- Treat every role family and title as a neutral label. Do not assume engineering, product, operations, or management backgrounds are better or worse than one another.
-- Compare the requirement to the user's documented evidence and scope only. Ask about missing scope, not status or prestige.
+${COACH_PERSONA_BLOCK}
 
 ## Safety Boundaries - STRICTLY FOLLOW
 
@@ -62,6 +68,8 @@ You are speaking directly to the job seeker. Help them succeed - ethically and p
 
 // Create tools with userId bound
 function createCoachTools(userId: string) {
+  const normalizeText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ")
+
   return {
     getUserProfile: tool({
       description: "Get the current user's profile including name, headline, summary, skills, experience, and education",
@@ -267,37 +275,74 @@ function createCoachTools(userId: string) {
       }),
       execute: async ({ title, description, category, tags, metrics }) => {
         const supabase = await createClient()
-        
-        const { data, error } = await supabase
-          .from("evidence_library")
-          .insert({
-            user_id: userId,
-            title,
-            description,
-            category,
-            tags,
-            metrics,
-            is_active: true,
-            priority_rank: 0,
+
+        try {
+          const result = await upsertCoachEvidence(supabase, userId, {
+            source_title: title,
+            source_type: category,
+            proof_snippet: description,
+            approved_achievement_bullets: description ? [description] : [],
+            tools_used: tags,
+            outcomes: metrics ? [metrics] : [],
+            confidence_level: "medium",
+            evidence_weight: "medium",
+            is_user_approved: true,
+            raw_resume_section: "coach",
           })
-          .select()
-          .single()
-        
-        if (error) return { error: "Failed to save evidence" }
-        return { success: true, evidence: data }
+
+          return {
+            success: true,
+            evidence: result.evidence,
+            merged: result.merged,
+            duplicateConfidence: result.duplicateConfidence ?? null,
+          }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Failed to save evidence" }
+        }
+      },
+    }),
+
+    updateCareerContext: tool({
+      description: "Update the user's job search context like target role, openness to other roles, alternate roles, and notes.",
+      inputSchema: z.object({
+        target_role: z.string().optional().describe("Primary role the user is targeting"),
+        open_to_other_roles: z.boolean().optional().describe("Whether the user is open to other roles"),
+        other_roles: z.array(z.string()).optional().describe("Other roles the user is open to"),
+        notes: z.string().optional().describe("Additional career context notes"),
+      }),
+      execute: async (updates) => {
+        const supabase = await createClient()
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return { error: "Not authenticated" }
+          const data = await updateCareerContextRecord(supabase, user.id, updates)
+          return { success: true, career_context: data.career_context ?? null }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Failed to update career context" }
+        }
       },
     }),
 
     // ========== PROFILE MANAGEMENT TOOLS ==========
     
     updateProfile: tool({
-      description: "Update the user's profile information like name, location, phone, email, or summary. Use this when users want to change their basic profile details.",
+      description: "Update the user's profile information like name, location, phone, email, summary, headline, links, or career context. Use this when users want to change their core profile details.",
       inputSchema: z.object({
         full_name: z.string().optional().describe("User's full name"),
         location: z.string().optional().describe("User's location (e.g., 'San Francisco, CA')"),
         phone: z.string().optional().describe("User's phone number"),
         email: z.string().optional().describe("User's email address"),
         summary: z.string().optional().describe("Professional summary/bio"),
+        headline: z.string().optional().describe("Short headline or role summary"),
+        linkedin_url: z.string().optional().describe("LinkedIn profile URL"),
+        github_url: z.string().optional().describe("GitHub profile URL"),
+        website_url: z.string().optional().describe("Website or portfolio URL"),
+        career_context: z.object({
+          target_role: z.string().optional(),
+          open_to_other_roles: z.boolean().optional(),
+          other_roles: z.array(z.string()).optional(),
+          notes: z.string().optional(),
+        }).optional().describe("Career context from onboarding or coaching"),
       }),
       execute: async (updates) => {
         const supabase = await createClient()
@@ -333,7 +378,92 @@ function createCoachTools(userId: string) {
           .single()
         
         if (error) return { error: "Failed to update profile" }
+        await syncProfileLinksFromProfile(supabase, userId, {
+          linkedin_url: String(data.linkedin_url ?? ""),
+          github_url: String(data.github_url ?? ""),
+          website_url: String(data.website_url ?? ""),
+          links: data.links,
+        })
         return { success: true, message: "Profile updated successfully", updated_fields: Object.keys(cleanUpdates) }
+      },
+    }),
+
+    addProfileLink: tool({
+      description: "Add a canonical profile, portfolio, or social link for the user.",
+      inputSchema: z.object({
+        link_type: z.enum(["linkedin", "github", "portfolio", "website", "other"]),
+        url: z.string().min(3),
+        label: z.string().optional(),
+        is_primary: z.boolean().optional(),
+      }),
+      execute: async ({ link_type, url, label, is_primary }) => {
+        const supabase = await createClient()
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return { error: "Not authenticated" }
+          const result = await upsertCoachProfileLink(supabase, user.id, { link_type, url, label, is_primary })
+          return { success: true, link: result.link, merged: result.merged }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Failed to add profile link" }
+        }
+      },
+    }),
+
+    updateProfileLink: tool({
+      description: "Update an existing profile link by id.",
+      inputSchema: z.object({
+        id: z.string().describe("Profile link id"),
+        url: z.string().optional(),
+        label: z.string().optional(),
+        link_type: z.enum(["linkedin", "github", "portfolio", "website", "other"]).optional(),
+        is_primary: z.boolean().optional(),
+      }),
+      execute: async ({ id, url, label, link_type, is_primary }) => {
+        const supabase = await createClient()
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return { error: "Not authenticated" }
+          const result = await updateCoachProfileLink(supabase, user.id, id, { url, label, link_type, is_primary })
+          return { success: true, link: result.link, merged: result.merged }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Failed to update profile link" }
+        }
+      },
+    }),
+
+    removeProfileLink: tool({
+      description: "Remove a profile link the user no longer wants in their canonical profile.",
+      inputSchema: z.object({
+        id: z.string().describe("Profile link id"),
+      }),
+      execute: async ({ id }) => {
+        const supabase = await createClient()
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return { error: "Not authenticated" }
+          const result = await removeCoachProfileLink(supabase, user.id, id)
+          return { success: true, removed: result.removed, link_type: result.link_type ?? null, url: result.url ?? null }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Failed to remove profile link" }
+        }
+      },
+    }),
+
+    setPrimaryLink: tool({
+      description: "Mark a profile link as primary for its type.",
+      inputSchema: z.object({
+        id: z.string().describe("Profile link id"),
+      }),
+      execute: async ({ id }) => {
+        const supabase = await createClient()
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return { error: "Not authenticated" }
+          const result = await setPrimaryCoachProfileLink(supabase, user.id, id)
+          return { success: true, updated: result.updated, link: result.link ?? null }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Failed to set primary link" }
+        }
       },
     }),
 
@@ -360,7 +490,7 @@ function createCoachTools(userId: string) {
           return { error: "No profile found. User should create their profile first." }
         }
         
-        const currentExperience = existing.experience || []
+        const currentExperience = Array.isArray(existing.experience) ? existing.experience : []
         const newExperience = {
           title,
           company,
@@ -368,11 +498,27 @@ function createCoachTools(userId: string) {
           end_date: end_date || "Present",
           description: description || "",
         }
+
+        const experienceKey = normalizeText(`${title} ${company} ${start_date} ${end_date || "Present"}`)
+        const existingIndex = currentExperience.findIndex((entry: Record<string, unknown>) =>
+          normalizeText(`${String(entry.title ?? "")} ${String(entry.company ?? "")} ${String(entry.start_date ?? "")} ${String(entry.end_date ?? "Present")}`) === experienceKey
+        )
+
+        const nextExperience = existingIndex >= 0
+          ? currentExperience.map((entry: Record<string, unknown>, index: number) =>
+              index === existingIndex
+                ? {
+                    ...entry,
+                    description: [String(entry.description ?? ""), description || ""].filter(Boolean).join("\n").trim(),
+                  }
+                : entry
+            )
+          : [...currentExperience, newExperience]
         
         const { data, error } = await supabase
           .from("user_profile")
           .update({
-            experience: [...currentExperience, newExperience],
+            experience: nextExperience,
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", userId)
@@ -383,7 +529,7 @@ function createCoachTools(userId: string) {
         return { 
           success: true, 
           message: `Added ${title} at ${company} to your work experience.`,
-          experience: newExperience
+          experience: existingIndex >= 0 ? nextExperience[existingIndex] : newExperience
         }
       },
     }),
@@ -407,9 +553,9 @@ function createCoachTools(userId: string) {
           return { error: "No profile found. User should create their profile first." }
         }
         
-        const currentSkills = existing.skills || []
-        // Add only new skills (avoid duplicates)
-        const newSkills = skills.filter(s => !currentSkills.includes(s))
+        const currentSkills = Array.isArray(existing.skills) ? existing.skills : []
+        const normalizedCurrent = new Set(currentSkills.map((skill: string) => normalizeText(skill)))
+        const newSkills = skills.filter(s => !normalizedCurrent.has(normalizeText(s)))
         
         if (newSkills.length === 0) {
           return { message: "All skills already exist in profile", added: [] }
@@ -494,13 +640,24 @@ function createCoachTools(userId: string) {
           return { error: "No profile found" }
         }
         
-        const currentEducation = existing.education || []
+        const currentEducation = Array.isArray(existing.education) ? existing.education : []
         const newEducation = { degree, school, year }
+
+        const educationKey = normalizeText(`${degree} ${school} ${year}`)
+        const existingIndex = currentEducation.findIndex((entry: Record<string, unknown>) =>
+          normalizeText(`${String(entry.degree ?? "")} ${String(entry.school ?? "")} ${String(entry.year ?? "")}`) === educationKey
+        )
+
+        const nextEducation = existingIndex >= 0
+          ? currentEducation.map((entry: Record<string, unknown>, index: number) =>
+              index === existingIndex ? { ...entry, degree, school, year } : entry
+            )
+          : [...currentEducation, newEducation]
         
         const { error } = await supabase
           .from("user_profile")
           .update({
-            education: [...currentEducation, newEducation],
+            education: nextEducation,
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", userId)
@@ -509,7 +666,7 @@ function createCoachTools(userId: string) {
         return { 
           success: true, 
           message: `Added ${degree} from ${school} to your education.`,
-          education: newEducation
+          education: existingIndex >= 0 ? nextEducation[existingIndex] : newEducation
         }
       },
     }),

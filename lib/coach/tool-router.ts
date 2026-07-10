@@ -172,6 +172,48 @@ export async function routeToolCall(
         )
         break
 
+      case "updateProfile":
+        result = await toolExecution.executeUpdateProfile(
+          input.args as unknown as Parameters<typeof toolExecution.executeUpdateProfile>[0],
+          context
+        )
+        break
+
+      case "updateCareerContext":
+        result = await toolExecution.executeUpdateCareerContext(
+          input.args as unknown as Parameters<typeof toolExecution.executeUpdateCareerContext>[0],
+          context
+        )
+        break
+
+      case "addProfileLink":
+        result = await toolExecution.executeAddProfileLink(
+          input.args as unknown as Parameters<typeof toolExecution.executeAddProfileLink>[0],
+          context
+        )
+        break
+
+      case "updateProfileLink":
+        result = await toolExecution.executeUpdateProfileLink(
+          input.args as unknown as Parameters<typeof toolExecution.executeUpdateProfileLink>[0],
+          context
+        )
+        break
+
+      case "removeProfileLink":
+        result = await toolExecution.executeRemoveProfileLink(
+          input.args as unknown as Parameters<typeof toolExecution.executeRemoveProfileLink>[0],
+          context
+        )
+        break
+
+      case "setPrimaryLink":
+        result = await toolExecution.executeSetPrimaryLink(
+          input.args as unknown as Parameters<typeof toolExecution.executeSetPrimaryLink>[0],
+          context
+        )
+        break
+
       case "mapEvidenceToRequirement":
         result = await toolExecution.executeMapEvidenceToRequirement(
           input.args as unknown as Parameters<typeof toolExecution.executeMapEvidenceToRequirement>[0],

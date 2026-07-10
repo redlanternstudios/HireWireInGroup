@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { updateEvidence, archiveEvidence } from './actions'
 import { cn } from '@/lib/utils'
 import type { EvidenceRecord } from '@/lib/types'
@@ -32,6 +33,7 @@ export default function EvidenceCard({
   item: EvidenceRecord
   onArchived: (id: string) => void
 }) {
+  const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [archiveConfirm, setArchiveConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -133,6 +135,12 @@ export default function EvidenceCard({
         <div className="flex items-center gap-3 pt-1">
           <button onClick={() => setEditing(true)} className="text-xs text-primary hover:underline">
             Edit
+          </button>
+          <button
+            onClick={() => router.push(`/evidence/${item.id}/delete`)}
+            className="text-xs text-red-600 hover:underline"
+          >
+            Delete permanently
           </button>
           {archiveConfirm ? (
             <span className="text-xs flex items-center gap-2">

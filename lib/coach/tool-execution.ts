@@ -28,6 +28,15 @@ import {
   upsertProveFitDecision,
   withUpdatedRequirementMatches,
 } from "./coach-step-helpers"
+import { upsertCoachEvidence } from "./evidence-merge"
+import {
+  syncProfileLinksFromProfile,
+  upsertCoachProfileLink,
+  updateCoachProfileLink,
+  removeCoachProfileLink,
+  setPrimaryCoachProfileLink,
+  updateCareerContextRecord,
+} from "./profile-mutations"
 
 // ─── Evidence CRUD ──────────────────────────────────────────────────────────
 
@@ -50,25 +59,19 @@ export async function executeCreateEvidence(
     const userId = auth.userId
     const supabase = auth.supabase
 
-    // Create evidence entry
-    const { data: evidence, error } = await supabase
-      .from("evidence_library")
-      .insert({
-        user_id: userId,
-        source_title: params.title,
-        proof_snippet: params.description,
-        tools_used: params.skills_demonstrated,
-        company_name: params.company_name,
-        source_type: params.source_type || "work_experience",
-        outcomes: params.outcomes || [],
-        is_user_approved: true,
-        confidence_level: "medium",
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single()
-
-    if (error) throw error
+    const { evidence, merged, duplicateConfidence } = await upsertCoachEvidence(supabase, userId, {
+      source_title: params.title,
+      source_type: params.source_type || "work_experience",
+      proof_snippet: params.description,
+      company_name: params.company_name,
+      tools_used: params.skills_demonstrated,
+      outcomes: params.outcomes || [],
+      approved_achievement_bullets: params.description ? [params.description] : [],
+      confidence_level: "medium",
+      evidence_weight: "medium",
+      is_user_approved: true,
+      raw_resume_section: "coach",
+    })
 
     // Emit domain event
     await handleDomainEvent({
@@ -80,6 +83,8 @@ export async function executeCreateEvidence(
       payload: {
         evidence_id: evidence.id,
         title: evidence.source_title,
+        merged,
+        duplicate_confidence: duplicateConfidence ?? null,
         skills: params.skills_demonstrated,
         source: "coach_tool",
         session_id: context.sessionId,
@@ -96,6 +101,7 @@ export async function executeCreateEvidence(
       data: {
         id: evidence.id,
         title: evidence.source_title,
+        merged,
       },
       undoable: true,
       undoAction: "deleteEvidence",
@@ -299,6 +305,203 @@ export async function executeDeleteEvidence(
       success: false,
       error: err instanceof Error ? err.message : "Failed to delete evidence",
     }
+  }
+}
+
+// ─── Profile Management ────────────────────────────────────────────────────
+
+type UpdateProfileParams = {
+  full_name?: string
+  location?: string
+  phone?: string
+  email?: string
+  summary?: string
+  headline?: string
+  linkedin_url?: string
+  github_url?: string
+  website_url?: string
+  career_context?: {
+    target_role?: string
+    open_to_other_roles?: boolean
+    other_roles?: string[]
+    notes?: string
+  }
+}
+
+export async function executeUpdateProfile(
+  params: UpdateProfileParams,
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+
+    const cleanUpdates = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined)
+    )
+
+    const { data: existing, error: loadError } = await supabase
+      .from("user_profile")
+      .select("*")
+      .eq("user_id", auth.userId)
+      .maybeSingle()
+
+    if (loadError) throw loadError
+    if (!existing) return { success: false, error: "No profile found" }
+
+    const nextCareerContext =
+      params.career_context !== undefined
+        ? {
+            ...(typeof existing.career_context === "object" && !Array.isArray(existing.career_context)
+              ? existing.career_context as Record<string, unknown>
+              : {}),
+            ...(params.career_context.target_role !== undefined ? { target_role: params.career_context.target_role } : {}),
+            ...(params.career_context.open_to_other_roles !== undefined ? { open_to_other_roles: params.career_context.open_to_other_roles } : {}),
+            ...(params.career_context.other_roles !== undefined ? { other_roles: params.career_context.other_roles } : {}),
+            ...(params.career_context.notes !== undefined ? { notes: params.career_context.notes } : {}),
+          }
+        : existing.career_context
+
+    const { data, error } = await supabase
+      .from("user_profile")
+      .update({
+        ...cleanUpdates,
+        ...(params.career_context !== undefined ? { career_context: nextCareerContext } : {}),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", auth.userId)
+      .select("*")
+      .single()
+
+    if (error) throw error
+    await syncProfileLinksFromProfile(supabase, auth.userId, data as Record<string, unknown>)
+    revalidatePath("/profile")
+
+    return {
+      success: true,
+      data: {
+        updated_fields: Object.keys(cleanUpdates),
+      },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to update profile" }
+  }
+}
+
+export async function executeUpdateCareerContext(
+  params: {
+    target_role?: string
+    open_to_other_roles?: boolean
+    other_roles?: string[]
+    notes?: string
+  },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const data = await updateCareerContextRecord(supabase, auth.userId, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: { career_context: data.career_context ?? null },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to update career context" }
+  }
+}
+
+export async function executeAddProfileLink(
+  params: { link_type: "linkedin" | "github" | "portfolio" | "website" | "other"; url: string; label?: string; is_primary?: boolean },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await upsertCoachProfileLink(supabase, auth.userId, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: { link: result.link, merged: result.merged },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to add profile link" }
+  }
+}
+
+export async function executeUpdateProfileLink(
+  params: { id: string; url?: string; label?: string; link_type?: "linkedin" | "github" | "portfolio" | "website" | "other"; is_primary?: boolean },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await updateCoachProfileLink(supabase, auth.userId, params.id, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: { link: result.link, merged: result.merged },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to update profile link" }
+  }
+}
+
+export async function executeRemoveProfileLink(
+  params: { id: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    if (!context.confirmed) {
+      return {
+        success: false,
+        needsConfirmation: true,
+        confirmationPrompt: "Remove this profile link? This will delete it from your canonical profile.",
+      }
+    }
+
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await removeCoachProfileLink(supabase, auth.userId, params.id)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      undoable: true,
+      undoAction: "addProfileLink",
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to remove profile link" }
+  }
+}
+
+export async function executeSetPrimaryLink(
+  params: { id: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await setPrimaryCoachProfileLink(supabase, auth.userId, params.id)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to set primary link" }
   }
 }
 

@@ -1,6 +1,6 @@
 /**
  * POST /api/coach/evidence-drafts/[draftId]/confirm
- * Confirms a draft → inserts into evidence_library, marks draft confirmed.
+ * Confirms a draft → upserts into evidence_library, marks draft confirmed.
  * Body: { proofSnippet?: string } (optional user edit)
  */
 import { type NextRequest, NextResponse } from "next/server"
@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { mapConfirmedEvidenceToRequirement } from "@/lib/evidence/mapConfirmedEvidenceToRequirement"
 import { requireUser } from "@/lib/supabase/require-user"
+import { upsertCoachEvidence } from "@/lib/coach/evidence-merge"
 
 type ConfirmSupabase = Awaited<ReturnType<typeof createClient>>
 
@@ -109,23 +110,21 @@ export async function POST(
       )
     }
 
-    const { data: evidenceRow, error: evidenceError } = await supabase
-      .from("evidence_library")
-      .insert({
-        user_id: userId,
+    let evidenceRow
+    try {
+      const result = await upsertCoachEvidence(supabase, userId, {
         source_type: draft.source_type,
         source_title: draft.source_title,
         proof_snippet: finalSnippet,
         confidence_level: draft.confidence_level,
         tools_used: Array.isArray(draft.skills) ? draft.skills : [],
-        is_active: true,
+        is_user_approved: true,
         raw_resume_section: "coach",
         confidence_score: 0.9,
       })
-      .select("id").single()
-
-    if (evidenceError || !evidenceRow) {
-      logCoachDraftConfirmError("insert_evidence", evidenceError ?? "No evidence row returned", {
+      evidenceRow = result.evidence
+    } catch (error) {
+      logCoachDraftConfirmError("insert_evidence", error, {
         draft_id: draftId,
         session_id: draft.session_id,
         job_id: anchoredJobId,

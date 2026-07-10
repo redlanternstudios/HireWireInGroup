@@ -1,3 +1,5 @@
+import { COACH_PERSONA_BLOCK } from "@/lib/coach/coach-persona"
+
 /**
  * lib/coach/buildCoachPrompt.ts
  *
@@ -35,6 +37,7 @@ export function buildCoachSystemPrompt(ctx: CoachContext): string {
   return `
 You are an expert AI Career Coach embedded inside HireWire.
 Your job is to translate a specific job expectation into user-confirmed proof.
+${COACH_PERSONA_BLOCK}
 
 ══════════════════════════════════════════
 CURRENT REQUIREMENT: "${ctx.gapRequirement}"

@@ -82,12 +82,87 @@ export const updateEvidenceTool = {
 
 export const deleteEvidenceTool = {
   description:
-    "Delete an evidence entry the user no longer wants. This action requires user confirmation.",
+    "Remove an evidence entry the user no longer wants from active use. This action requires user confirmation.",
   parameters: z.object({
     evidence_id: z.string().uuid().describe("ID of the evidence to delete"),
     reason: z.string().max(500).optional().describe("Why is this being deleted?"),
   }),
   requiresConfirmation: true,
+}
+
+export const updateProfileTool = {
+  description:
+    "Update the user's core profile details, including contact info, summary, headline, and canonical links.",
+  parameters: z.object({
+    full_name: z.string().optional(),
+    location: z.string().optional(),
+    phone: z.string().optional(),
+    email: z.string().optional(),
+    summary: z.string().optional(),
+    headline: z.string().optional(),
+    linkedin_url: z.string().optional(),
+    github_url: z.string().optional(),
+    website_url: z.string().optional(),
+    career_context: z
+      .object({
+        target_role: z.string().optional(),
+        open_to_other_roles: z.boolean().optional(),
+        other_roles: z.array(z.string()).optional(),
+        notes: z.string().optional(),
+      })
+      .optional(),
+  }),
+}
+
+export const updateCareerContextTool = {
+  description:
+    "Update the user's career context from onboarding and coaching, including target role, role flexibility, and notes.",
+  parameters: z.object({
+    target_role: z.string().optional(),
+    open_to_other_roles: z.boolean().optional(),
+    other_roles: z.array(z.string()).optional(),
+    notes: z.string().optional(),
+  }),
+}
+
+export const addProfileLinkTool = {
+  description:
+    "Add a canonical profile, portfolio, or social link to the user's profile.",
+  parameters: z.object({
+    link_type: z.enum(["linkedin", "github", "portfolio", "website", "other"]),
+    url: z.string().min(3),
+    label: z.string().optional(),
+    is_primary: z.boolean().optional(),
+  }),
+}
+
+export const updateProfileLinkTool = {
+  description:
+    "Update an existing canonical profile link.",
+  parameters: z.object({
+    id: z.string().uuid(),
+    url: z.string().optional(),
+    label: z.string().optional(),
+    link_type: z.enum(["linkedin", "github", "portfolio", "website", "other"]).optional(),
+    is_primary: z.boolean().optional(),
+  }),
+}
+
+export const removeProfileLinkTool = {
+  description:
+    "Remove a canonical profile link from the user's profile. This action requires user confirmation.",
+  parameters: z.object({
+    id: z.string().uuid(),
+  }),
+  requiresConfirmation: true,
+}
+
+export const setPrimaryLinkTool = {
+  description:
+    "Mark a profile link as the primary link for its type.",
+  parameters: z.object({
+    id: z.string().uuid(),
+  }),
 }
 
 // ─── Evidence Mapping Tools ────────────────────────────────────────────────
@@ -250,6 +325,12 @@ export const COACH_TOOLS = {
   createEvidence: createEvidenceTool,
   updateEvidence: updateEvidenceTool,
   deleteEvidence: deleteEvidenceTool,
+  updateProfile: updateProfileTool,
+  updateCareerContext: updateCareerContextTool,
+  addProfileLink: addProfileLinkTool,
+  updateProfileLink: updateProfileLinkTool,
+  removeProfileLink: removeProfileLinkTool,
+  setPrimaryLink: setPrimaryLinkTool,
   mapEvidenceToRequirement: mapEvidenceToRequirementTool,
   unmapEvidence: unmapEvidenceTool,
   markRequirementAddressed: markRequirementAddressedTool,
