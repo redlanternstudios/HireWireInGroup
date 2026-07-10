@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ClarityDrawer } from "@/components/clarity/ClarityDrawer"
 import type { ClarityRequirement } from "@/lib/clarity/getUnresolvedRequirements"
+import { buildLowFitCoachOpeningMessage } from "@/lib/coach/low-fit-contract"
 
 /**
  * Client launcher for the Clarity drawer, mounted on the server-rendered
@@ -31,6 +32,7 @@ export function ClarityDrawerLauncher({
   const [open, setOpen] = useState(false)
   const autoOpened = useRef(false)
   const count = requirements.length
+  const message = openingMessage ?? buildLowFitCoachOpeningMessage(null, count)
 
   useEffect(() => {
     if (!autoOpen || autoOpened.current || open) return
@@ -65,7 +67,7 @@ export function ClarityDrawerLauncher({
         jobTitle={jobTitle}
         company={company}
         requirements={requirements}
-        openingMessage={openingMessage}
+        openingMessage={message}
       />
     </div>
   )

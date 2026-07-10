@@ -264,6 +264,7 @@ export interface MatchInterviewModalProps {
   requirement: InterviewRequirement
   currentIndex: number
   totalCount: number
+  openingMessage?: string
   onPrev?: () => void
   onNext?: () => void
   onStepSaved?: (mode: "answer" | "skip") => void
@@ -278,6 +279,7 @@ export function MatchInterviewModal({
   requirement,
   currentIndex,
   totalCount,
+  openingMessage,
   onPrev,
   onNext,
   onStepSaved,
@@ -333,7 +335,7 @@ export function MatchInterviewModal({
               id: makeId(),
               role: "coach",
               type: "question",
-              content: `Let's prove this: **"${requirement.requirement_text.slice(0, 80)}"**\n\nHave you worked on anything directly related to this? A project, result, or adjacent experience all count.`,
+              content: `${openingMessage ? `${openingMessage}\n\n` : ""}Let's prove this: **"${requirement.requirement_text.slice(0, 80)}"**\n\nHave you worked on anything directly related to this? A project, result, or adjacent experience all count.`,
               quickReplies: DEFAULT_QUICK_REPLIES,
               timestamp: new Date(),
             },
@@ -353,7 +355,7 @@ export function MatchInterviewModal({
     void startSession()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, requirement.requirement_id, retryNonce])
+  }, [open, requirement.requirement_id, retryNonce, openingMessage])
 
   const handleSend = useCallback(
     async (text: string) => {

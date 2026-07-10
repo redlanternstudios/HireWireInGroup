@@ -6,6 +6,7 @@ import { Target } from "lucide-react"
 
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
+import { buildLowFitCoachOpeningMessage } from "@/lib/coach/low-fit-contract"
 
 type CoachRequirement = {
   requirement_id: string
@@ -71,6 +72,7 @@ export function GuidedRequirementCoachFlow({
       ? 0
       : Math.min(activeIndex, unresolvedMatches.length - 1)
   const active = unresolvedMatches[safeActiveIndex] ?? null
+  const openingMessage = buildLowFitCoachOpeningMessage(score, unresolvedMatches.length)
 
   if (!active) return null
 
@@ -135,7 +137,8 @@ export function GuidedRequirementCoachFlow({
         score={score}
         status={status}
         gaps={[active.requirement_text]}
-          requirement={{
+        openingMessage={openingMessage}
+        requirement={{
             requirement_id: active.requirement_id,
             requirement_text: active.requirement_text,
             requirement_type: inferRequirementType(active.requirement_text),

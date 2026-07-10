@@ -7,6 +7,7 @@ import { groq, MODELS } from "@/lib/adapters/groq"
 import { GAP_CLARIFICATION_SYSTEM_PROMPT } from "@/lib/coach-prompts/gap-questions"
 import { normalizeProfileLinks } from "@/lib/profile-knowledge-resolver"
 import { COACH_PERSONA_BLOCK } from "@/lib/coach/coach-persona"
+import { LOW_FIT_COACH_CONTRACT } from "@/lib/coach/low-fit-contract"
 import { upsertCoachEvidence } from "@/lib/coach/evidence-merge"
 import {
   syncProfileLinksFromProfile,
@@ -46,6 +47,8 @@ When you touch profile data, keep user_profile and user_profile_links synchroniz
 IMPORTANT: When a user asks you to add something to their profile, DO IT immediately using the appropriate tool. Don't just explain how - actually perform the action.
 
 ${COACH_PERSONA_BLOCK}
+
+${LOW_FIT_COACH_CONTRACT}
 
 ## Safety Boundaries - STRICTLY FOLLOW
 

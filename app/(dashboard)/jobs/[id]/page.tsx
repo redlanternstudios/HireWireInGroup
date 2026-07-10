@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { evaluateReadiness } from "@/lib/readiness/evaluator"
 import { getCoachStepState } from "@/lib/coach-step"
+import { buildLowFitCoachOpeningMessage } from "@/lib/coach/low-fit-contract"
 import type { Job } from "@/lib/types"
 import { OutcomeTracker } from "@/components/jobs/OutcomeTracker"
 import { getUnresolvedRequirements } from "@/lib/clarity/getUnresolvedRequirements"
@@ -246,10 +247,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const isFreePlan = !userData?.plan_type || userData.plan_type === "free"
   const stillProcessing = ["analyzing", "queued", "generating"].includes(job.status)
   const numericOverallScore = overallScore === null ? null : Number(overallScore)
-  const coachOpeningMessage =
-    numericOverallScore !== null && Number.isFinite(numericOverallScore) && numericOverallScore < 70
-      ? `Your application readiness score is ${Math.round(numericOverallScore)}%. Let's close this gap together.`
-      : undefined
+  let coachOpeningMessage = buildLowFitCoachOpeningMessage(numericOverallScore, 0)
   const shouldAutoOpenCoach =
     numericOverallScore !== null && Number.isFinite(numericOverallScore) && numericOverallScore < 70 && !coachStep.complete
   // One action at a time: while the journey's primary step is still Analyze or
@@ -270,6 +268,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           evidenceMap: (job as Record<string, unknown>).evidence_map,
         })
       : []
+  coachOpeningMessage = buildLowFitCoachOpeningMessage(numericOverallScore, unresolvedRequirements.length)
 
   return (
     <div className="hw-page">

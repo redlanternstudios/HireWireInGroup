@@ -12,6 +12,7 @@ import { listUnresolvedRequirements } from "@/lib/evidence/unresolved-requiremen
 import { cn } from "@/lib/utils"
 import type { CanonicalJobEvidenceMap, RequirementEvidenceMatch } from "@/lib/evidence/types"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
+import { buildLowFitCoachOpeningMessage } from "@/lib/coach/low-fit-contract"
 
 export const dynamic = "force-dynamic"
 
@@ -143,6 +144,7 @@ export default async function EvidenceMatchPage({
   const requiredGaps = unresolvedRequirements.filter((match) => match.priority === "required")
   const firstGap = gaps[0] ?? ""
   const cleanFirstGap = firstGap.replace(/^Gap:\s*/i, "").trim()
+  const coachOpeningMessage = buildLowFitCoachOpeningMessage(matchScore, proofGaps.length)
 
   if (!requestedRequirementId && typeof matchScore === "number" && matchScore < 70 && proofGaps.length > 0) {
     redirect(
@@ -337,6 +339,7 @@ export default async function EvidenceMatchPage({
                   score={job.score}
                   status={job.status}
                   gaps={gaps}
+                  openingMessage={coachOpeningMessage}
                   requirement={{
                     requirement_id: `gap:${id}:${cleanFirstGap || "match"}`,
                     requirement_text: cleanFirstGap || "Unresolved requirement",

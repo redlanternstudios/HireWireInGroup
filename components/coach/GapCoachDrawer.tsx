@@ -12,6 +12,7 @@ export type RequirementCoachModalProps = {
   score?: number | null
   status?: string
   gaps: string[]
+  openingMessage?: string
   requirement?: {
     requirement_id: string
     requirement_text: string
@@ -68,6 +69,7 @@ export function RequirementCoachModal({
   currentIndex = 0,
   onPrev,
   onNext,
+  openingMessage,
 }: RequirementCoachModalProps) {
   const [internalOpen, setInternalOpen] = useState(autoOpen && gaps.length > 0)
   const isControlled = controlledOpen !== undefined
@@ -107,6 +109,7 @@ export function RequirementCoachModal({
         onPrev={onPrev}
         onNext={onNext}
         onStepSaved={onStepSaved}
+        openingMessage={openingMessage}
       />
     </>
   )
