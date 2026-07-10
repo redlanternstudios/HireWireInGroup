@@ -90,11 +90,11 @@ export function RequirementCoachModal({
         <button
           onClick={() => setOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 transition-colors"
-          aria-label={`Start Match Interview for ${activeGap}`}
-        >
-          <MessageSquareText className="h-3.5 w-3.5" />
-          Start Match Interview
-        </button>
+        aria-label={`Start Match Interview for ${activeGap}`}
+      >
+        <MessageSquareText className="h-3.5 w-3.5" />
+        Start Match Interview
+      </button>
       )}
 
       <MatchInterviewModal

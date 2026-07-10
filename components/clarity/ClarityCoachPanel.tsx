@@ -145,7 +145,7 @@ export function ClarityCoachPanel({
               id: makeId(),
               role: "coach",
               type: "question",
-              content: `${openingMessage ? `${openingMessage}\n\n` : ""}Let's see if we can prove this from your background:\n\n**"${requirement.requirement_text.slice(0, 100)}"**\n\nI'll ask one question at a time. First — where have you shown this most clearly?`,
+              content: `${openingMessage ? `${openingMessage}\n\n` : ""}I’ll help shape the strongest honest case from your background for **"${requirement.requirement_text.slice(0, 100)}"**.\n\nWhat is the closest real example from your work?`,
               quickReplies: DEFAULT_QUICK_REPLIES,
               timestamp: new Date(),
             },

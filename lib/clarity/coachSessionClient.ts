@@ -39,10 +39,10 @@ export type RequirementRef = {
 }
 
 export const DEFAULT_QUICK_REPLIES = [
-  "Yes, I have a direct example",
-  "I have something adjacent",
-  "I'm not sure yet",
-  "I can't meet this requirement",
+  "Yes, I can prove it",
+  "I have a close example",
+  "I need to think it through",
+  "This one is not a fit",
 ]
 
 export function makeId() {

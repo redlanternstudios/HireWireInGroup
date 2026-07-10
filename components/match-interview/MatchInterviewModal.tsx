@@ -97,10 +97,10 @@ type CoachDraft = {
 }
 
 const DEFAULT_QUICK_REPLIES = [
-  "Yes, I have a direct example",
-  "I have something adjacent",
-  "I'm not sure yet",
-  "I can't meet this requirement",
+  "Yes, I can prove it",
+  "I have a close example",
+  "I need to think it through",
+  "This one is not a fit",
 ]
 
 function asErrorMessage(data: unknown, fallback: string) {
@@ -335,7 +335,7 @@ export function MatchInterviewModal({
               id: makeId(),
               role: "coach",
               type: "question",
-              content: `${openingMessage ? `${openingMessage}\n\n` : ""}Let's prove this: **"${requirement.requirement_text.slice(0, 80)}"**\n\nHave you worked on anything directly related to this? A project, result, or adjacent experience all count.`,
+              content: `${openingMessage ? `${openingMessage}\n\n` : ""}I’ll help turn your background into the strongest honest case for **"${requirement.requirement_text.slice(0, 80)}"**.\n\nWhat is the closest real example from your work, even if it is only adjacent?`,
               quickReplies: DEFAULT_QUICK_REPLIES,
               timestamp: new Date(),
             },
