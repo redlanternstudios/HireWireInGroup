@@ -24,6 +24,7 @@ import {
   rewriteToQualitative,
   type QuantificationSafety,
 } from "@/lib/canonical-evidence"
+import { validateResumeStructure } from "@/lib/resume/validate-structure"
 import type { EvidenceRecord } from "@/lib/types"
 import {
   runPreGenerationEnhancement,
@@ -243,6 +244,82 @@ GENERATION BLOCKED: DO NOT GENERATE
 This role is too much of a stretch. Generating materials would require invention.
 Return an error explaining why generation was blocked.`
   }
+}
+
+function normalizeGroupingKey(value?: string | null): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function formatDateRange(start?: string | null, end?: string | null): string | null {
+  const range = [start?.trim(), end?.trim()].filter(Boolean).join(" - ")
+  return range.length > 0 ? range : null
+}
+
+function buildExperienceSections(
+  experiences: Array<{
+    title?: string
+    company?: string
+    start_date?: string
+    end_date?: string
+    description?: string
+    bullets?: string[]
+  }>,
+  bullets: Array<{
+    bullet_text: string
+    source_role: string
+    source_company: string
+  }>,
+) {
+  const usedBulletIndexes = new Set<number>()
+
+  const sections = experiences.flatMap((exp) => {
+    const roleKey = normalizeGroupingKey(exp.title)
+    const companyKey = normalizeGroupingKey(exp.company)
+    const matchedBullets = bullets.filter((bullet, index) => {
+      if (usedBulletIndexes.has(index)) return false
+      const match =
+        normalizeGroupingKey(bullet.source_role) === roleKey &&
+        normalizeGroupingKey(bullet.source_company) === companyKey
+      if (match) usedBulletIndexes.add(index)
+      return match
+    })
+
+    const descriptionBullets = (exp.description ?? "")
+      .split(/(?<=[.!?])\s+/)
+      .map((text) => text.trim())
+      .filter((text) => text.length > 0)
+      .map((text) => `• ${text}`)
+
+    const roleBullets = matchedBullets.length > 0
+      ? matchedBullets.map((bullet) => `• ${bullet.bullet_text}`)
+      : descriptionBullets
+
+    if (!exp.title && !exp.company && roleBullets.length === 0) {
+      return []
+    }
+
+    const headerLine = [exp.title, exp.company, formatDateRange(exp.start_date, exp.end_date)]
+      .filter(Boolean)
+      .join(" | ")
+
+    return [
+      headerLine || "Professional Experience",
+      ...roleBullets,
+    ]
+  })
+
+  const unmatchedBullets = bullets
+    .map((bullet, index) => ({ bullet, index }))
+    .filter(({ index }) => !usedBulletIndexes.has(index))
+    .map(({ bullet }) => `• ${bullet.bullet_text}`)
+
+  if (sections.length === 0 && unmatchedBullets.length > 0) {
+    sections.push("Professional Experience", ...unmatchedBullets)
+  } else if (unmatchedBullets.length > 0) {
+    sections.push("", "Additional Relevant Experience", ...unmatchedBullets)
+  }
+
+  return sections
 }
 
 export async function POST(request: NextRequest) {
@@ -714,41 +791,48 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
 - 3-4 paragraphs total`,
     })
 
-    // Build final formatted documents - Premium Clean Minimalist format
+    // Build final formatted documents - evidence anchored and section complete
     const contactInfo = [
-      profile.location,
+      effectiveLocation,
       profile.email,
       profile.phone
     ].filter(Boolean).join(" | ")
-    
-    // Use ENHANCED bullets (with product names, metrics, context injected)
-    const experienceBullets = enhancedBullets
-      .map(b => `• ${b.bullet_text}`)
-      .join("\n")
-    
-    // Build ATS-safe formatted resume (no unicode dividers, clean structure)
-    // CHANGED: Removed unicode box-drawing characters that break ATS parsing
-    const formattedResume = `${(profile.full_name || "CANDIDATE NAME").toUpperCase()}
-${contactInfo}
 
-PROFESSIONAL SUMMARY
-${resumeWithProvenance.summary}
+    const experienceSectionLines = buildExperienceSections(
+      effectiveExperience as Array<{
+        title?: string
+        company?: string
+        start_date?: string
+        end_date?: string
+        description?: string
+        bullets?: string[]
+      }>,
+      enhancedBullets.map((b) => ({
+        bullet_text: b.bullet_text,
+        source_role: b.source_role,
+        source_company: b.source_company,
+      })),
+    )
 
-PROFESSIONAL EXPERIENCE
-${experienceBullets}
-${projectsSection ? `
-${projectsSection}
-` : ""}
-CORE COMPETENCIES
-${resumeWithProvenance.skills_section.join(", ")}
+    const educationLines = (effectiveEducation || [])
+      .map((edu: { degree: string; school: string; year?: string }) =>
+        `${edu.degree}, ${edu.school}${edu.year ? ` (${edu.year})` : ""}`
+      )
+      .filter(Boolean)
 
-EDUCATION
-${(profile.education || []).map((edu: { degree: string; school: string; year?: string }) =>
-  `${edu.degree}, ${edu.school}${edu.year ? ` (${edu.year})` : ""}`
-).join("\n")}
-${effectiveCertifications.length > 0 ? `
-CERTIFICATIONS
-${effectiveCertifications.map((cert: string) => `• ${cert}`).join("\n")}` : ""}`
+    const certificationLines = effectiveCertifications.map((cert: string) => `• ${cert}`)
+
+    const resumeSections = [
+      `${(profile.full_name || "CANDIDATE NAME").toUpperCase()}\n${contactInfo}`,
+      resumeWithProvenance.summary.trim() ? `PROFESSIONAL SUMMARY\n${resumeWithProvenance.summary.trim()}` : "",
+      experienceSectionLines.length > 0 ? `PROFESSIONAL EXPERIENCE\n${experienceSectionLines.join("\n")}` : "",
+      projectsSection ? projectsSection.trim() : "",
+      resumeWithProvenance.skills_section.length > 0 ? `CORE COMPETENCIES\n${resumeWithProvenance.skills_section.join(", ")}` : "",
+      educationLines.length > 0 ? `EDUCATION\n${educationLines.join("\n")}` : "",
+      certificationLines.length > 0 ? `CERTIFICATIONS\n${certificationLines.join("\n")}` : "",
+    ].filter((section) => section && section.trim().length > 0)
+
+    const formattedResume = resumeSections.join("\n\n")
 
     // Build premium formatted cover letter with professional signature
     const today = new Date().toLocaleDateString("en-US", { 
@@ -780,6 +864,15 @@ ${signatureBlock}`
     const allBannedPhrases = [...new Set([...resumeBannedPhrases, ...coverLetterBannedPhrases])]
     
     const vaguePatterns = detectVaguePatterns(formattedResume)
+    const structureCheck = validateResumeStructure(formattedResume)
+    const structuralBlockers = [
+      ...structureCheck.errors,
+      ...(structureCheck.checks.hasName ? [] : ["Missing candidate name"]),
+      ...(structureCheck.checks.hasContact ? [] : ["Missing contact information"]),
+      ...(resumeWithProvenance.summary.trim().length > 0 ? [] : ["Missing professional summary"]),
+      ...(experienceSectionLines.length > 0 ? [] : ["Missing professional experience"]),
+      ...(resumeWithProvenance.skills_section.length > 0 ? [] : ["Missing core competencies"]),
+    ]
 
     // Analyze bullet concreteness
     const bulletAnalysis = resumeWithProvenance.experience_bullets.map(b => ({
@@ -876,14 +969,16 @@ If no issues found, return empty arrays and overall_passed: true.`,
     const qualityPassed = qualityCheck.overall_passed && 
       allBannedPhrases.length === 0 && 
       weakBullets.length <= 1 &&
-      unsafeMetricsFound.length === 0 // Block if we detected invented metrics
+      unsafeMetricsFound.length === 0 &&
+      structuralBlockers.length === 0 // Block if the resume is structurally incomplete
 
     const qualityScore = qualityPassed ? 100 : Math.max(0, 
       100 - 
       (allBannedPhrases.length * 10) - 
       (weakBullets.length * 5) - 
       (qualityCheck.invented_claims.length * 15) -
-      (qualityCheck.vague_bullets.length * 5)
+      (qualityCheck.vague_bullets.length * 5) -
+      (structuralBlockers.length * 20)
     )
 
     // AUTO-RETRY: If quality check fails and we haven't retried yet, regenerate
@@ -909,6 +1004,59 @@ If no issues found, return empty arrays and overall_passed: true.`,
       })
       
       return POST(retryRequest)
+    }
+
+    if (structuralBlockers.length > 0) {
+      await supabase
+        .from("jobs")
+        .update({
+          status: "needs_review",
+          generation_status: "needs_review",
+          generation_error: `Resume structure incomplete: ${structuralBlockers.join("; ")}`,
+          quality_passed: false,
+        })
+        .eq("id", job_id)
+        .eq("user_id", userId)
+
+      await supabase.from("generation_quality_checks").insert({
+        user_id: userId,
+        job_id,
+        document_type: "resume",
+        invented_claims_found: qualityCheck.invented_claims,
+        vague_bullets_found: qualityCheck.vague_bullets,
+        ai_filler_found: qualityCheck.ai_filler,
+        repeated_structures_found: qualityCheck.repeated_structures,
+        unsupported_claims_found: qualityCheck.unsupported_claims,
+        passed: false,
+        issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length + structuralBlockers.length,
+      })
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: "resume_incomplete",
+          user_message: "The generated resume is missing required structure. Please complete the profile sections before generating a final resume.",
+          missing_sections: structuralBlockers,
+          quality_check: {
+            passed: false,
+            score: qualityScore,
+            banned_phrases_found: allBannedPhrases,
+            vague_patterns_found: vaguePatterns,
+            weak_bullets: weakBullets.map(b => b.bullet),
+            issues: {
+              invented_claims: qualityCheck.invented_claims,
+              vague_bullets: qualityCheck.vague_bullets,
+              ai_filler: qualityCheck.ai_filler,
+              banned_phrases: allBannedPhrases,
+            },
+            suggestions: [
+              ...qualityCheck.improvement_suggestions,
+              "Complete the missing resume sections before generating the final package.",
+            ],
+          },
+        },
+        { status: 400 }
+      )
     }
 
     // Update the job with generated materials
