@@ -5,6 +5,7 @@
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { buildOpeningPrompt } from "@/lib/coach/buildCoachPrompt"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { requireUser } from "@/lib/supabase/require-user"
 
@@ -128,7 +129,11 @@ export async function POST(request: NextRequest) {
       (match) => match.requirement_id === gapRequirementId
     )
     const jobTitle = ownedJob.role_title ?? "this role"
-    const openingContent = buildOpeningPrompt(gapRequirement, jobTitle, {
+    const displayRequirement = buildRequirementDisplayText(
+      gapRequirement,
+      typeof requirementMatch?.normalized_requirement === "string" ? requirementMatch.normalized_requirement : null,
+    )
+    const openingContent = buildOpeningPrompt(displayRequirement, jobTitle, {
       company: ownedJob.company_name,
       intent: typeof requirementMatch?.employer_intent === "string" ? requirementMatch.employer_intent : null,
       recoveryQuestion: typeof requirementMatch?.recovery_question === "string" ? requirementMatch.recovery_question : null,
@@ -156,7 +161,7 @@ export async function POST(request: NextRequest) {
       payload: {
         session_id: newSession.id,
         requirement_id: gapRequirementId,
-        requirement_text: gapRequirement,
+        requirement_text: displayRequirement,
       },
     })
 

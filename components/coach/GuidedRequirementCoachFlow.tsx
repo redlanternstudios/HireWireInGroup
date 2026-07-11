@@ -7,10 +7,13 @@ import { Target } from "lucide-react"
 import { RequirementCoachModal } from "@/components/coach/RequirementCoachModal"
 import { inferRequirementType, requirementAnchorId } from "@/lib/coach/requirement-type"
 import { buildLowFitCoachOpeningMessage } from "@/lib/coach/low-fit-contract"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 
 type CoachRequirement = {
   requirement_id: string
   requirement_text: string
+  normalized_requirement?: string
+  display_text?: string
   priority?: string
   status?: string
   matched_evidence_titles?: string[]
@@ -73,6 +76,9 @@ export function GuidedRequirementCoachFlow({
       : Math.min(activeIndex, unresolvedMatches.length - 1)
   const active = unresolvedMatches[safeActiveIndex] ?? null
   const openingMessage = buildLowFitCoachOpeningMessage(score, unresolvedMatches.length)
+  const activeRequirementText = active
+    ? buildRequirementDisplayText(active.requirement_text, active.normalized_requirement ?? null)
+    : ""
 
   if (!active) return null
 
@@ -106,7 +112,7 @@ export function GuidedRequirementCoachFlow({
               Match Interview
             </span>
           </div>
-          <p className="mt-2 text-sm font-semibold text-foreground">{active.requirement_text}</p>
+          <p className="mt-2 text-sm font-semibold text-foreground">{activeRequirementText}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Let&apos;s prove this job fit. I&apos;ll only ask about what I can&apos;t verify from your background.
           </p>
@@ -140,8 +146,8 @@ export function GuidedRequirementCoachFlow({
         openingMessage={openingMessage}
         requirement={{
             requirement_id: active.requirement_id,
-            requirement_text: active.requirement_text,
-            requirement_type: inferRequirementType(active.requirement_text),
+            requirement_text: activeRequirementText,
+            requirement_type: inferRequirementType(activeRequirementText),
             priority: active.priority,
             status: active.status,
             current_proof: active.matched_evidence_titles ?? [],

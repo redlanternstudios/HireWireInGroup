@@ -15,6 +15,7 @@ import {
   stripEvidenceDraftTag,
   type CoachMessage,
 } from "@/lib/coach/buildCoachPrompt"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 
 const MAX_PRIOR = 20
 
@@ -126,6 +127,10 @@ export async function POST(
     const requirementMatch = evidenceMap?.requirement_matches?.find(
       (match) => match.requirement_id === session.gap_requirement_id
     )
+    const displayRequirement = buildRequirementDisplayText(
+      session.gap_requirement,
+      typeof requirementMatch?.normalized_requirement === "string" ? requirementMatch.normalized_requirement : null,
+    )
     const existingTitles = (evidenceResult.data ?? []).map((e) => e.source_title)
     const allMessages: CoachMessage[] = (Array.isArray(messagesResult.data) ? messagesResult.data : [])
       .filter((m) => !(m.role === "user" && m.content === userContent))
@@ -133,7 +138,7 @@ export async function POST(
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
 
     const systemPrompt = buildCoachSystemPrompt({
-      gapRequirement: session.gap_requirement,
+      gapRequirement: displayRequirement,
       requirementId: session.gap_requirement_id,
       requirementIntent: typeof requirementMatch?.employer_intent === "string" ? requirementMatch.employer_intent : null,
       currentEvidence: Array.isArray(requirementMatch?.matched_evidence_titles)

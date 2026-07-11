@@ -23,6 +23,7 @@ import {
   skipRequirement,
   startCoachSession,
 } from "@/lib/clarity/coachSessionClient"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 import type { ClarityRequirement } from "@/lib/clarity/getUnresolvedRequirements"
 
 type SessionStatus = "idle" | "loading" | "ready" | "error"
@@ -139,13 +140,14 @@ export function ClarityCoachPanel({
 
         // No prior history → open with a warm, focused coach opener.
         if (result.messages.length === 0 && result.pendingDrafts.length === 0) {
+          const displayRequirement = buildRequirementDisplayText(requirement.requirement_text)
           dispatch({
             type: "ADD_MESSAGE",
             message: {
               id: makeId(),
               role: "coach",
               type: "question",
-              content: `${openingMessage ? `${openingMessage}\n\n` : ""}I’ll help shape the strongest honest case from your background for **"${requirement.requirement_text.slice(0, 100)}"**.\n\nWhat is the closest real example from your work?`,
+              content: `${openingMessage ? `${openingMessage}\n\n` : ""}I’ll help shape the strongest honest case from your background for **"${displayRequirement.slice(0, 100)}"**.\n\nWhat is the closest real example from your work?`,
               quickReplies: DEFAULT_QUICK_REPLIES,
               timestamp: new Date(),
             },

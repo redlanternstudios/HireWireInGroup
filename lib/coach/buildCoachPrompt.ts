@@ -1,5 +1,6 @@
 import { COACH_PERSONA_BLOCK } from "@/lib/coach/coach-persona"
 import { LOW_FIT_COACH_CONTRACT } from "@/lib/coach/low-fit-contract"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 
 /**
  * lib/coach/buildCoachPrompt.ts
@@ -31,6 +32,7 @@ export type CoachContext = {
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 export function buildCoachSystemPrompt(ctx: CoachContext): string {
+  const displayRequirement = buildRequirementDisplayText(ctx.gapRequirement)
   const existingList = ctx.existingEvidenceTitles.length > 0
     ? ctx.existingEvidenceTitles.map((t) => `  - ${t}`).join("\n")
     : "  (none yet)"
@@ -43,7 +45,7 @@ ${COACH_PERSONA_BLOCK}
 ${LOW_FIT_COACH_CONTRACT}
 
 ══════════════════════════════════════════
-CURRENT REQUIREMENT: "${ctx.gapRequirement}"
+CURRENT REQUIREMENT: "${displayRequirement}"
 REQUIREMENT ID: ${ctx.requirementId ?? "not provided"}
 JOB: ${ctx.jobTitle} at ${ctx.jobCompany}
 DESCRIPTION: ${ctx.jobDescriptionSummary}
@@ -129,16 +131,15 @@ export function buildOpeningPrompt(
   options: { company?: string | null; intent?: string | null; recoveryQuestion?: string | null } = {}
 ): string {
   const company = options.company ? ` at ${options.company}` : ""
-  const intent = options.intent ? `\n\nWhat the employer is likely checking: ${options.intent}` : ""
+  const displayRequirement = buildRequirementDisplayText(gapRequirement)
   const question = options.recoveryQuestion ??
     `What is the closest real example from your background, even if it is only adjacent?`
 
-  return `I'm your career coach. I will help you shape the strongest honest case for ${jobTitle}${company}:
+  const intentLine = options.intent ? `\nWhat the employer is likely checking: ${options.intent}` : ""
 
-"${gapRequirement}"
-${intent}
+  return `I'm your career coach. I'll help you shape the strongest honest case for ${jobTitle}${company}.
 
-First, summarize the user's point in plain language, then ask:
+Requirement: ${displayRequirement}${intentLine}
 
 ${question}`.trim()
 }

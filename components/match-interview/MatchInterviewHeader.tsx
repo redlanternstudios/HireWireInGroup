@@ -4,6 +4,7 @@ import { useState } from "react"
 import { ChevronDown, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 import { REQUIREMENT_TYPE_LABELS, type InterviewRequirement, type RequirementType } from "./types"
 
 export function MatchInterviewHeader({
@@ -27,10 +28,11 @@ export function MatchInterviewHeader({
   const hasPrev = !!onPrev && currentIndex > 0
   const hasNext = !!onNext && currentIndex < totalCount - 1
 
-  const shortTitle =
-    requirement.requirement_text.length > 80
-      ? `${requirement.requirement_text.slice(0, 79).trimEnd()}…`
-      : requirement.requirement_text
+  const shortTitle = buildRequirementDisplayText(requirement.requirement_text)
+  const clippedTitle =
+    shortTitle.length > 80
+      ? `${shortTitle.slice(0, 79).trimEnd()}…`
+      : shortTitle
 
   return (
     <div className="shrink-0 border-b border-border/60 bg-background">
@@ -91,7 +93,7 @@ export function MatchInterviewHeader({
       {/* Row 2: Requirement summary line */}
       <div className="px-5 pb-2.5">
         <p className="text-[13px] font-medium leading-snug text-foreground">
-          {shortTitle}
+          {clippedTitle}
         </p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           Answer only what you can prove. HireWire will help shape it honestly.
@@ -122,7 +124,7 @@ export function MatchInterviewHeader({
       {detailsOpen && (
         <div className="border-t border-border/40 bg-muted/30 px-5 py-3 space-y-2.5">
           <p className="text-sm text-foreground leading-relaxed">
-            {requirement.requirement_text}
+            {buildRequirementDisplayText(requirement.requirement_text)}
           </p>
 
           {requirement.proof_needed?.length ? (

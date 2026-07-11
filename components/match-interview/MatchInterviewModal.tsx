@@ -6,6 +6,7 @@ import { MatchInterviewHeader } from "./MatchInterviewHeader"
 import { CoachChatThread } from "./CoachChatThread"
 import { ChatComposer } from "./ChatComposer"
 import { InterviewActionBar, InterviewErrorState, InterviewLoadingState } from "./InterviewStates"
+import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
 import {
   inferRequirementType,
   type EvidenceAction,
@@ -285,6 +286,7 @@ export function MatchInterviewModal({
   onStepSaved,
 }: MatchInterviewModalProps) {
   const requirementType = inferRequirementType(requirement.requirement_text)
+  const displayRequirementText = buildRequirementDisplayText(requirement.requirement_text)
   const [retryNonce, setRetryNonce] = useState(0)
 
   const [state, dispatch] = useReducer(reducer, {
@@ -335,7 +337,7 @@ export function MatchInterviewModal({
               id: makeId(),
               role: "coach",
               type: "question",
-              content: `${openingMessage ? `${openingMessage}\n\n` : ""}I’ll help turn your background into the strongest honest case for **"${requirement.requirement_text.slice(0, 80)}"**.\n\nWhat is the closest real example from your work, even if it is only adjacent?`,
+              content: `${openingMessage ? `${openingMessage}\n\n` : ""}I’ll help turn your background into the strongest honest case for **"${displayRequirementText.slice(0, 80)}"**.\n\nWhat is the closest real example from your work, even if it is only adjacent?`,
               quickReplies: DEFAULT_QUICK_REPLIES,
               timestamp: new Date(),
             },

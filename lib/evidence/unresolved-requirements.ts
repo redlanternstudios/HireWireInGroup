@@ -22,6 +22,8 @@ export type UnresolvedRequirement = {
   priority: RequirementEvidenceMatch["priority"]
   requirement_id: string
   requirement_text: string
+  normalized_requirement: string
+  display_text: string
   matched_evidence_ids: string[]
   proof_needed: string[]
   evidence_questions: string[]
@@ -102,6 +104,29 @@ function hasUsablePacket(
   return usableRequirementIds.has(match.requirement_id)
 }
 
+function cleanRequirementDisplay(text: string, normalized: string): string {
+  const raw = text.trim()
+  const compact = raw.replace(/\s+/g, " ")
+  const normalizedText = normalized.trim()
+  const chromePatterns = [
+    /job application for/i,
+    /back to jobs/i,
+    /apply\s+about us/i,
+    /about us/i,
+    /e-commerce got real-time data infrastructure/i,
+  ]
+
+  if (chromePatterns.some((pattern) => pattern.test(compact))) {
+    return normalizedText || raw
+  }
+
+  if (compact.length > 180 && normalizedText.length > 0) {
+    return normalizedText
+  }
+
+  return compact
+}
+
 export function isRequirementResolved(
   match: RequirementEvidenceMatch,
   evidenceMap: CanonicalJobEvidenceMap,
@@ -149,6 +174,11 @@ export function listUnresolvedRequirements(
       priority: match.priority,
       requirement_id: match.requirement_id,
       requirement_text: match.requirement_text,
+      normalized_requirement: typeof match.normalized_requirement === "string" ? match.normalized_requirement : match.requirement_text,
+      display_text: cleanRequirementDisplay(
+        match.requirement_text,
+        typeof match.normalized_requirement === "string" ? match.normalized_requirement : match.requirement_text,
+      ),
       matched_evidence_ids: Array.isArray(match.matched_evidence_ids)
         ? match.matched_evidence_ids
         : [],
