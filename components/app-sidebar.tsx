@@ -18,6 +18,7 @@ import {
   Sparkles,
   Library,
   CreditCard,
+  Crown,
 } from "lucide-react"
 import {
   Sidebar,
@@ -48,6 +49,11 @@ const secondaryNav = [
   { name: "Career Context", href: "/evidence",     icon: Library },
   { name: "Insights",       href: "/analytics",    icon: BarChart3, premium: true },
   { name: "Activity Log",   href: "/logs",         icon: History },
+]
+
+// Premium intelligence
+const premiumNav = [
+  { name: "Career Intelligence", href: "/premium", icon: Crown, premium: true },
 ]
 
 // Footer nav — account
@@ -147,6 +153,18 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {secondaryNav.map(renderNavItem)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Premium — career intelligence */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-[10px] font-semibold tracking-wider text-primary uppercase px-3">
+            Premium
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {premiumNav.map(renderNavItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
