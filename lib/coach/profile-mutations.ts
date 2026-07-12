@@ -31,6 +31,11 @@ export type CareerContextInput = {
   notes?: string | null
 }
 
+type ProfileLinkSeed = {
+  link_type: "linkedin" | "github" | "website"
+  url: string
+}
+
 function normalizeUrl(url: string) {
   return url.trim()
 }
@@ -78,7 +83,7 @@ export async function syncProfileLinksFromProfile(
     profile.linkedin_url ? { link_type: "linkedin" as const, url: normalizeUrl(profile.linkedin_url) } : null,
     profile.github_url ? { link_type: "github" as const, url: normalizeUrl(profile.github_url) } : null,
     profile.website_url ? { link_type: "website" as const, url: normalizeUrl(profile.website_url) } : null,
-  ].filter((item): item is { link_type: CoachLinkType; url: string } => !!item)
+  ].filter((item): item is ProfileLinkSeed => !!item)
 
   const { data: existing } = await supabase
     .from("user_profile_links")
