@@ -33,6 +33,7 @@ import {
 import {
   extractKnownProducts,
   normalizeProfileLinks,
+  buildProfileKnowledge,
 } from "@/lib/profile-knowledge-resolver"
 import {
   suggestTemplate,
@@ -40,6 +41,7 @@ import {
   getTemplateGuidance,
 } from "@/lib/resume-templates"
 import { sanitizeInput } from "@/lib/safety"
+import { buildGovernanceReport } from "@/lib/coach/generation-governance"
 
 // Schema for evidence mapping
 const EvidenceMapSchema = z.object({
@@ -228,14 +230,14 @@ GENERATION STRATEGY: ADJACENT TRANSITION
 Lean on transferable skills and related experience.
 Do NOT claim direct experience you don't have.
 Frame adjacent work as relevant without pretending direct ownership.
-Be honest about the transition narrative.`
+Do not add compensating claims for unsupported requirements.`
 
     case "stretch_honest":
       return `
 GENERATION STRATEGY: STRETCH BUT HONEST
 This is a stretch role - be careful not to overclaim.
 Emphasize learning ability and adaptability.
-Acknowledge gaps indirectly through what you bring, not what you lack.
+Do not invent content to close gaps. If a requirement is unsupported, leave it to the gap report.
 Do NOT exaggerate or invent qualifications.`
 
     case "do_not_generate":
@@ -248,6 +250,166 @@ Return an error explaining why generation was blocked.`
 
 function normalizeGroupingKey(value?: string | null): string {
   return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function tokenizeForRanking(value: string): Set<string> {
+  return new Set(
+    normalizeGroupingKey(value)
+      .split(" ")
+      .filter((word) => word.length > 1)
+  )
+}
+
+function scoreTextForJob(text: string, jobTokens: Set<string>): number {
+  if (!text.trim()) return 0
+
+  const textTokens = tokenizeForRanking(text)
+  let score = 0
+  for (const token of jobTokens) {
+    if (textTokens.has(token)) score += 1
+  }
+
+  return score
+}
+
+function buildRetrievedContext(input: {
+  candidateName: string
+  jobText: string
+  profileKnowledge: ReturnType<typeof buildProfileKnowledge>
+  experience: Array<{
+    title?: string
+    company?: string
+    start_date?: string
+    end_date?: string
+    description?: string
+    bullets?: string[]
+  }>
+  evidence: Array<{
+    id: string
+    source_title: string
+    source_type: string
+    company_name?: string
+    role_name?: string
+    project_name?: string
+    description?: string
+    responsibilities?: string[]
+    outcomes?: string[]
+    tools_used?: string[]
+    approved_achievement_bullets?: string[]
+  }>
+  profileSummary: string
+  profileLocation: string
+  profileSkills: string[]
+  profileLinks: {
+    linkedin?: string
+    github?: string
+    portfolio?: string
+    website?: string
+  }
+  sourceResumeText?: string | null
+  careerContext?: Record<string, unknown> | null
+}): string {
+  const jobTokens = tokenizeForRanking(input.jobText)
+
+  const rankedExperience = [...input.experience]
+    .map((exp) => {
+      const text = [
+        exp.title,
+        exp.company,
+        exp.description,
+        ...(exp.bullets ?? []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+
+      return {
+        ...exp,
+        rag_score: scoreTextForJob(text, jobTokens),
+      }
+    })
+    .sort((a, b) => b.rag_score - a.rag_score)
+    .slice(0, 4)
+
+  const rankedEvidence = [...input.evidence]
+    .map((item) => {
+      const text = [
+        item.source_title,
+        item.company_name,
+        item.role_name,
+        item.project_name,
+        item.description,
+        ...(item.responsibilities ?? []),
+        ...(item.outcomes ?? []),
+        ...(item.tools_used ?? []),
+        ...(item.approved_achievement_bullets ?? []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+
+      return {
+        ...item,
+        rag_score: scoreTextForJob(text, jobTokens),
+      }
+    })
+    .sort((a, b) => b.rag_score - a.rag_score)
+    .slice(0, 5)
+
+  const matchedSkills = input.profileSkills.filter((skill) =>
+    scoreTextForJob(skill, jobTokens) > 0
+  )
+
+  const matchedProducts = input.profileKnowledge.products
+    .map((product) => ({
+      ...product,
+      rag_score: scoreTextForJob(
+        [product.name, product.description, ...(product.techStack ?? [])].filter(Boolean).join(" "),
+        jobTokens
+      ),
+    }))
+    .filter((product) => product.rag_score > 0)
+    .slice(0, 4)
+
+  const matchedCompanies = input.profileKnowledge.companies
+    .map((company) => ({
+      ...company,
+      rag_score: scoreTextForJob([company.name, company.role, company.context].filter(Boolean).join(" "), jobTokens),
+    }))
+    .filter((company) => company.rag_score > 0)
+    .slice(0, 4)
+
+  const matchedTools = input.profileKnowledge.tools.filter((tool) =>
+    scoreTextForJob(tool, jobTokens) > 0
+  )
+
+return `
+RAG PROFILE CONTEXT:
+Name: ${input.candidateName}
+Location: ${input.profileLocation}
+Summary: ${input.profileSummary}
+
+Career Context:
+${input.careerContext ? Object.entries(input.careerContext).map(([key, value]) => `- ${key}: ${String(value)}`).join("\n") : "- Not provided"}
+
+Matched Skills: ${matchedSkills.length > 0 ? matchedSkills.join(", ") : "None surfaced"}
+Matched Tools: ${matchedTools.length > 0 ? matchedTools.join(", ") : "None surfaced"}
+
+Relevant Products or Properties:
+${matchedProducts.length > 0 ? matchedProducts.map((product) => `- ${product.name}${product.description ? `: ${product.description}` : ""}`).join("\n") : "- None surfaced"}
+
+Relevant Companies or Roles:
+${matchedCompanies.length > 0 ? matchedCompanies.map((company) => `- ${company.name}${company.role ? ` (${company.role})` : ""}${company.context ? `: ${company.context}` : ""}`).join("\n") : "- None surfaced"}
+
+Top Matching Experience:
+${rankedExperience.length > 0 ? rankedExperience.map((exp) => `- ${exp.title || "Untitled"} at ${exp.company || "Unknown"}${formatDateRange(exp.start_date, exp.end_date) ? ` (${formatDateRange(exp.start_date, exp.end_date)})` : ""}${exp.description ? ` — ${exp.description}` : ""}`).join("\n") : "- None surfaced"}
+
+Top Matching Evidence:
+${rankedEvidence.length > 0 ? rankedEvidence.map((item) => `- [${item.id}] ${item.source_title}${item.company_name ? ` at ${item.company_name}` : ""}${item.role_name ? ` (${item.role_name})` : ""}`).join("\n") : "- None surfaced"}
+
+${input.sourceResumeText ? `
+SOURCE RESUME EXCERPT:
+${input.sourceResumeText.slice(0, 2500)}
+` : ""}
+`
 }
 
 function formatDateRange(start?: string | null, end?: string | null): string | null {
@@ -486,47 +648,69 @@ export async function POST(request: NextRequest) {
       portfolio: profile.website_url || normalizedProfileLinks.portfolio,
       website: profile.website_url || normalizedProfileLinks.website,
     }
+    const profileKnowledge = buildProfileKnowledge(
+      {
+        full_name: effectiveName,
+        email: profile.email,
+        phone: profile.phone,
+        location: effectiveLocation,
+        summary: effectiveSummary,
+        skills: effectiveSkills,
+        links: mergedLinks,
+        experience: effectiveExperience.map((exp: { title?: string; company?: string; description?: string }) => ({
+          title: exp.title || "",
+          company: exp.company || "",
+          description: exp.description,
+        })),
+      },
+      allEvidence
+    )
 
-    const profileContext = `
-CANDIDATE PROFILE:
-Name: ${effectiveName}
-Location: ${effectiveLocation}
-Summary: ${effectiveSummary}
+    const jobRagText = [
+      jobData.title,
+      jobData.company,
+      jobAnalysis?.responsibilities?.join(" "),
+      jobAnalysis?.qualifications_required?.join(" "),
+      jobAnalysis?.qualifications_preferred?.join(" "),
+      jobAnalysis?.keywords?.join(" "),
+      jobAnalysis?.ats_phrases?.join(" "),
+      jobData.raw_description || "",
+    ]
+      .filter(Boolean)
+      .join("\n")
 
-Skills: ${effectiveSkills.join(", ")}
-${effectiveCertifications.length > 0 ? `Certifications: ${effectiveCertifications.join(", ")}` : ""}
-${careerContext ? `
-Career Context:
-- Target role: ${String(careerContext.target_role ?? "Not set")}
-- Open to other roles: ${String(careerContext.open_to_other_roles ?? "Not set")}
-- Other roles: ${String(careerContext.other_roles ?? "Not set")}
-${careerContext.notes ? `- Notes: ${String(careerContext.notes)}` : ""}
-` : ""}
-${mergedLinks.linkedin || mergedLinks.github || mergedLinks.portfolio || mergedLinks.website ? `
-Public Links:
-${mergedLinks.linkedin ? `- LinkedIn: ${mergedLinks.linkedin}` : ""}
-${mergedLinks.github ? `- GitHub: ${mergedLinks.github}` : ""}
-${mergedLinks.portfolio ? `- Portfolio: ${mergedLinks.portfolio}` : ""}
-${mergedLinks.website ? `- Website: ${mergedLinks.website}` : ""}
-` : ""}
-
-Work Experience:
-${effectiveExperience.map((exp: { title: string; company: string; start_date?: string; end_date?: string; description?: string; bullets?: string[] }) => `
-- ${exp.title} at ${exp.company} (${exp.start_date || ""} - ${exp.end_date || "Present"})
-  ${exp.description || ""}
-  ${exp.bullets ? exp.bullets.map(b => `  • ${b}`).join("\n") : ""}
-`).join("\n")}
-
-Education:
-${effectiveEducation.map((edu: { degree: string; school: string; year?: string }) => `
-- ${edu.degree} from ${edu.school} ${edu.year ? `(${edu.year})` : ""}
-`).join("\n")}
-${sourceResume?.parsed_text ? `
-ADDITIONAL CONTEXT FROM SOURCE RESUME:
-(Use this for additional details if the structured data above is incomplete)
-${sourceResume.parsed_text.slice(0, 5000)}
-` : ""}
-`
+    const profileContext = buildRetrievedContext({
+      candidateName: effectiveName,
+      jobText: jobRagText,
+      profileKnowledge,
+      experience: effectiveExperience as Array<{
+        title?: string
+        company?: string
+        start_date?: string
+        end_date?: string
+        description?: string
+        bullets?: string[]
+      }>,
+      evidence: resumeEvidence as Array<{
+        id: string
+        source_title: string
+        source_type: string
+        company_name?: string
+        role_name?: string
+        project_name?: string
+        description?: string
+        responsibilities?: string[]
+        outcomes?: string[]
+        tools_used?: string[]
+        approved_achievement_bullets?: string[]
+      }>,
+      profileSummary: effectiveSummary,
+      profileLocation: effectiveLocation,
+      profileSkills: effectiveSkills,
+      profileLinks: mergedLinks,
+      sourceResumeText: sourceResume?.parsed_text,
+      careerContext,
+    })
 
     const evidenceContext = resumeEvidence.length > 0 ? `
 VERIFIED EVIDENCE LIBRARY (use ONLY these for resume):
@@ -683,7 +867,6 @@ ${jobContext}
 MATCH CONTEXT:
 Skills: ${evidenceMap.matched_skills.join(", ")}
 Tools: ${evidenceMap.matched_tools.join(", ")}
-Gaps: ${evidenceMap.gaps.join(", ")}
 
 ${strategyPrompt}
 
@@ -694,6 +877,7 @@ WRITING RULES:
 4. Include real metrics from evidence when available
 5. Write like a human professional would - confident but not robotic
 6. If pre-approved bullets exist in evidence, use them directly
+7. Do not restate job gaps in the body — the gap report handles that separately
 
 QUANTIFICATION POLICY - CRITICAL:
 ALLOWED metrics:
@@ -822,17 +1006,7 @@ TONE: Write like a sharp professional sending a letter to someone they respect.
 
     const certificationLines = effectiveCertifications.map((cert: string) => `• ${cert}`)
 
-    const resumeSections = [
-      `${(profile.full_name || "CANDIDATE NAME").toUpperCase()}\n${contactInfo}`,
-      resumeWithProvenance.summary.trim() ? `PROFESSIONAL SUMMARY\n${resumeWithProvenance.summary.trim()}` : "",
-      experienceSectionLines.length > 0 ? `PROFESSIONAL EXPERIENCE\n${experienceSectionLines.join("\n")}` : "",
-      projectsSection ? projectsSection.trim() : "",
-      resumeWithProvenance.skills_section.length > 0 ? `CORE COMPETENCIES\n${resumeWithProvenance.skills_section.join(", ")}` : "",
-      educationLines.length > 0 ? `EDUCATION\n${educationLines.join("\n")}` : "",
-      certificationLines.length > 0 ? `CERTIFICATIONS\n${certificationLines.join("\n")}` : "",
-    ].filter((section) => section && section.trim().length > 0)
-
-    const formattedResume = resumeSections.join("\n\n")
+    let formattedResume = ""
 
     // Build premium formatted cover letter with professional signature
     const today = new Date().toLocaleDateString("en-US", { 
@@ -857,6 +1031,66 @@ ${coverLetterWithProvenance.paragraphs.map(p => p.paragraph_text).join("\n\n")}
 Sincerely,
 
 ${signatureBlock}`
+
+    // Build provenance records and governance report before final formatting
+    const bulletProvenance: BulletProvenance[] = resumeWithProvenance.experience_bullets.map(b => ({
+      bullet_text: b.bullet_text,
+      source_evidence_id: b.source_evidence_id,
+      source_evidence_title: resumeEvidence.find((e: { id: string; source_title: string }) => e.id === b.source_evidence_id)?.source_title || "Unknown",
+      source_role: b.source_role,
+      source_company: b.source_company,
+      matched_requirement_id: undefined,
+      matched_requirement_text: b.matched_requirement ?? undefined,
+      claim_confidence: "high" as const,
+      keywords_covered: b.keywords_used,
+      risk_flags: [],
+      is_metric_rich: hasMetrics(b.bullet_text),
+      concrete_signal_count: analyzeBulletConcreteness(b.bullet_text).concrete_signal_count
+    }))
+
+    const paragraphProvenance: ParagraphProvenance[] = coverLetterWithProvenance.paragraphs.map(p => ({
+      paragraph_text: p.paragraph_text,
+      evidence_used: p.evidence_ids_used,
+      matched_job_theme: p.job_theme_addressed,
+      claim_confidence: p.claim_confidence,
+      unsupported_language: detectBannedPhrases(p.paragraph_text)
+    }))
+
+    const governanceReport = buildGovernanceReport({
+      summary: resumeWithProvenance.summary,
+      jobText: [
+        jobData.title,
+        jobData.company,
+        jobAnalysis?.job_description || "",
+        ...(jobData.qualifications_required || []),
+        ...(jobData.qualifications_preferred || []),
+        ...(jobData.responsibilities || []),
+      ].join("\n"),
+      requiredQualifications: [
+        ...(jobData.qualifications_required || []),
+        ...(jobData.qualifications_preferred || []),
+      ],
+      experience: effectiveExperience as Array<{
+        start_date?: string | null
+        end_date?: string | null
+      }>,
+      skills: resumeWithProvenance.skills_section,
+      bulletProvenance,
+      paragraphProvenance,
+      evidenceSet: allEvidence,
+    })
+
+    const resumeSections = [
+      `${(profile.full_name || "CANDIDATE NAME").toUpperCase()}\n${contactInfo}`,
+      resumeWithProvenance.summary.trim() ? `PROFESSIONAL SUMMARY\n${resumeWithProvenance.summary.trim()}` : "",
+      experienceSectionLines.length > 0 ? `PROFESSIONAL EXPERIENCE\n${experienceSectionLines.join("\n")}` : "",
+      projectsSection ? projectsSection.trim() : "",
+      governanceReport.filteredSkills.length > 0 ? `CORE COMPETENCIES\n${governanceReport.filteredSkills.join(", ")}` : "",
+      educationLines.length > 0 ? `EDUCATION\n${educationLines.join("\n")}` : "",
+      certificationLines.length > 0 ? `CERTIFICATIONS\n${certificationLines.join("\n")}` : "",
+    ].filter((section) => section && section.trim().length > 0)
+
+    formattedResume = resumeSections.join("\n\n")
 
     // Step 4: Detect banned phrases and vague patterns
     const resumeBannedPhrases = detectBannedPhrases(formattedResume)
@@ -941,36 +1175,13 @@ If no issues found, return empty arrays and overall_passed: true.`,
       }
     }
 
-    // Build provenance records for storage
-    const bulletProvenance: BulletProvenance[] = resumeWithProvenance.experience_bullets.map(b => ({
-      bullet_text: b.bullet_text,
-      source_evidence_id: b.source_evidence_id,
-      source_evidence_title: resumeEvidence.find((e: { id: string; source_title: string }) => e.id === b.source_evidence_id)?.source_title || "Unknown",
-      source_role: b.source_role,
-      source_company: b.source_company,
-      matched_requirement_id: undefined,
-      matched_requirement_text: b.matched_requirement ?? undefined,
-      claim_confidence: "high" as const,
-      keywords_covered: b.keywords_used,
-      risk_flags: [],
-      is_metric_rich: hasMetrics(b.bullet_text),
-      concrete_signal_count: analyzeBulletConcreteness(b.bullet_text).concrete_signal_count
-    }))
-
-    const paragraphProvenance: ParagraphProvenance[] = coverLetterWithProvenance.paragraphs.map(p => ({
-      paragraph_text: p.paragraph_text,
-      evidence_used: p.evidence_ids_used,
-      matched_job_theme: p.job_theme_addressed,
-      claim_confidence: p.claim_confidence,
-      unsupported_language: detectBannedPhrases(p.paragraph_text)
-    }))
-
     // Calculate quality score - now includes quantification safety
     const qualityPassed = qualityCheck.overall_passed && 
       allBannedPhrases.length === 0 && 
       weakBullets.length <= 1 &&
       unsafeMetricsFound.length === 0 &&
-      structuralBlockers.length === 0 // Block if the resume is structurally incomplete
+      structuralBlockers.length === 0 &&
+      governanceReport.passed // Block fabricated or drifted output before persistence
 
     const qualityScore = qualityPassed ? 100 : Math.max(0, 
       100 - 
@@ -978,16 +1189,19 @@ If no issues found, return empty arrays and overall_passed: true.`,
       (weakBullets.length * 5) - 
       (qualityCheck.invented_claims.length * 15) -
       (qualityCheck.vague_bullets.length * 5) -
-      (structuralBlockers.length * 20)
+      (structuralBlockers.length * 20) -
+      (governanceReport.hasFabricated ? 30 : 0) -
+      (governanceReport.drift.is_blocking ? 20 : 0)
     )
 
     // AUTO-RETRY: If quality check fails and we haven't retried yet, regenerate
     const hasSignificantIssues = 
       allBannedPhrases.length > 0 || 
       qualityCheck.invented_claims.length > 0 ||
-      weakBullets.length > 2
+      weakBullets.length > 2 ||
+      governanceReport.isBlocking
 
-    if (!qualityPassed && hasSignificantIssues && _retry_count < MAX_RETRIES) {
+    if (!qualityPassed && hasSignificantIssues && _retry_count < MAX_RETRIES && !governanceReport.isBlocking) {
       // Auto-retry: Quality check failed, regenerating with stricter prompts
       
       // Recursive call with incremented retry count
@@ -1004,6 +1218,106 @@ If no issues found, return empty arrays and overall_passed: true.`,
       })
       
       return POST(retryRequest)
+    }
+
+    if (governanceReport.isBlocking) {
+      await supabase
+        .from("jobs")
+        .update({
+          status: "needs_review",
+          generation_status: "needs_review",
+          generation_error: governanceReport.blockedReasons.join("; "),
+          quality_passed: false,
+          governance_version: governanceReport.governanceVersion,
+          governance_passed: false,
+          governance_drift_score: governanceReport.drift.score,
+          resume_provenance: bulletProvenance,
+          voice_integrity_passed: false,
+          voice_review_status: "needs_review",
+        })
+        .eq("id", job_id)
+        .eq("user_id", userId)
+
+      const governanceRunInsert = await supabase
+        .from("generation_governance_runs")
+        .insert({
+          user_id: userId,
+          job_id,
+          strategy,
+          strategy_decision: {
+            strategy,
+            requirement_coverage: evidenceMap.requirement_coverage,
+            evidence_quality_pct: evidenceQuality,
+            reasoning: strategyReasoning,
+          },
+          bullet_verdicts: governanceReport.bulletVerdicts,
+          paragraph_verdicts: governanceReport.paragraphVerdicts,
+          fabricated_count: [...governanceReport.bulletVerdicts, ...governanceReport.paragraphVerdicts].filter(
+            (verdict) => verdict.confidence === "fabricated"
+          ).length,
+          low_confidence_count: [...governanceReport.bulletVerdicts, ...governanceReport.paragraphVerdicts].filter(
+            (verdict) => verdict.confidence === "low"
+          ).length,
+          drift_score: governanceReport.drift.score,
+          drift_is_blocking: governanceReport.drift.is_blocking,
+          drift_flags: governanceReport.drift.flags,
+          drift_summary: governanceReport.drift.summary,
+          governance_passed: false,
+          failed_at_phase: "claim_validation",
+          governance_version: governanceReport.governanceVersion,
+          evaluated_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single()
+
+      if (governanceRunInsert.data?.id) {
+        await supabase
+          .from("jobs")
+          .update({ last_governance_run_id: governanceRunInsert.data.id })
+          .eq("id", job_id)
+          .eq("user_id", userId)
+      }
+
+      await supabase.from("generation_quality_checks").insert({
+        user_id: userId,
+        job_id,
+        document_type: "resume",
+        invented_claims_found: qualityCheck.invented_claims,
+        vague_bullets_found: qualityCheck.vague_bullets,
+        ai_filler_found: qualityCheck.ai_filler,
+        repeated_structures_found: qualityCheck.repeated_structures,
+        unsupported_claims_found: qualityCheck.unsupported_claims,
+        passed: false,
+        issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length + structuralBlockers.length + governanceReport.blockedReasons.length,
+      })
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: "resume_governance_blocked",
+          user_message: "The generated resume contains unsupported claims and cannot be saved yet. Review the gap report and try again.",
+          gap_report: governanceReport.gapReport,
+          blocked_reasons: governanceReport.blockedReasons,
+          quality_check: {
+            passed: false,
+            score: qualityScore,
+            banned_phrases_found: allBannedPhrases,
+            vague_patterns_found: vaguePatterns,
+            weak_bullets: weakBullets.map(b => b.bullet),
+            issues: {
+              invented_claims: qualityCheck.invented_claims,
+              vague_bullets: qualityCheck.vague_bullets,
+              ai_filler: qualityCheck.ai_filler,
+              banned_phrases: allBannedPhrases,
+            },
+            suggestions: [
+              ...qualityCheck.improvement_suggestions,
+              ...governanceReport.gapReport,
+            ],
+          },
+        },
+        { status: 400 }
+      )
     }
 
     if (structuralBlockers.length > 0) {
@@ -1081,7 +1395,7 @@ If no issues found, return empty arrays and overall_passed: true.`,
           selected_evidence_ids: resumeEvidence.map((e: { id: string }) => e.id),
           bullet_provenance: bulletProvenance,
           paragraph_provenance: paragraphProvenance,
-blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
+          blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
         },
         status: qualityPassed ? "ready" : "needs_review",
         scored_at: new Date().toISOString(),
@@ -1089,22 +1403,69 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
         generation_status: qualityPassed ? "ready" : "needs_review",
         generation_error: null,
         generation_quality_score: qualityScore,
-    generation_quality_issues: [
-      ...allBannedPhrases.map(p => `Banned phrase: "${p}"`),
-      ...vaguePatterns.map(p => `Vague pattern: "${p}"`),
-      ...weakBullets.map(b => `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`),
-      ...unsafeMetricsFound.map(m => `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || 'qualitative language'}"`),
-      ...qualityCheck.invented_claims,
-      ...qualityCheck.vague_bullets,
+        generation_quality_issues: [
+          ...allBannedPhrases.map(p => `Banned phrase: "${p}"`),
+          ...vaguePatterns.map(p => `Vague pattern: "${p}"`),
+          ...weakBullets.map(b => `Weak bullet (${b.concrete_signal_count}/4 signals): "${b.bullet.substring(0, 50)}..."`),
+          ...unsafeMetricsFound.map(m => `UNSAFE METRIC: "${m.unsafe_claims[0]}" - Use instead: "${m.safe_alternatives[0] || "qualitative language"}"`),
+          ...qualityCheck.invented_claims,
+          ...qualityCheck.vague_bullets,
           ...qualityCheck.ai_filler,
+          ...governanceReport.removedSkills.map((skill) => `Removed unsupported competency: "${skill}"`),
         ],
         quality_passed: qualityPassed,
+        resume_provenance: bulletProvenance,
+        voice_integrity_passed: qualityCheck.ai_filler.length === 0 && allBannedPhrases.length === 0,
+        voice_review_status: qualityPassed ? "approved" : "needs_review",
+        governance_version: governanceReport.governanceVersion,
+        governance_passed: governanceReport.passed,
+        governance_drift_score: governanceReport.drift.score,
       })
       .eq("id", job_id)
       .eq("user_id", userId)
 
     if (updateError) {
       console.error("Error updating job:", updateError)
+    }
+
+    const governanceRunInsert = await supabase
+      .from("generation_governance_runs")
+      .insert({
+        user_id: userId,
+        job_id,
+        strategy,
+        strategy_decision: {
+          strategy,
+          requirement_coverage: evidenceMap.requirement_coverage,
+          evidence_quality_pct: evidenceQuality,
+          reasoning: strategyReasoning,
+        },
+        bullet_verdicts: governanceReport.bulletVerdicts,
+        paragraph_verdicts: governanceReport.paragraphVerdicts,
+        fabricated_count: [...governanceReport.bulletVerdicts, ...governanceReport.paragraphVerdicts].filter(
+          (verdict) => verdict.confidence === "fabricated"
+        ).length,
+        low_confidence_count: [...governanceReport.bulletVerdicts, ...governanceReport.paragraphVerdicts].filter(
+          (verdict) => verdict.confidence === "low"
+        ).length,
+        drift_score: governanceReport.drift.score,
+        drift_is_blocking: governanceReport.drift.is_blocking,
+        drift_flags: governanceReport.drift.flags,
+        drift_summary: governanceReport.drift.summary,
+        governance_passed: governanceReport.passed,
+        failed_at_phase: governanceReport.passed ? null : "claim_validation",
+        governance_version: governanceReport.governanceVersion,
+        evaluated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single()
+
+    if (governanceRunInsert.data?.id) {
+      await supabase
+        .from("jobs")
+        .update({ last_governance_run_id: governanceRunInsert.data.id })
+        .eq("id", job_id)
+        .eq("user_id", userId)
     }
 
     // Update job analysis with matched evidence
@@ -1133,7 +1494,7 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       repeated_structures_found: qualityCheck.repeated_structures,
       unsupported_claims_found: qualityCheck.unsupported_claims,
       passed: qualityPassed,
-      issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length,
+      issues_count: qualityCheck.invented_claims.length + qualityCheck.vague_bullets.length + qualityCheck.ai_filler.length + allBannedPhrases.length + governanceReport.removedSkills.length,
     })
 
     return NextResponse.json({
@@ -1156,22 +1517,35 @@ blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title:
       },
       generated_resume: formattedResume,
       generated_cover_letter: formattedCoverLetter,
+      gap_report: governanceReport.gapReport,
+      governance: {
+        passed: governanceReport.passed,
+        blocked_reasons: governanceReport.blockedReasons,
+        drift: governanceReport.drift,
+        years_covered: governanceReport.yearsCovered,
+        required_years: governanceReport.requiredYears,
+        years_gap: governanceReport.yearsGap,
+        summary_overlap: governanceReport.summaryOverlap,
+        filtered_skills: governanceReport.filteredSkills,
+        removed_skills: governanceReport.removedSkills,
+      },
       provenance: {
         bullet_provenance: bulletProvenance,
         paragraph_provenance: paragraphProvenance,
         blocked_evidence: blockedEvidence.map((e: EvidenceRecord) => ({ id: e.id, title: e.source_title, reason: getEvidenceUsageRule(e) }))
       },
-      quality_check: {
-        passed: qualityPassed,
-        score: qualityScore,
-        banned_phrases_found: allBannedPhrases,
-        vague_patterns_found: vaguePatterns,
-        weak_bullets: weakBullets.map(b => b.bullet),
-        issues: {
-          invented_claims: qualityCheck.invented_claims,
-          vague_bullets: qualityCheck.vague_bullets,
-          ai_filler: qualityCheck.ai_filler,
-          banned_phrases: allBannedPhrases,
+        quality_check: {
+          passed: qualityPassed,
+          score: qualityScore,
+          banned_phrases_found: allBannedPhrases,
+          vague_patterns_found: vaguePatterns,
+          weak_bullets: weakBullets.map(b => b.bullet),
+          gap_report: governanceReport.gapReport,
+          issues: {
+            invented_claims: qualityCheck.invented_claims,
+            vague_bullets: qualityCheck.vague_bullets,
+            ai_filler: qualityCheck.ai_filler,
+            banned_phrases: allBannedPhrases,
         },
         suggestions: qualityCheck.improvement_suggestions,
       },

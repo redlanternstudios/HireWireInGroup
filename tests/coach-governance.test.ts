@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert"
 import test from "node:test"
 import { validateAllClaims, validateCoachAnswer } from "../lib/coach/claim-validator"
 import { scoreDrift } from "../lib/coach/drift-scorer"
+import { buildGovernanceReport } from "../lib/coach/generation-governance"
 import type { GovernanceEvidence } from "../lib/coach/types"
 
 const evidence: GovernanceEvidence[] = [
@@ -16,7 +17,7 @@ const evidence: GovernanceEvidence[] = [
     outcomes: [
       "Led Agile product delivery for Salesforce reporting dashboards and executive visibility",
     ],
-    tools_used: [],
+    tools_used: ["SQL", "Salesforce"],
     team_size: null,
     budget_scope: null,
     user_impact_scale: null,
@@ -126,4 +127,76 @@ test("coach answer validator recognizes acronym employers", () => {
 
   assert.equal(validation.signals.hasEmployer, true)
   assert.equal(validation.signals.hasTool, true)
+})
+
+test("governance report removes unsupported competencies and surfaces years gap", () => {
+  const report = buildGovernanceReport({
+    summary: "A product leader who builds AI enabled SaaS workflows and leads discovery.",
+    jobText: "We need 5 plus years of product management experience and SQL.",
+    requiredQualifications: ["5 plus years of product management experience", "SQL"],
+    experience: [
+      {
+        start_date: "2021",
+        end_date: "2025",
+      },
+    ],
+    skills: ["Product strategy", "SQL", "Kubernetes"],
+    bulletProvenance: [
+      {
+        bullet_text: "Led Agile product delivery at Deloitte using Salesforce dashboards to improve executive visibility",
+        source_evidence_id: "ev_product_delivery",
+        source_evidence_title: "Lead Product Manager at Deloitte",
+        source_role: "Lead Product Manager",
+        source_company: "Deloitte",
+        matched_requirement_text: null,
+        keywords_covered: ["product delivery"],
+        risk_flags: [],
+        is_metric_rich: false,
+        concrete_signal_count: 2,
+        claim_confidence: "high",
+      },
+    ],
+    paragraphProvenance: [],
+    evidenceSet: evidence,
+  })
+
+  assert.equal(report.yearsCovered, 4)
+  assert.equal(report.requiredYears, 5)
+  assert.equal(report.yearsGap, 1)
+  assert.ok(report.gapReport.some((line) => line.includes("Years gap")))
+  assert.deepEqual(report.filteredSkills, ["SQL"])
+  assert.ok(report.removedSkills.includes("Kubernetes"))
+  assert.equal(report.hasFabricated, false)
+  assert.equal(report.isBlocking, false)
+})
+
+test("governance report blocks fabricated claims", () => {
+  const report = buildGovernanceReport({
+    summary: "A product leader who builds AI enabled SaaS workflows and leads discovery.",
+    jobText: "We need 5 plus years of product management experience and SQL.",
+    requiredQualifications: ["5 plus years of product management experience", "SQL"],
+    experience: [],
+    skills: ["SQL"],
+    bulletProvenance: [
+      {
+        bullet_text: "Designed a pasta subscription CRM for musicians",
+        source_evidence_id: "missing_evidence_id",
+        source_evidence_title: "Unknown",
+        source_role: "Technical Product Manager",
+        source_company: "Ingram Micro",
+        matched_requirement_text: null,
+        keywords_covered: ["pasta"],
+        risk_flags: [],
+        is_metric_rich: false,
+        concrete_signal_count: 1,
+        claim_confidence: "high",
+      },
+    ],
+    paragraphProvenance: [],
+    evidenceSet: evidence,
+  })
+
+  assert.equal(report.hasFabricated, true)
+  assert.equal(report.isBlocking, true)
+  assert.ok(report.blockedReasons.length > 0)
 })
