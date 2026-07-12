@@ -19,9 +19,6 @@ export function LandingNav() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/login">Sign in</Link>
-          </Button>
           <Button size="sm" className="hw-btn-primary" asChild>
             <Link href="/signup">Get started free</Link>
           </Button>

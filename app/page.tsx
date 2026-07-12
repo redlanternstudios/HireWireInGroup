@@ -130,16 +130,17 @@ export default function SplashPage() {
               }}
             />
             <Link
-              href="/login"
+              href="/signup"
               style={{
                 fontSize: 12,
                 fontWeight: 700,
                 letterSpacing: "0.08em",
                 color: "#3A3835",
                 whiteSpace: "nowrap",
+                textDecoration: "none",
               }}
             >
-              SIGN IN
+              START FREE
             </Link>
           </nav>
 

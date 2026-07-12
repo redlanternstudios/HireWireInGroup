@@ -108,14 +108,6 @@ export function LandingHero() {
               <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="border-white/30 text-white hover:bg-white/10 hover:text-white"
-            asChild
-          >
-            <Link href="/login">Sign in</Link>
-          </Button>
         </div>
 
         {/* Stats row */}

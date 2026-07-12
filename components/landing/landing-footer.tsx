@@ -12,7 +12,6 @@ export function LandingFooter() {
         <nav className="flex items-center gap-6 text-xs text-white/40">
           <Link href="/landing" className="hover:text-white/70 transition-colors">Home</Link>
           <a href="mailto:support@hirewire.ai" className="hover:text-white/70 transition-colors">Support</a>
-          <Link href="/login" className="hover:text-white/70 transition-colors">Sign in</Link>
         </nav>
 
         <p className="text-xs text-white/25 font-mono">
