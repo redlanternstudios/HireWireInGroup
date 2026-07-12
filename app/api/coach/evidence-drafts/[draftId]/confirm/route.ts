@@ -137,6 +137,8 @@ export async function POST(
       )
     }
 
+    const evidenceId = String(evidenceRow.id)
+
     let mappingResult
     try {
       mappingResult = await mapWithConflictRetry({
@@ -145,7 +147,7 @@ export async function POST(
         jobId: anchoredJobId,
         sessionId: session?.id ?? draft.session_id,
         requirementId: anchoredRequirementId,
-        evidenceId: evidenceRow.id,
+        evidenceId,
         evidenceTitle: draft.source_title,
         evidenceType: draft.source_type,
       })
@@ -156,7 +158,7 @@ export async function POST(
         job_id: anchoredJobId,
         user_id: userId,
         requirement_id: anchoredRequirementId,
-        evidence_id: evidenceRow.id,
+        evidence_id: evidenceId,
       })
       return NextResponse.json(
         { success: false, error: "mapping_failed", user_message: "Evidence was saved, but could not be mapped to this requirement." },
@@ -167,7 +169,7 @@ export async function POST(
     const { error: draftUpdateError } = await supabase.from("coach_evidence_drafts")
       .update({
         status: "confirmed",
-        confirmed_row_id: evidenceRow.id,
+        confirmed_row_id: evidenceId,
         proof_snippet: finalSnippet,
         job_id: anchoredJobId,
         requirement_id: anchoredRequirementId,
@@ -182,7 +184,7 @@ export async function POST(
         job_id: anchoredJobId,
         user_id: userId,
         requirement_id: anchoredRequirementId,
-        evidence_id: evidenceRow.id,
+        evidence_id: evidenceId,
       })
     }
 
@@ -259,7 +261,7 @@ export async function POST(
           cause: "evidence_confirmation",
           trigger_event: "evidence_mapped",
           requirement_id: anchoredRequirementId,
-          evidence_id: evidenceRow.id,
+          evidence_id: evidenceId,
           generation_status_before: "ready",
           generation_status_after: "needs_review",
         },
@@ -268,7 +270,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      evidenceId: evidenceRow.id,
+      evidenceId,
       requirementId: anchoredRequirementId,
       prevStatus: mappingResult.prevStatus,
       newStatus: mappingResult.newStatus,
