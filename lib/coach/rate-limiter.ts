@@ -19,7 +19,7 @@ export interface RateLimitConfig {
   per_turn: number
   per_conversation: number
   per_day: number
-  per_tool: Record<CoachToolName, { per_day?: number; per_hour?: number }>
+  per_tool: Partial<Record<CoachToolName, { per_day?: number; per_hour?: number }>>
 }
 
 export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
