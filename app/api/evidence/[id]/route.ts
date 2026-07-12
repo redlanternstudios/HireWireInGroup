@@ -19,7 +19,10 @@ async function unlinkEvidenceFromJobs(supabase: SupabaseClient, userId: string, 
 
     let changed = false
     if (map.requirement_matches && Array.isArray(map.requirement_matches)) {
-      for (const req of map.requirement_matches) {
+      for (const req of map.requirement_matches as Array<{
+        matched_evidence_ids?: string[]
+        status?: string
+      }>) {
         const matchedEvidenceIds = Array.isArray(req.matched_evidence_ids) ? req.matched_evidence_ids : []
         if (matchedEvidenceIds.includes(evidenceId)) {
           req.matched_evidence_ids = matchedEvidenceIds.filter((id: string) => id !== evidenceId)

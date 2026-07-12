@@ -252,7 +252,10 @@ export async function executeDeleteEvidence(
 
       let changed = false
       if (map.requirement_matches && Array.isArray(map.requirement_matches)) {
-        for (const req of map.requirement_matches) {
+        for (const req of map.requirement_matches as Array<{
+          matched_evidence_ids?: string[]
+          status?: string
+        }>) {
           if (req.matched_evidence_ids?.includes(params.evidence_id)) {
             req.matched_evidence_ids = req.matched_evidence_ids.filter(
               (id: string) => id !== params.evidence_id
@@ -635,7 +638,14 @@ export async function executeUnmapEvidence(
     const evidenceMap = job.evidence_map || { requirement_matches: [] }
     const req = (evidenceMap.requirement_matches || []).find(
       (r: any) => r.requirement_id === params.requirement_id
-    )
+    ) as
+      | {
+          matched_evidence_ids?: string[]
+          status?: string
+          confidence?: string
+          updated_at?: string
+        }
+      | undefined
 
     if (!req) return { success: false, error: "Requirement not found" }
 
