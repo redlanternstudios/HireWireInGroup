@@ -290,7 +290,21 @@ export default async function CoachPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Main chat panel */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border/70">
-          <CoachChat className="h-full" />
+          <CoachChat
+            className="h-full"
+            jobContext={
+              ctx?.topJob
+                ? {
+                    jobId: ctx.topJob.id,
+                    title: ctx.topJob.role_title ?? "this role",
+                    company: ctx.topJob.company_name ?? "this company",
+                    score: ctx.topJob.score ?? null,
+                    status: ctx.topJob.status ?? undefined,
+                  }
+                : undefined
+            }
+            contextNote="Use the saved profile, evidence, and link records first. Ask only for facts that are still missing."
+          />
         </div>
 
         {/* ── Right context rail ── */}

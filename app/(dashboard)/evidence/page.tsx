@@ -134,11 +134,11 @@ export default function CareerContextPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Record<SourceType, boolean>>({
-    work_experience: false,
-    education: false,
-    certification: false,
-    skill: false,
-    project: false,
+    work_experience: true,
+    education: true,
+    certification: true,
+    skill: true,
+    project: true,
   })
 
   const fetchEvidence = useCallback(async () => {
@@ -230,9 +230,6 @@ export default function CareerContextPage() {
     return acc
   }, {} as Record<SourceType, EvidenceItem[]>)
 
-  const totalActive = SECTION_ORDER.filter(t => grouped[t].length > 0).length
-  const highConfidenceCount = items.filter(i => i.confidence_level === "high").length
-
   return (
     <div className="hw-page">
 
@@ -242,7 +239,7 @@ export default function CareerContextPage() {
           <p className="hw-section-label mb-1">Proof Vault</p>
           <h1 className="hw-page-title">Career Context</h1>
           <p className="hw-page-subtitle">
-            {items.length} proof point{items.length !== 1 ? "s" : ""} across {totalActive} categor{totalActive !== 1 ? "ies" : "y"} — the evidence base behind every analysis and document.
+            Clean starting point. Add only the proof you want the coach to use, and keep the rest tucked away.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -308,23 +305,12 @@ export default function CareerContextPage() {
         </Dialog>
       </div>
 
-      {/* Stats row */}
-      <div className="hw-metrics">
-        <div className="hw-stat">
-          <span className="hw-stat-value text-primary">{items.length}</span>
-          <span className="hw-stat-label">Total entries</span>
-        </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value text-emerald-600">{highConfidenceCount}</span>
-          <span className="hw-stat-label">Strong proof</span>
-        </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value text-blue-600">{items.filter(i => (i.outcomes || []).length > 0 || (i.approved_achievement_bullets || []).length > 0).length}</span>
-          <span className="hw-stat-label">With outcomes</span>
-        </div>
-        <div className="hw-stat">
-          <span className="hw-stat-value text-amber-600">{totalActive}</span>
-          <span className="hw-stat-label">Categories</span>
+      <div className="hw-card px-5 py-4 border-l-4 border-l-primary/70">
+        <p className="hw-section-label mb-2">Context rules</p>
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+          <p>Use this page as the canonical proof vault.</p>
+          <p>Keep claims short, concrete, and tied to evidence.</p>
+          <p>Expand archive sections only when you need the details.</p>
         </div>
       </div>
 
@@ -367,6 +353,25 @@ export default function CareerContextPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="hw-card px-5 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="hw-section-label mb-1">Archive</p>
+                    <p className="text-sm text-muted-foreground">
+                      Proof is stored here, but sections start collapsed so the page stays clean.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setCollapsed({
+                    work_experience: false,
+                    education: false,
+                    certification: false,
+                    skill: false,
+                    project: false,
+                  })}>
+                    Open archive
+                  </Button>
+                </div>
+              </div>
               {SECTION_ORDER.map(type => {
             const sectionItems = grouped[type]
             if (sectionItems.length === 0) return null
@@ -533,9 +538,9 @@ export default function CareerContextPage() {
             <h2 className="hw-section-label mb-2">Proof Tips</h2>
             <div className="hw-panel p-4 space-y-3">
               {[
-                { tip: "Add outcomes to work entries", desc: "Quantified results power stronger bullets." },
-                { tip: "Include tools used", desc: "Keyword matching improves fit scores." },
-                { tip: "Certifications count", desc: "They validate skill claims automatically." },
+                { tip: "Keep entries specific", desc: "One real example beats a pile of vague notes." },
+                { tip: "Add outcomes when real", desc: "Use numbers only when you can stand behind them." },
+                { tip: "Hide what is not ready", desc: "Collapsed sections keep the page calm while you work." },
               ].map(item => (
                 <div key={item.tip} className="flex items-start gap-2">
                   <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />

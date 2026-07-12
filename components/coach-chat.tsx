@@ -45,6 +45,7 @@ interface CoachChatProps {
     };
   };
   initialMessage?: string;
+  contextNote?: string;
 }
 
 const promptClusters = [
@@ -165,6 +166,7 @@ export function CoachChat({
   jobContext,
   gapContext,
   initialMessage,
+  contextNote,
 }: CoachChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -326,10 +328,14 @@ export function CoachChat({
                 </div>
                 <p className="text-sm text-white/70 leading-relaxed">
                   {jobContext
-                    ? `I'm focused on ${jobContext.title} at ${jobContext.company}. Let's build the strongest possible application.`
+                    ? `I'm focused on ${jobContext.title} at ${jobContext.company}. I’ll use the saved record first and only ask when something is actually missing.`
                     : "I'm your strategic career coach. I can help with job search strategy, interview prep, evidence building, and improving your materials."}
                 </p>
-                {jobContext?.score != null && (
+                {contextNote ? (
+                  <p className="mt-3 text-xs text-white/40 leading-relaxed border-t border-white/8 pt-3">
+                    {contextNote}
+                  </p>
+                ) : jobContext?.score != null ? (
                   <div className="mt-3 pt-3 border-t border-white/8 flex items-center gap-2">
                     <span className="text-[10px] text-white/30 uppercase tracking-widest">
                       Fit score
@@ -347,8 +353,7 @@ export function CoachChat({
                       {jobContext.score}%
                     </span>
                   </div>
-                )}
-                {!jobContext && (
+                ) : (
                   <p className="text-xs text-white/40 mt-2">
                     What would you like to work on today?
                   </p>
@@ -356,7 +361,7 @@ export function CoachChat({
               </div>
 
               {/* Grouped prompt clusters — only in general (non-requirement-scoped) mode */}
-              {!initialMessage && (
+              {!initialMessage && !jobContext && !gapContext && (
                 <div className="space-y-4">
                   {promptClusters.map((cluster) => (
                     <div key={cluster.group}>
