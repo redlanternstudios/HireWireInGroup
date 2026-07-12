@@ -388,7 +388,7 @@ Name: ${input.candidateName}
 Location: ${input.profileLocation}
 Summary: ${input.profileSummary}
 
-Career Context:
+Proof Vault:
 ${input.careerContext ? Object.entries(input.careerContext).map(([key, value]) => `- ${key}: ${String(value)}`).join("\n") : "- Not provided"}
 
 Matched Skills: ${matchedSkills.length > 0 ? matchedSkills.join(", ") : "None surfaced"}

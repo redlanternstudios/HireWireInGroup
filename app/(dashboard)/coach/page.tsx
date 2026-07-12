@@ -61,7 +61,7 @@ function timeAgo(iso: string) {
 export const metadata = {
   title: "Coach | HireWire",
   description:
-    "Strategic guidance grounded in your pipeline and Career Context.",
+    "Strategic guidance grounded in your pipeline and proof vault.",
 };
 
 async function getCoachContext() {
@@ -252,7 +252,7 @@ export default async function CoachPage() {
               Career Coach
             </h1>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-sm">
-              Strategic guidance grounded in your pipeline, Career Context, and
+              Strategic guidance grounded in your pipeline, proof vault, and
               application materials.
             </p>
           </div>
@@ -279,7 +279,7 @@ export default async function CoachPage() {
               )}
             >
               {evidenceLow
-                ? "Low evidence — add Career Context"
+                ? "Low evidence — add proof"
                 : "Grounded in verified evidence"}
             </span>
           </div>
@@ -388,7 +388,7 @@ export default async function CoachPage() {
                 </span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-t border-white/8 mt-1 pt-2">
-                <span className="text-xs text-white/50">Career Context</span>
+                <span className="text-xs text-white/50">Proof Vault</span>
                 <span
                   className={cn(
                     "text-xs font-semibold",
@@ -496,7 +496,7 @@ export default async function CoachPage() {
                 <Zap className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   Coach responses are grounded in your verified evidence. Claims
-                  not backed by your Career Context will be flagged.
+                  not backed by your proof vault will be flagged.
                 </p>
               </div>
             </div>

@@ -212,7 +212,7 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => router.push("/evidence")}>
-              Career Context
+              Proof Vault
             </Button>
             <Button size="sm" className="hw-btn-primary gap-1.5" onClick={() => router.push("/jobs?add=true")}>
               <Plus className="h-3.5 w-3.5" /> Add Job

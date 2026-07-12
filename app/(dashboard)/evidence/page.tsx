@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -140,6 +140,27 @@ export default function CareerContextPage() {
     skill: true,
     project: true,
   })
+  const duplicateScan = useMemo(() => {
+    const buckets = new Map<string, EvidenceItem[]>()
+    for (const item of items) {
+      const key = [
+        item.source_title?.trim().toLowerCase(),
+        item.company_name?.trim().toLowerCase(),
+        item.role_name?.trim().toLowerCase(),
+        item.date_range?.trim().toLowerCase(),
+      ].join("|")
+      const bucket = buckets.get(key) ?? []
+      bucket.push(item)
+      buckets.set(key, bucket)
+    }
+
+    const groups = Array.from(buckets.values()).filter((group) => group.length > 1)
+    return {
+      duplicateGroups: groups,
+      duplicateCount: groups.reduce((sum, group) => sum + group.length - 1, 0),
+      needsReview: groups.length > 0,
+    }
+  }, [items])
 
   const fetchEvidence = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -237,7 +258,7 @@ export default function CareerContextPage() {
       <div className="hw-page-header">
         <div>
           <p className="hw-section-label mb-1">Proof Vault</p>
-          <h1 className="hw-page-title">Career Context</h1>
+          <h1 className="hw-page-title">Proof Vault</h1>
           <p className="hw-page-subtitle">
             Clean starting point. Add only the proof you want the coach to use, and keep the rest tucked away.
           </p>
@@ -251,7 +272,7 @@ export default function CareerContextPage() {
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Add Career Context</DialogTitle>
+              <DialogTitle>Add proof</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <div className="space-y-1.5">
@@ -314,6 +335,34 @@ export default function CareerContextPage() {
         </div>
       </div>
 
+      <div className="hw-card px-5 py-4 border-l-4 border-l-amber-500">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="hw-section-label mb-1">Vault health</p>
+            <p className="text-sm text-muted-foreground">
+              {duplicateScan.needsReview
+                ? `${duplicateScan.duplicateCount} possible duplicate${duplicateScan.duplicateCount === 1 ? "" : "s"} found.`
+                : "No obvious duplicates found."}
+            </p>
+          </div>
+          <span className={`text-xs font-semibold ${duplicateScan.needsReview ? "text-amber-700" : "text-emerald-700"}`}>
+            {duplicateScan.needsReview ? "Review needed" : "Healthy"}
+          </span>
+        </div>
+        {duplicateScan.needsReview && (
+          <div className="mt-3 space-y-2">
+            {duplicateScan.duplicateGroups.slice(0, 3).map((group, index) => (
+              <div key={index} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="font-semibold">{group[0].source_title ?? "Untitled proof"}</p>
+                <p className="text-amber-800">
+                  {group.length} similar entries. Consider merging or keeping one clean canonical version.
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Workspace */}
       <div className="hw-workspace">
         {/* Main */}
@@ -331,7 +380,7 @@ export default function CareerContextPage() {
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-semibold">Loading career context</p>
+                <p className="text-sm font-semibold">Loading proof vault</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs">
                   Gathering your saved proof points, tools, and outcomes.
                 </p>

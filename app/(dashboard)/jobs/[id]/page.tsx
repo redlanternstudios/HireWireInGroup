@@ -423,7 +423,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                   <ScoreBar
                     label="Evidence coverage"
                     value={coachStep.evidenceCoverage}
-                    note="How much of the role is backed by proof in your Career Context."
+                    note="How much of the role is backed by proof in your vault."
                   />
                 )}
                 {coachStep.strategicFit != null && (

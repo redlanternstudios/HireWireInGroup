@@ -45,7 +45,7 @@ const primaryNav = [
 
 // Secondary nav — context and insights
 const secondaryNav = [
-  { name: "Career Context", href: "/evidence",     icon: Library },
+  { name: "Proof Vault",    href: "/evidence",     icon: Library },
   { name: "Insights",       href: "/analytics",    icon: BarChart3, premium: true },
   { name: "Activity Log",   href: "/logs",         icon: History },
 ]

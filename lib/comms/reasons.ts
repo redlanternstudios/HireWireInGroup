@@ -98,7 +98,7 @@ export const REASON_DEFINITIONS: Record<CommunicationReason, CommunicationReason
     canBeCoachGenerated: true,
     userFacingExamples: [
       "Profile incomplete",
-      "Career Context empty",
+      "Proof vault empty",
       "Resume upload needed",
       "First job added",
       "Welcome guidance",

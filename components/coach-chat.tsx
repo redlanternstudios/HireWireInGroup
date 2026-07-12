@@ -92,7 +92,7 @@ const promptClusters = [
     ],
   },
   {
-    group: "Career Context",
+    group: "Proof Vault",
     icon: Lightbulb,
     prompts: [
       {

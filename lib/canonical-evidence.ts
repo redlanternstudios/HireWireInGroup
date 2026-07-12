@@ -695,7 +695,7 @@ export function calculateExplainableFit(
         severity: "critical" as const,
         suggestion: "Add evidence for this requirement to your profile",
       })),
-      score_explanation: "No evidence available — add work history and skills to your Career Context.",
+      score_explanation: "No evidence available — add work history and skills to your proof vault.",
       dimension_scores: dimensionScores,
       warnings: ["No evidence found in profile — add work history and skills to get a real score"],
     }
