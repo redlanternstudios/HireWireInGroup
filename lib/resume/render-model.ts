@@ -102,6 +102,8 @@ const SECTION_HEADINGS = new Set([
   'certifications',
   'projects',
   'selected projects',
+  'links',
+  'website',
   'achievements',
   'awards',
   'publications',

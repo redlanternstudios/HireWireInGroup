@@ -40,6 +40,7 @@ import {
   RESUME_TEMPLATES,
   getTemplateGuidance,
 } from "@/lib/resume-templates"
+import { buildResumeSectionContractText } from "@/lib/resume/section-contract"
 import { sanitizeInput } from "@/lib/safety"
 import { buildGovernanceReport } from "@/lib/coach/generation-governance"
 
@@ -878,6 +879,15 @@ WRITING RULES:
 5. Write like a human professional would - confident but not robotic
 6. If pre-approved bullets exist in evidence, use them directly
 7. Do not restate job gaps in the body — the gap report handles that separately
+
+RESUME SECTION CONTRACT:
+${buildResumeSectionContractText()}
+
+SECTION RULES:
+- Required sections must be present in the final resume.
+- Optional sections should only appear when there is real evidence.
+- If a section is not supported, omit it instead of padding it.
+- Do not create blank placeholders or filler headers.
 
 QUANTIFICATION POLICY - CRITICAL:
 ALLOWED metrics:

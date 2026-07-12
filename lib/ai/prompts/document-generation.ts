@@ -1,6 +1,8 @@
+import { buildResumeSectionContractText } from "@/lib/resume/section-contract"
+
 /**
  * Document Generation Prompts
- * 
+ *
  * System prompts for resume and cover letter generation.
  * These prompts are designed to produce evidence-backed, ATS-optimized content.
  */
@@ -35,6 +37,15 @@ Do not invent or assume achievements not explicitly stated.`,
 4. Follow the proven formula: Action Verb + What You Did + Business Impact
 5. Never fabricate achievements, metrics, or experiences
 
+## Resume Section Contract
+${buildResumeSectionContractText()}
+
+## Output Rules
+- Always include required sections.
+- Include optional sections only when there is real evidence.
+- Omit unsupported sections entirely instead of filling with placeholders.
+- If a required section cannot be filled honestly, stop and surface the gap.
+
 ## Banned Phrases (NEVER use these)
 - "Collaborated with stakeholders" (too vague)
 - "Leveraged best practices" (meaningless)
@@ -47,7 +58,7 @@ Do not invent or assume achievements not explicitly stated.`,
 - Professional Summary: 2-3 sentences connecting experience to the target role
 - Experience: Most relevant roles with 3-5 bullets each
 - Skills: Technical skills matching job requirements
-- Education: Degrees and relevant certifications
+- Education: Degrees and relevant certifications only when they exist
 
 Be specific. Be concrete. Be truthful.`,
 

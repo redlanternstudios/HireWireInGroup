@@ -1,13 +1,18 @@
+import {
+  OMIT_IF_EMPTY_RESUME_SECTION_KEYS,
+  OPTIONAL_RESUME_SECTION_KEYS,
+  REQUIRED_RESUME_SECTION_KEYS,
+} from "@/lib/resume/section-contract"
+
 /**
  * Resume Structure Validation
  *
  * Pre-export integrity check. Called before any DOCX, TXT, or print export.
  * Catches structural problems that produce malformed output silently.
  *
- * This is the v1 ATS defense layer. Future additions:
- * - unsupported unicode character detection
- * - hallucinated template artifact detection
- * - claim/evidence mismatch warnings (requires evidence_map)
+ * This validator now follows one canonical resume contract:
+ * required sections must exist, optional sections may exist, and omitted
+ * sections stay out of the output when they are unsupported.
  */
 
 export interface ResumeValidationResult {
@@ -19,6 +24,8 @@ export interface ResumeValidationResult {
     hasName: boolean
     hasContact: boolean
     hasSections: boolean
+    requiredSections: boolean
+    optionalSections: string[]
   }
 }
 
@@ -31,7 +38,14 @@ export function validateResumeStructure(rawText: string): ResumeValidationResult
       valid: false,
       errors: ['Resume content is empty'],
       warnings: [],
-      checks: { hasContent: false, hasName: false, hasContact: false, hasSections: false },
+      checks: {
+        hasContent: false,
+        hasName: false,
+        hasContact: false,
+        hasSections: false,
+        requiredSections: false,
+        optionalSections: [],
+      },
     }
   }
 
@@ -52,9 +66,22 @@ export function validateResumeStructure(rawText: string): ResumeValidationResult
   if (!hasContact) warnings.push('No email address or phone number detected')
 
   // Section headings
-  const knownSections = ['experience', 'skills', 'education', 'summary', 'certifications', 'projects']
-  const hasSections = knownSections.some(k => allText.includes(k))
+  const allSectionKeys = [
+    ...REQUIRED_RESUME_SECTION_KEYS,
+    ...OPTIONAL_RESUME_SECTION_KEYS,
+    ...OMIT_IF_EMPTY_RESUME_SECTION_KEYS,
+  ]
+  const requiredSections = REQUIRED_RESUME_SECTION_KEYS.every((key) => allText.includes(key))
+  const optionalSections = OPTIONAL_RESUME_SECTION_KEYS.filter((key) => allText.includes(key))
+  const hasSections = allSectionKeys.some(k => allText.includes(k))
+
+  if (!requiredSections) {
+    errors.push(`Missing required resume sections: ${REQUIRED_RESUME_SECTION_KEYS.filter((key) => !allText.includes(key)).join(", ")}`)
+  }
   if (!hasSections) warnings.push('No standard resume sections detected — ATS parsing may fail')
+  if (OPTIONAL_RESUME_SECTION_KEYS.length > 0 && optionalSections.length === 0) {
+    warnings.push('Optional sections were omitted because there was not enough evidence to support them')
+  }
 
   // Accidental markdown syntax
   if (/^#{1,6}\s/m.test(rawText)) {
@@ -73,6 +100,6 @@ export function validateResumeStructure(rawText: string): ResumeValidationResult
     valid: errors.length === 0,
     errors,
     warnings,
-    checks: { hasContent, hasName, hasContact, hasSections },
+    checks: { hasContent, hasName, hasContact, hasSections, requiredSections, optionalSections },
   }
 }
