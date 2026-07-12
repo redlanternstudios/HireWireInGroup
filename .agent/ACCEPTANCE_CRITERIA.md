@@ -1,148 +1,57 @@
-# Acceptance Criteria — Build Day 16 Stabilization
+# Acceptance Criteria — Generation Integrity (anti-fabrication)
 
-Each criterion has a pass condition, a fail condition, and a test method.
-All criteria must PASS before the sprint is considered complete.
+Full plan: `docs/ops/GENERATION_INTEGRITY_PLAN.md`. All criteria must PASS.
+Per `docs/PROOF_STANDARD.md`, each PASS requires attached live evidence.
+(Supersedes the Build Day 16 sheet — that sprint shipped; see git history.)
 
----
+## AC-0: PR #133 landed first
+**Pass:** the fit gate (`FIT_THRESHOLD=70`, 409 `fit_below_threshold`) and Prove
+Fit surface are on main, rebased, with its tests green and one live generation
+verified. **Test:** merged PR + live 409 on a below-threshold job without
+`override:true`.
 
-## AC-1: Structured Output — No 400 on json_schema Rejection
+## AC-1: No unresolvable evidence citations survive
+**Pass:** every experience bullet in a persisted resume carries a
+`source_evidence_id` that resolves to an evidence record that was passed into
+the prompt. Bullets that fail are removed and reported, never persisted.
+**Fail:** any persisted bullet whose ID resolves to "Unknown".
+**Test:** P6 fixture + one live generation inspected via DB read-back.
 
-**Pass:** `POST /api/generate-documents` completes successfully when the configured AI model does not support `json_schema` structured output format. The route parses the text response as JSON and continues generation.
+## AC-2: Competencies intersect evidenced skills
+**Pass:** every listed competency/skill appears (case-insensitive) in the union
+of the user's evidenced `skills`/`tools_used`.
+**Test:** P6 fixture asserts zero out-of-evidence competencies.
 
-**Fail:** The route returns 400 or 500 because `result.experimental_output` is `undefined` and the code throws accessing it.
+## AC-3: Structure gate
+**Pass:** all experience bullets sit under an employer+title+date block derived
+from evidence; no floating sections (e.g. "Additional Relevant Experience").
+**Test:** P6 fixture parses generated structure and asserts zero floating bullets.
 
-**Test method:**
-- Set `OPENAI_MODEL` to a model that does not support structured output (or mock the AI call to return `{ text: '{"key":"val"}', experimental_output: undefined }`)
-- POST to `/api/generate-documents` with a valid job and evidence
-- Expect 200 response
-- Expect `jobs.generated_resume` to be populated
+## AC-4: Gaps excluded from the generation objective
+**Pass:** requirements with status `gap` are absent from the generation prompt's
+objective, and the "acknowledge gaps indirectly" instruction is gone. Gap items
+appear in the user-facing gap report instead.
+**Test:** unit test on prompt construction + live generation on a job with a
+known gap → gap appears in report, not in resume.
 
----
+## AC-5: Date-math gate
+**Pass:** total dated experience is computed from evidence `date_range`s
+(non-overlapping, never rounded up); a years-requirement exceeding it becomes a
+`gap`. **Test:** unit tests incl. overlap + unparseable ranges; fixture job
+requiring more years than the fixture evidence has → requirement lands in the
+gap report.
 
-## AC-2: Governance Block — UI Shows Real Reason
+## AC-6: Mirroring cap
+**Pass:** summary trigram overlap with the job post < 0.35 after at most one
+regeneration; residual violations flagged visibly.
+**Test:** unit test on the scorer + fixture assertion.
 
-**Pass:** When generation is blocked by governance (fabricated claims or drift above threshold), the `GenerateButton` in the UI displays the specific block reason returned by the API (e.g. "Generation blocked by drift score (82/100)"). The generic fallback message is used only when no structured reason is available.
+## AC-7: Regression fixture is the gate
+**Pass:** `tests/generation-integrity.test.ts` exists, fails against
+pre-change generation behavior, passes post-change, and runs in
+`test:e2e:all`. **Test:** run it against both states and attach both outputs.
 
-**Fail:** The button shows "Generation failed" or a static string regardless of what the API returned.
-
-**Test method:**
-- Trigger a governance-blocked generation (or mock the route to return `{ success: false, blocked: true, reason: "Test block reason" }`)
-- Observe the error message displayed in the button/UI
-- Expect to see the reason string from the response body
-
----
-
-## AC-3: Missing Governance Tables Resolved by Migration
-
-**Pass:** The migration file in `supabase/migrations/` creates `generation_governance_runs` and `generation_quality_checks` with `CREATE TABLE IF NOT EXISTS`. Running the migration twice does not error.
-
-**Fail:** Migration uses `CREATE TABLE` without `IF NOT EXISTS`, or fails on a second run, or does not create the required tables.
-
-**Test method:**
-- Run the migration SQL against a blank Supabase project
-- Run it again
-- Expect both runs to succeed with no errors
-- Confirm both tables exist with the required columns
-
----
-
-## AC-4: Missing Jobs Columns Resolved by Migration
-
-**Pass:** The migration adds `generation_attempts`, `last_generation_at`, `resume_provenance`, `voice_integrity_passed`, `voice_review_status` to the `jobs` table using `ADD COLUMN IF NOT EXISTS`. Environments where these columns already exist are unaffected.
-
-**Fail:** Migration uses `ADD COLUMN` without `IF NOT EXISTS`, or fails when columns already exist.
-
-**Test method:**
-- Run the migration against an environment with the columns already present
-- Expect no errors
-- Confirm column types match the values written by the generation route
-
----
-
-## AC-5: Job Updates Do Not Fail from Schema Mismatch
-
-**Pass:** The final `jobs` update in the generation route succeeds in all environments, including those where optional columns (`resume_provenance`, `voice_integrity_passed`, `voice_review_status`) are absent. These columns are either written in a non-critical secondary update (with error swallowing) OR the migration guarantees their existence.
-
-**Fail:** A missing column causes the main `jobs` update to fail, triggering the `if (updateError) return 500` path, even when generation completed successfully.
-
-**Test method:**
-- Run generation in an environment without the optional columns (before migration)
-- Expect 200 and populated `generated_resume` / `generated_cover_letter`
-- Expect server logs to show no `JOB_UPDATE_FAILED` error
-
----
-
-## AC-6: Server Logs Include Actionable Supabase Error Details
-
-**Pass:** Every Supabase write error that surfaces in the route passes through `logSupabaseWriteError` (or equivalent) and includes at minimum: `action`, `job_id`, `user_id`, `message`, `code`. Silent swallows (`.then(() => {}, () => {})`) are reserved only for intentionally non-critical writes.
-
-**Fail:** A Supabase error that affects generation outcome is silently discarded with no log entry.
-
-**Test method:**
-- Introduce a deliberate write error (e.g. invalid column) in a test environment
-- Observe server logs
-- Expect to see `[hirewire:supabase-write]` entry with `action` and `job_id`
-
----
-
-## AC-7: Successful Generation Saves All Required Fields
-
-**Pass:** A successful generation writes all of the following to the `jobs` row:
-- `generated_resume` (non-empty string)
-- `generated_cover_letter` (non-empty string)
-- `generation_status: "ready"` (or `"needs_review"` if quality failed)
-- `quality_passed` (boolean)
-- `evidence_map` (JSONB with `matching_complete: true`)
-- `score` (number)
-- `generation_timestamp` (ISO timestamp)
-
-And writes to:
-- `generation_governance_runs` (one row per generation attempt)
-- `generation_quality_checks` (one row per generation attempt)
-
-**Fail:** Any of the above fields or rows are absent after a successful generation.
-
-**Test method:**
-- Run generation end-to-end with valid job + evidence
-- Query Supabase for the job row and the related governance/quality rows
-- Verify all fields are present and non-null
-
----
-
-## AC-8: TypeScript Passes
-
-**Pass:** `npx tsc --noEmit` exits with code 0 and no errors in files touched by this sprint.
-
-**Fail:** `npx tsc --noEmit` reports errors in `app/api/generate-documents/route.ts`, `app/(dashboard)/jobs/[id]/GenerateButton.tsx`, or any new migration-related files.
-
-**Note:** Pre-existing TypeScript errors in unrelated files (e.g. `app/(dashboard)/jobs/page.tsx`) do not block this criterion, but must be documented if present.
-
-**Test method:**
-```bash
-npx tsc --noEmit
-```
-Expect: no output (exit 0) or only pre-existing errors in unrelated files.
-
----
-
-## AC-9: Build Passes
-
-**Pass:** `npm run build` succeeds. If it fails, all failures are pre-existing and documented with file paths and error messages.
-
-**Fail:** `npm run build` fails due to a change introduced in this sprint.
-
-**Test method:**
-```bash
-npm run build
-```
-Expect: `✓ Compiled successfully` or equivalent Next.js build success output.
-
----
-
-## Definition of Done
-
-All 9 criteria must be marked PASS in `.agent/CLAUDE_REVIEW.md` before Ro approves the sprint.
-
-If a criterion is NOT TESTED, it does not count as PASS.
-
-If a criterion is FAIL, it must appear in the "Required Fixes" section of `.agent/CLAUDE_REVIEW.md`.
+## AC-8: Standard verification
+**Pass:** `npx tsc --noEmit`, `npm run lint`, `npm run build` all green;
+`npm run agent:preflight` passes; no changes to `lib/actions/apply.ts`,
+ready-to-apply, or `lib/supabase/**`.
