@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { UserProvider } from '@/components/user-provider'
@@ -7,16 +6,6 @@ import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 export const dynamic = 'force-dynamic'
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-})
-
-const jetbrains = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains',
-})
 
 export const metadata: Metadata = {
   title: {
@@ -51,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${jetbrains.variable} bg-background`}>
+    <html lang="en" suppressHydrationWarning className="bg-background">
       <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"
