@@ -64,7 +64,10 @@ if (target === "claude-review") {
     "",
     ...common,
     "Task details:",
-    taskBody || "(No task markdown found.)"
+    taskBody || "(No task markdown found.)",
+    "",
+    "Acceptance criteria:",
+    criteriaBody || "(No acceptance criteria markdown found.)"
   ]);
 }
 
