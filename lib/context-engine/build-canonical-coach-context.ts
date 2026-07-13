@@ -163,6 +163,32 @@ function rankLinks(
     .sort((a, b) => b.score - a.score)
 }
 
+function extractEvidenceUsage(evidenceMap: unknown) {
+  if (!evidenceMap || typeof evidenceMap !== "object" || Array.isArray(evidenceMap)) {
+    return new Map<string, { matchedRequirements: string[]; requiredMatches: number; preferredMatches: number }>()
+  }
+
+  const record = evidenceMap as Record<string, unknown>
+  const matches = Array.isArray(record.requirement_matches) ? record.requirement_matches as Array<Record<string, unknown>> : []
+  const usage = new Map<string, { matchedRequirements: string[]; requiredMatches: number; preferredMatches: number }>()
+
+  for (const requirement of matches) {
+    const requirementId = String(requirement.requirement_id ?? "").trim()
+    const priority = String(requirement.priority ?? "required")
+    const matchedEvidenceIds = Array.isArray(requirement.matched_evidence_ids) ? requirement.matched_evidence_ids : []
+    for (const evidenceId of matchedEvidenceIds) {
+      const id = String(evidenceId)
+      const current = usage.get(id) ?? { matchedRequirements: [], requiredMatches: 0, preferredMatches: 0 }
+      if (requirementId) current.matchedRequirements.push(requirementId)
+      if (priority === "required") current.requiredMatches += 1
+      if (priority === "preferred") current.preferredMatches += 1
+      usage.set(id, current)
+    }
+  }
+
+  return usage
+}
+
 export async function buildCanonicalCoachContext(
   supabase: SupabaseClient,
   userId: string,
@@ -183,6 +209,7 @@ export async function buildCanonicalCoachContext(
   const links = Object.entries(normalizedLinks).flatMap(([link_type, url]) => (url ? [{ link_type, url }] : []))
   const rankedLinks = rankLinks(links, profile)
   const job = (jobsResult.data as JobRow | null) ?? null
+  const evidenceUsage = extractEvidenceUsage(job?.evidence_map ?? null)
 
   const activeJob = job ?? {
     id: "unknown",
@@ -221,6 +248,30 @@ export async function buildCanonicalCoachContext(
     })),
   )
 
+  const rankedEvidence = [...evidence]
+    .map((row) => {
+      const rankedItem = evidenceRankScore(row)
+      const usage = evidenceUsage.get(row.id)
+      const jobBoost = usage
+        ? Math.min(35, usage.requiredMatches * 12 + usage.preferredMatches * 6)
+        : 0
+      const jobReasons = usage
+        ? [
+            ...(usage.requiredMatches > 0 ? [`supports ${usage.requiredMatches} required requirement${usage.requiredMatches === 1 ? "" : "s"}`] : []),
+            ...(usage.preferredMatches > 0 ? [`supports ${usage.preferredMatches} preferred requirement${usage.preferredMatches === 1 ? "" : "s"}`] : []),
+          ]
+        : []
+      return {
+        id: row.id,
+        title: row.source_title ?? "Untitled proof",
+        source_type: row.source_type,
+        score: Math.min(100, rankedItem.score + jobBoost),
+        reasons: [...rankedItem.reasons, ...jobReasons],
+      }
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 7)
+
   const readiness = evaluateReadiness({
     id: activeJob.id,
     role_title: activeJob.role_title,
@@ -256,19 +307,7 @@ export async function buildCanonicalCoachContext(
       approved: evidence.filter((row) => row.is_user_approved !== false).length,
       top_titles: evidence.slice(0, 5).map((row) => row.source_title ?? "Untitled proof"),
       duplicate_groups: duplicates.length,
-      ranked: [...evidence]
-        .map((row) => {
-          const rankedItem = evidenceRankScore(row)
-          return {
-            id: row.id,
-            title: row.source_title ?? "Untitled proof",
-            source_type: row.source_type,
-            score: rankedItem.score,
-            reasons: rankedItem.reasons,
-          }
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 7),
+      ranked: rankedEvidence,
     },
     readiness: {
       isReady: readiness.isReady,
@@ -282,6 +321,7 @@ export async function buildCanonicalCoachContext(
         rankedLinks.length > 0 ? `${rankedLinks.length} ranked links` : null,
         evidence.length > 0 ? `${evidence.length} evidence items` : null,
         duplicates.length > 0 ? `${duplicates.length} duplicate groups to review` : null,
+        rankedEvidence.length > 0 ? `${rankedEvidence[0].title} is the strongest proof signal` : null,
       ].filter(Boolean) as string[],
       next_question: !readiness.canGenerate
         ? readiness.blockedReasons[0] ?? "Confirm the strongest missing proof."
@@ -289,9 +329,9 @@ export async function buildCanonicalCoachContext(
       duplicate_scan: duplicates.map((group) => `${group.incoming.source_title ?? "Untitled"} may duplicate existing proof`),
       provenance_notes: [
         rankedLinks.slice(0, 3).map((link) => `Link ${link.link_type} ranked ${link.score}/100: ${link.reasons.join(", ")}`).join(" | "),
-        evidence
+        rankedEvidence
           .slice(0, 3)
-          .map((row) => `${row.source_title ?? "Untitled"} from ${row.source_type ?? "unknown"}${row.is_user_approved !== false ? " approved" : ""}`)
+          .map((row) => `${row.title} from ${row.source_type ?? "unknown"} ranked ${row.score}/100`)
           .join(" | "),
       ].filter(Boolean) as string[],
     },
