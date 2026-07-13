@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Mic,
   ShieldAlert,
+  RotateCcw,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -109,6 +110,27 @@ const promptClusters = [
         label: "Stronger bullets",
         prompt:
           "Help me turn my experience into stronger, more impactful achievement bullets.",
+      },
+    ],
+  },
+  {
+    group: "Reset profile",
+    icon: RotateCcw,
+    prompts: [
+      {
+        label: "Wipe context only",
+        prompt:
+          "Wipe the profile context only. Clear headline, summary, and career context.",
+      },
+      {
+        label: "Wipe context + links",
+        prompt:
+          "Wipe the profile context and links. Clear headline, summary, career context, and saved links.",
+      },
+      {
+        label: "Full profile wipe",
+        prompt:
+          "Wipe the full profile. Clear context, links, skills, experience, and education.",
       },
     ],
   },
@@ -361,7 +383,7 @@ export function CoachChat({
               </div>
 
               {/* Grouped prompt clusters — only in general (non-requirement-scoped) mode */}
-              {!initialMessage && !jobContext && !gapContext && (
+              {!initialMessage && (
                 <div className="space-y-4">
                   {promptClusters.map((cluster) => (
                     <div key={cluster.group}>
