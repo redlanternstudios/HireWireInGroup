@@ -8,6 +8,7 @@ import { GAP_CLARIFICATION_SYSTEM_PROMPT } from "@/lib/coach-prompts/gap-questio
 import { normalizeProfileLinks } from "@/lib/profile-knowledge-resolver"
 import { COACH_PERSONA_BLOCK } from "@/lib/coach/coach-persona"
 import { LOW_FIT_COACH_CONTRACT } from "@/lib/coach/low-fit-contract"
+import { buildCanonicalCoachContext } from "@/lib/context-engine/build-canonical-coach-context"
 import { upsertCoachEvidence } from "@/lib/coach/evidence-merge"
 import {
   syncProfileLinksFromProfile,
@@ -757,28 +758,23 @@ export async function POST(req: NextRequest) {
 
     // Create tools with userId bound
     const tools = createCoachTools(user.id)
-    const { data: profile } = await supabase
-      .from("user_profile")
-      .select("full_name, headline, summary, career_context")
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    const careerContext = profile && typeof profile.career_context === "object" && !Array.isArray(profile.career_context)
-      ? profile.career_context as Record<string, unknown>
-      : null
-
-    const careerContextLines = careerContext
+    const coachContext = await buildCanonicalCoachContext(supabase, user.id, null)
+    const coachContextLines = coachContext
       ? [
-          "## Career Context from onboarding",
-          `Target role: ${String(careerContext.target_role ?? "Not set")}`,
-          `Open to other roles: ${String(careerContext.open_to_other_roles ?? "Not set")}`,
-          `Other roles: ${String(careerContext.other_roles ?? "Not set")}`,
-          `Notes: ${String(careerContext.notes ?? "None")}`,
+          "## Canonical Coach Context",
+          `Job: ${coachContext.job.title} at ${coachContext.job.company}`,
+          `Score: ${coachContext.job.score ?? "unknown"}`,
+          `Readiness: ${coachContext.readiness.canGenerate ? "can generate" : "blocked"}`,
+          `Profile: ${coachContext.profile.full_name ?? "Unnamed"}${coachContext.profile.headline ? ` — ${coachContext.profile.headline}` : ""}`,
+          `Links: ${coachContext.links.map((link) => `${link.link_type}=${link.url}`).join(" | ") || "none"}`,
+          `Evidence count: ${coachContext.evidence.total}`,
+          `Duplicate groups: ${coachContext.evidence.duplicate_groups}`,
+          `Source summary: ${coachContext.inference.source_summary.join(" | ") || "none"}`,
+          `Next question: ${coachContext.inference.next_question ?? "none"}`,
         ].join("\n")
-      : "## Career Context from onboarding\nTarget role: Not set\nOpen to other roles: Not set\nOther roles: Not set\nNotes: None"
+      : "## Canonical Coach Context\nJob: Not provided\nProfile: Not provided\nEvidence count: 0\nDuplicate groups: 0\nNext question: none"
 
-    // Build system prompt - add gap clarification mode if context provided
-    let systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${careerContextLines}`
+    let systemPrompt = `${COACH_SYSTEM_PROMPT}\n\n${coachContextLines}`
     if (gapContext) {
       systemPrompt = `${systemPrompt}\n\n${GAP_CLARIFICATION_SYSTEM_PROMPT}\n\n## Current Gap Context\nThe user is asking about gaps for job: "${gapContext.jobTitle}" at "${gapContext.company}".\n${gapContext.gap ? `Specific gap to address: ${gapContext.gap.requirement} (${gapContext.gap.category})` : "Help the user address their evidence gaps for this role."}`
     }

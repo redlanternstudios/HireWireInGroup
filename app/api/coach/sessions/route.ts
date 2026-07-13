@@ -6,6 +6,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { buildOpeningPrompt } from "@/lib/coach/buildCoachPrompt"
 import { buildRequirementDisplayText } from "@/lib/coach/requirement-display"
+import { buildCanonicalCoachContext } from "@/lib/context-engine/build-canonical-coach-context"
 import { handleDomainEvent } from "@/lib/domain-events"
 import { requireUser } from "@/lib/supabase/require-user"
 
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const coachContext = await buildCanonicalCoachContext(supabase, userId, jobId)
     const evidenceMap =
       ownedJob.evidence_map && typeof ownedJob.evidence_map === "object" && !Array.isArray(ownedJob.evidence_map)
         ? ownedJob.evidence_map as { requirement_matches?: Array<Record<string, unknown>> }
@@ -138,9 +140,12 @@ export async function POST(request: NextRequest) {
       intent: typeof requirementMatch?.employer_intent === "string" ? requirementMatch.employer_intent : null,
       recoveryQuestion: typeof requirementMatch?.recovery_question === "string" ? requirementMatch.recovery_question : null,
     })
+    const contextSummary = coachContext
+      ? `\n\nKnown context: ${coachContext.inference.source_summary.join("; ") || "none"}`
+      : ""
 
     const { data: openingMsg, error: openingMsgError } = await supabase.from("coach_messages")
-      .insert({ session_id: newSession.id, role: "assistant", content: openingContent })
+      .insert({ session_id: newSession.id, role: "assistant", content: `${openingContent}${contextSummary}` })
       .select("id,role,content,created_at").single()
 
     if (openingMsgError) {

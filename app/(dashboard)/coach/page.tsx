@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { evaluateReadiness } from "@/lib/readiness/evaluator";
 import { CoachChat } from "@/components/coach-chat";
+import { buildCanonicalCoachContext } from "@/lib/context-engine/build-canonical-coach-context";
 import {
   ArrowRight,
   Zap,
@@ -101,6 +102,8 @@ async function getCoachContext() {
           .maybeSingle(),
       ]);
 
+    const packet = await buildCanonicalCoachContext(supabase, user.id, null);
+
     const jobs = jobsResult.data ?? [];
     const evidence = evidenceResult.data ?? [];
     const recentEvents: RecentEvent[] = (eventsResult.data ?? []).map(
@@ -161,6 +164,7 @@ async function getCoachContext() {
       hasNoEvidence: evidenceCount === 0,
       hasNoPipeline: activeJobs === 0,
       careerContext,
+      packet,
     };
   } catch {
     return null;
@@ -237,6 +241,7 @@ export default async function CoachPage() {
     ? ctx?.careerContext?.other_roles.filter(Boolean).join(", ")
     : String(ctx?.careerContext?.other_roles ?? "").trim()
   const hasCareerContext = !!targetRole || !!otherRoles || openToOtherRoles === true
+  const packetSummary = ctx?.packet?.inference.source_summary?.slice(0, 3).join(" · ") ?? null
 
   return (
     <div className="flex flex-col h-[calc(100vh-2.5rem)]">
@@ -255,6 +260,11 @@ export default async function CoachPage() {
               Strategic guidance grounded in your pipeline, proof vault, and
               application materials.
             </p>
+            {packetSummary && (
+              <p className="mt-2 text-[10px] text-muted-foreground max-w-sm">
+                {packetSummary}
+              </p>
+            )}
           </div>
 
           {/* Grounded indicator */}
