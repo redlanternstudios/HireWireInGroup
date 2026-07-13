@@ -181,6 +181,15 @@ export const setResumePreferencesTool = {
   }),
 }
 
+export const wipeProfileContextTool = {
+  description:
+    "Clear saved profile context for the user. Use with explicit confirmation. Scope can be context only, context plus links, or full profile.",
+  parameters: z.object({
+    scope: z.enum(["context", "context_and_links", "full_profile"]),
+  }),
+  requiresConfirmation: true,
+}
+
 export const addEducationTool = {
   description:
     "Add an education entry to the user's profile.",
@@ -409,6 +418,7 @@ export const COACH_TOOLS = {
   updateEducation: updateEducationTool,
   removeEducation: removeEducationTool,
   setResumePreferences: setResumePreferencesTool,
+  wipeProfileContext: wipeProfileContextTool,
   addProfileLink: addProfileLinkTool,
   updateProfileLink: updateProfileLinkTool,
   removeProfileLink: removeProfileLinkTool,

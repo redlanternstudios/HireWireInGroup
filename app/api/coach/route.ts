@@ -23,6 +23,7 @@ import {
   upsertCoachEducation,
   updateCoachEducation,
   removeCoachEducation,
+  wipeCoachProfile,
 } from "@/lib/coach/profile-mutations"
 import { saveDocumentFormatSettings } from "@/lib/actions/documents"
 
@@ -759,6 +760,20 @@ function createCoachTools(userId: string) {
         const result = await saveDocumentFormatSettings(job_id, resume_format, resume_font, recommendation_reason)
         if (result.error) return { error: result.error }
         return { success: true, resume_format, resume_font }
+      },
+    }),
+
+    wipeProfileContext: tool({
+      description: "Clear the user's saved profile context. Scope can be context only, context plus links, or the full profile. Requires confirmation.",
+      inputSchema: z.object({
+        scope: z.enum(["context", "context_and_links", "full_profile"]),
+      }),
+      execute: async ({ scope }) => {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { error: "Not authenticated" }
+        const result = await wipeCoachProfile(supabase, user.id, scope)
+        return { success: true, scope: result.scope }
       },
     }),
 

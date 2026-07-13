@@ -235,6 +235,13 @@ export async function routeToolCall(
         )
         break
 
+      case "wipeProfileContext":
+        result = await toolExecution.executeWipeProfileContext(
+          input.args as unknown as Parameters<typeof toolExecution.executeWipeProfileContext>[0],
+          context
+        )
+        break
+
       case "addProfileLink":
         result = await toolExecution.executeAddProfileLink(
           input.args as unknown as Parameters<typeof toolExecution.executeAddProfileLink>[0],

@@ -43,6 +43,7 @@ import {
   upsertCoachEducation,
   updateCoachEducation,
   removeCoachEducation,
+  wipeCoachProfile,
 } from "./profile-mutations"
 
 // ─── Evidence CRUD ──────────────────────────────────────────────────────────
@@ -581,6 +582,40 @@ export async function executeSetResumePreferences(
     }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed to save resume preferences" }
+  }
+}
+
+export async function executeWipeProfileContext(
+  params: { scope: "context" | "context_and_links" | "full_profile" },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    if (!context.confirmed) {
+      return {
+        success: false,
+        needsConfirmation: true,
+        confirmationPrompt:
+          params.scope === "full_profile"
+            ? "Wipe the full profile? This clears context, links, skills, experience, and education."
+            : params.scope === "context_and_links"
+              ? "Clear profile context and links? This will remove headline, summary, career context, and saved links."
+              : "Clear profile context only? This will remove headline, summary, and career context.",
+      }
+    }
+
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await wipeCoachProfile(supabase, auth.userId, params.scope)
+    revalidatePath("/profile")
+    revalidatePath("/coach")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to wipe profile context" }
   }
 }
 

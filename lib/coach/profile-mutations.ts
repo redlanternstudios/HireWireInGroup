@@ -45,6 +45,8 @@ export type CoachProfileEducation = {
   year: string
 }
 
+export type CoachProfileWipeScope = "context" | "context_and_links" | "full_profile"
+
 type ProfileLinkSeed = {
   link_type: "linkedin" | "github" | "website"
   url: string
@@ -636,4 +638,53 @@ export async function removeCoachEducation(
 
   if (error) throw error
   return { removed: true, education: removed, profile: nextEducation }
+}
+
+export async function wipeCoachProfile(
+  supabase: SupabaseClient,
+  userId: string,
+  scope: CoachProfileWipeScope,
+) {
+  const updates: Record<string, unknown> = {
+    headline: null,
+    summary: null,
+    career_context: null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (scope === "full_profile") {
+    updates.skills = []
+    updates.experience = []
+    updates.education = []
+    updates.linkedin_url = null
+    updates.github_url = null
+    updates.website_url = null
+    updates.phone = null
+    updates.location = null
+  }
+
+  const { data, error } = await supabase
+    .from("user_profile")
+    .update(updates)
+    .eq("user_id", userId)
+    .select("*")
+    .single()
+
+  if (error) throw error
+
+  if (scope !== "context") {
+    await supabase
+      .from("user_profile_links")
+      .delete()
+      .eq("user_id", userId)
+
+    await syncProfileLinksFromProfile(supabase, userId, {
+      linkedin_url: "",
+      github_url: "",
+      website_url: "",
+      links: [],
+    })
+  }
+
+  return { profile: data, scope }
 }
