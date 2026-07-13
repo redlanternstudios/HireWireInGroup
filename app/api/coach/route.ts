@@ -768,8 +768,10 @@ export async function POST(req: NextRequest) {
           `Profile: ${coachContext.profile.full_name ?? "Unnamed"}${coachContext.profile.headline ? ` — ${coachContext.profile.headline}` : ""}`,
           `Links: ${coachContext.links.map((link) => `${link.link_type}=${link.url}`).join(" | ") || "none"}`,
           `Evidence count: ${coachContext.evidence.total}`,
+          `Top evidence: ${coachContext.evidence.ranked.map((item) => `${item.title} (${item.score}/100)`).join(" | ") || "none"}`,
           `Duplicate groups: ${coachContext.evidence.duplicate_groups}`,
           `Source summary: ${coachContext.inference.source_summary.join(" | ") || "none"}`,
+          `Provenance: ${coachContext.inference.provenance_notes.join(" | ") || "none"}`,
           `Next question: ${coachContext.inference.next_question ?? "none"}`,
         ].join("\n")
       : "## Canonical Coach Context\nJob: Not provided\nProfile: Not provided\nEvidence count: 0\nDuplicate groups: 0\nNext question: none"

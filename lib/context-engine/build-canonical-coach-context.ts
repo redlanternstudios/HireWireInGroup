@@ -65,6 +65,13 @@ export type CanonicalCoachContext = {
     approved: number
     top_titles: string[]
     duplicate_groups: number
+    ranked: Array<{
+      id: string
+      title: string
+      source_type: string | null
+      score: number
+      reasons: string[]
+    }>
   }
   readiness: {
     isReady: boolean
@@ -75,7 +82,85 @@ export type CanonicalCoachContext = {
     source_summary: string[]
     next_question: string | null
     duplicate_scan: string[]
+    provenance_notes: string[]
   }
+}
+
+function evidenceRankScore(row: EvidenceRow) {
+  let score = 0
+  const reasons: string[] = []
+  if (row.is_user_approved !== false) {
+    score += 25
+    reasons.push("user approved")
+  }
+  if (row.proof_snippet?.trim()) {
+    score += 20
+    reasons.push("has proof snippet")
+  }
+  if ((row.outcomes?.length ?? 0) > 0) {
+    score += 15
+    reasons.push("has outcomes")
+  }
+  if ((row.responsibilities?.length ?? 0) > 0) {
+    score += 10
+    reasons.push("has responsibilities")
+  }
+  if ((row.tools_used?.length ?? 0) > 0) {
+    score += 10
+    reasons.push("has tools")
+  }
+  if (row.confidence_level === "high") {
+    score += 20
+    reasons.push("high confidence")
+  } else if (row.confidence_level === "medium") {
+    score += 10
+    reasons.push("medium confidence")
+  }
+  if (row.source_type === "work_experience") {
+    score += 10
+    reasons.push("work experience")
+  } else if (row.source_type === "project" || row.source_type === "certification") {
+    score += 8
+    reasons.push("structured proof source")
+  }
+  return { score: Math.min(100, score), reasons }
+}
+
+function rankLinks(
+  links: Array<{ link_type: string; url: string }>,
+  profile: ProfileRow | null,
+) {
+  return links
+    .map((link) => {
+      let score = 0
+      const reasons: string[] = []
+      if (link.link_type === "linkedin") {
+        score += 20
+        reasons.push("identity surface")
+      }
+      if (link.link_type === "github") {
+        score += 22
+        reasons.push("code proof")
+      }
+      if (link.link_type === "portfolio" || link.link_type === "website") {
+        score += 18
+        reasons.push("portfolio proof")
+      }
+      if (profile?.headline || profile?.summary) {
+        score += 8
+        reasons.push("profile context")
+      }
+      if (link.url.includes("linkedin.com")) {
+        score += 10
+        reasons.push("canonical linkedin url")
+      }
+      if (link.url.includes("github.com")) {
+        score += 10
+        reasons.push("canonical github url")
+      }
+      return { ...link, score, reasons }
+    })
+    .sort((a, b) => b.score - a.score)
 }
 
 export async function buildCanonicalCoachContext(
@@ -96,6 +181,7 @@ export async function buildCanonicalCoachContext(
   const evidence = (evidenceResult.data ?? []) as EvidenceRow[]
   const normalizedLinks = normalizeProfileLinks(linksResult.data ?? [])
   const links = Object.entries(normalizedLinks).flatMap(([link_type, url]) => (url ? [{ link_type, url }] : []))
+  const rankedLinks = rankLinks(links, profile)
   const job = (jobsResult.data as JobRow | null) ?? null
 
   const activeJob = job ?? {
@@ -170,6 +256,19 @@ export async function buildCanonicalCoachContext(
       approved: evidence.filter((row) => row.is_user_approved !== false).length,
       top_titles: evidence.slice(0, 5).map((row) => row.source_title ?? "Untitled proof"),
       duplicate_groups: duplicates.length,
+      ranked: [...evidence]
+        .map((row) => {
+          const rankedItem = evidenceRankScore(row)
+          return {
+            id: row.id,
+            title: row.source_title ?? "Untitled proof",
+            source_type: row.source_type,
+            score: rankedItem.score,
+            reasons: rankedItem.reasons,
+          }
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 7),
     },
     readiness: {
       isReady: readiness.isReady,
@@ -180,7 +279,7 @@ export async function buildCanonicalCoachContext(
       source_summary: [
         profile?.headline ? `Profile headline: ${profile.headline}` : null,
         profile?.summary ? `Profile summary present` : null,
-        links.length > 0 ? `${links.length} canonical links` : null,
+        rankedLinks.length > 0 ? `${rankedLinks.length} ranked links` : null,
         evidence.length > 0 ? `${evidence.length} evidence items` : null,
         duplicates.length > 0 ? `${duplicates.length} duplicate groups to review` : null,
       ].filter(Boolean) as string[],
@@ -188,6 +287,13 @@ export async function buildCanonicalCoachContext(
         ? readiness.blockedReasons[0] ?? "Confirm the strongest missing proof."
         : null,
       duplicate_scan: duplicates.map((group) => `${group.incoming.source_title ?? "Untitled"} may duplicate existing proof`),
+      provenance_notes: [
+        rankedLinks.slice(0, 3).map((link) => `Link ${link.link_type} ranked ${link.score}/100: ${link.reasons.join(", ")}`).join(" | "),
+        evidence
+          .slice(0, 3)
+          .map((row) => `${row.source_title ?? "Untitled"} from ${row.source_type ?? "unknown"}${row.is_user_approved !== false ? " approved" : ""}`)
+          .join(" | "),
+      ].filter(Boolean) as string[],
     },
   }
 }

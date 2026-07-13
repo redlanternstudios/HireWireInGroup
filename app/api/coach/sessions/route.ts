@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       recoveryQuestion: typeof requirementMatch?.recovery_question === "string" ? requirementMatch.recovery_question : null,
     })
     const contextSummary = coachContext
-      ? `\n\nKnown context: ${coachContext.inference.source_summary.join("; ") || "none"}`
+      ? `\n\nKnown context: ${coachContext.inference.source_summary.join("; ") || "none"}\nTop evidence: ${coachContext.evidence.ranked.map((item) => `${item.title} (${item.score}/100)`).join("; ") || "none"}\nProvenance: ${coachContext.inference.provenance_notes.join("; ") || "none"}`
       : ""
 
     const { data: openingMsg, error: openingMsgError } = await supabase.from("coach_messages")
