@@ -36,6 +36,12 @@ import {
   removeCoachProfileLink,
   setPrimaryCoachProfileLink,
   updateCareerContextRecord,
+  upsertCoachExperience,
+  updateCoachExperience,
+  removeCoachExperience,
+  upsertCoachEducation,
+  updateCoachEducation,
+  removeCoachEducation,
 } from "./profile-mutations"
 
 // ─── Evidence CRUD ──────────────────────────────────────────────────────────
@@ -415,6 +421,140 @@ export async function executeUpdateCareerContext(
     }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed to update career context" }
+  }
+}
+
+export async function executeAddExperience(
+  params: { title: string; company: string; start_date: string; end_date?: string; description?: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await upsertCoachExperience(supabase, auth.userId, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to add experience" }
+  }
+}
+
+export async function executeUpdateExperience(
+  params: { index: number; title?: string; company?: string; start_date?: string; end_date?: string; description?: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await updateCoachExperience(supabase, auth.userId, params.index, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to update experience" }
+  }
+}
+
+export async function executeRemoveExperience(
+  params: { index: number },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    if (!context.confirmed) {
+      return {
+        success: false,
+        needsConfirmation: true,
+        confirmationPrompt: "Remove this experience entry from your profile? This cannot be undone.",
+      }
+    }
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await removeCoachExperience(supabase, auth.userId, params.index)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to remove experience" }
+  }
+}
+
+export async function executeAddEducation(
+  params: { degree: string; school: string; year: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await upsertCoachEducation(supabase, auth.userId, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to add education" }
+  }
+}
+
+export async function executeUpdateEducation(
+  params: { index: number; degree?: string; school?: string; year?: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await updateCoachEducation(supabase, auth.userId, params.index, params)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to update education" }
+  }
+}
+
+export async function executeRemoveEducation(
+  params: { index: number },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    if (!context.confirmed) {
+      return {
+        success: false,
+        needsConfirmation: true,
+        confirmationPrompt: "Remove this education entry from your profile? This cannot be undone.",
+      }
+    }
+    const auth = await requireUser()
+    if (!auth.ok) return { success: false, error: "Unauthorized" }
+    const supabase = auth.supabase
+    const result = await removeCoachEducation(supabase, auth.userId, params.index)
+    revalidatePath("/profile")
+    return {
+      success: true,
+      data: result,
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to remove education" }
   }
 }
 

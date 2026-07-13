@@ -125,6 +125,70 @@ export const updateCareerContextTool = {
   }),
 }
 
+export const updateExperienceTool = {
+  description:
+    "Update an existing experience entry in the user's profile.",
+  parameters: z.object({
+    index: z.number().int().min(0),
+    title: z.string().optional(),
+    company: z.string().optional(),
+    start_date: z.string().optional(),
+    end_date: z.string().optional(),
+    description: z.string().optional(),
+  }),
+}
+
+export const addExperienceTool = {
+  description:
+    "Add a work experience entry to the user's profile.",
+  parameters: z.object({
+    title: z.string().min(1),
+    company: z.string().min(1),
+    start_date: z.string().min(1),
+    end_date: z.string().optional(),
+    description: z.string().optional(),
+  }),
+}
+
+export const removeExperienceTool = {
+  description:
+    "Remove a work experience entry from the user's profile. This action requires user confirmation.",
+  parameters: z.object({
+    index: z.number().int().min(0),
+  }),
+  requiresConfirmation: true,
+}
+
+export const updateEducationTool = {
+  description:
+    "Update an existing education entry in the user's profile.",
+  parameters: z.object({
+    index: z.number().int().min(0),
+    degree: z.string().optional(),
+    school: z.string().optional(),
+    year: z.string().optional(),
+  }),
+}
+
+export const addEducationTool = {
+  description:
+    "Add an education entry to the user's profile.",
+  parameters: z.object({
+    degree: z.string().min(1),
+    school: z.string().min(1),
+    year: z.string().min(1),
+  }),
+}
+
+export const removeEducationTool = {
+  description:
+    "Remove an education entry from the user's profile. This action requires user confirmation.",
+  parameters: z.object({
+    index: z.number().int().min(0),
+  }),
+  requiresConfirmation: true,
+}
+
 export const addProfileLinkTool = {
   description:
     "Add a canonical profile, portfolio, or social link to the user's profile.",
@@ -327,6 +391,12 @@ export const COACH_TOOLS = {
   deleteEvidence: deleteEvidenceTool,
   updateProfile: updateProfileTool,
   updateCareerContext: updateCareerContextTool,
+  addExperience: addExperienceTool,
+  updateExperience: updateExperienceTool,
+  removeExperience: removeExperienceTool,
+  addEducation: addEducationTool,
+  updateEducation: updateEducationTool,
+  removeEducation: removeEducationTool,
   addProfileLink: addProfileLinkTool,
   updateProfileLink: updateProfileLinkTool,
   removeProfileLink: removeProfileLinkTool,

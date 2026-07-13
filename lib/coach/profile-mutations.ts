@@ -31,6 +31,20 @@ export type CareerContextInput = {
   notes?: string | null
 }
 
+export type CoachProfileExperience = {
+  title: string
+  company: string
+  start_date: string
+  end_date?: string
+  description?: string
+}
+
+export type CoachProfileEducation = {
+  degree: string
+  school: string
+  year: string
+}
+
 type ProfileLinkSeed = {
   link_type: "linkedin" | "github" | "website"
   url: string
@@ -363,4 +377,263 @@ export async function updateCareerContextRecord(
 
   if (error) throw error
   return data
+}
+
+export async function upsertCoachExperience(
+  supabase: SupabaseClient,
+  userId: string,
+  input: CoachProfileExperience,
+) {
+  const { data: profile, error: loadError } = await supabase
+    .from("user_profile")
+    .select("experience")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (loadError) throw loadError
+  if (!profile) return { experience: null, merged: false }
+
+  const currentExperience = Array.isArray(profile.experience) ? profile.experience : []
+  const nextEntry = {
+    title: input.title.trim(),
+    company: input.company.trim(),
+    start_date: input.start_date.trim(),
+    end_date: input.end_date?.trim() || "Present",
+    description: input.description?.trim() || "",
+  }
+
+  const key = `${nextEntry.title} ${nextEntry.company} ${nextEntry.start_date} ${nextEntry.end_date}`.toLowerCase()
+  const existingIndex = currentExperience.findIndex((entry: Record<string, unknown>) =>
+    `${String(entry.title ?? "")} ${String(entry.company ?? "")} ${String(entry.start_date ?? "")} ${String(entry.end_date ?? "Present")}`.toLowerCase() === key
+  )
+
+  const nextExperience = existingIndex >= 0
+    ? currentExperience.map((entry: Record<string, unknown>, index: number) =>
+        index === existingIndex
+          ? {
+              ...entry,
+              description: [String(entry.description ?? ""), nextEntry.description].filter(Boolean).join("\n").trim(),
+            }
+          : entry
+      )
+    : [...currentExperience, nextEntry]
+
+  const { data, error } = await supabase
+    .from("user_profile")
+    .update({
+      experience: nextExperience,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single()
+
+  if (error) throw error
+  return {
+    experience: existingIndex >= 0 ? nextExperience[existingIndex] : nextEntry,
+    merged: existingIndex >= 0,
+    profile: data,
+  }
+}
+
+export async function updateCoachExperience(
+  supabase: SupabaseClient,
+  userId: string,
+  index: number,
+  updates: Partial<CoachProfileExperience>,
+) {
+  const { data: profile, error: loadError } = await supabase
+    .from("user_profile")
+    .select("experience")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (loadError) throw loadError
+  if (!profile) return { experience: null }
+
+  const currentExperience = Array.isArray(profile.experience) ? profile.experience : []
+  if (index < 0 || index >= currentExperience.length) return { experience: null }
+
+  const nextExperience = currentExperience.map((entry: Record<string, unknown>, entryIndex: number) =>
+    entryIndex === index
+      ? {
+          ...entry,
+          ...(updates.title !== undefined ? { title: updates.title.trim() } : {}),
+          ...(updates.company !== undefined ? { company: updates.company.trim() } : {}),
+          ...(updates.start_date !== undefined ? { start_date: updates.start_date.trim() } : {}),
+          ...(updates.end_date !== undefined ? { end_date: updates.end_date.trim() || "Present" } : {}),
+          ...(updates.description !== undefined ? { description: updates.description.trim() } : {}),
+        }
+      : entry
+  )
+
+  const { data, error } = await supabase
+    .from("user_profile")
+    .update({
+      experience: nextExperience,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single()
+
+  if (error) throw error
+  return { experience: nextExperience[index], profile: data }
+}
+
+export async function removeCoachExperience(
+  supabase: SupabaseClient,
+  userId: string,
+  index: number,
+) {
+  const { data: profile, error: loadError } = await supabase
+    .from("user_profile")
+    .select("experience")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (loadError) throw loadError
+  if (!profile) return { removed: false }
+
+  const currentExperience = Array.isArray(profile.experience) ? profile.experience : []
+  if (index < 0 || index >= currentExperience.length) return { removed: false }
+
+  const removed = currentExperience[index]
+  const nextExperience = currentExperience.filter((_: unknown, entryIndex: number) => entryIndex !== index)
+
+  const { error } = await supabase
+    .from("user_profile")
+    .update({
+      experience: nextExperience,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+
+  if (error) throw error
+  return { removed: true, experience: removed, profile: nextExperience }
+}
+
+export async function upsertCoachEducation(
+  supabase: SupabaseClient,
+  userId: string,
+  input: CoachProfileEducation,
+) {
+  const { data: profile, error: loadError } = await supabase
+    .from("user_profile")
+    .select("education")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (loadError) throw loadError
+  if (!profile) return { education: null, merged: false }
+
+  const currentEducation = Array.isArray(profile.education) ? profile.education : []
+  const nextEntry = {
+    degree: input.degree.trim(),
+    school: input.school.trim(),
+    year: input.year.trim(),
+  }
+
+  const key = `${nextEntry.degree} ${nextEntry.school} ${nextEntry.year}`.toLowerCase()
+  const existingIndex = currentEducation.findIndex((entry: Record<string, unknown>) =>
+    `${String(entry.degree ?? "")} ${String(entry.school ?? "")} ${String(entry.year ?? "")}`.toLowerCase() === key
+  )
+
+  const nextEducation = existingIndex >= 0
+    ? currentEducation.map((entry: Record<string, unknown>, index: number) =>
+        index === existingIndex ? { ...entry, ...nextEntry } : entry
+      )
+    : [...currentEducation, nextEntry]
+
+  const { data, error } = await supabase
+    .from("user_profile")
+    .update({
+      education: nextEducation,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single()
+
+  if (error) throw error
+  return {
+    education: existingIndex >= 0 ? nextEducation[existingIndex] : nextEntry,
+    merged: existingIndex >= 0,
+    profile: data,
+  }
+}
+
+export async function updateCoachEducation(
+  supabase: SupabaseClient,
+  userId: string,
+  index: number,
+  updates: Partial<CoachProfileEducation>,
+) {
+  const { data: profile, error: loadError } = await supabase
+    .from("user_profile")
+    .select("education")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (loadError) throw loadError
+  if (!profile) return { education: null }
+
+  const currentEducation = Array.isArray(profile.education) ? profile.education : []
+  if (index < 0 || index >= currentEducation.length) return { education: null }
+
+  const nextEducation = currentEducation.map((entry: Record<string, unknown>, entryIndex: number) =>
+    entryIndex === index
+      ? {
+          ...entry,
+          ...(updates.degree !== undefined ? { degree: updates.degree.trim() } : {}),
+          ...(updates.school !== undefined ? { school: updates.school.trim() } : {}),
+          ...(updates.year !== undefined ? { year: updates.year.trim() } : {}),
+        }
+      : entry
+  )
+
+  const { data, error } = await supabase
+    .from("user_profile")
+    .update({
+      education: nextEducation,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single()
+
+  if (error) throw error
+  return { education: nextEducation[index], profile: data }
+}
+
+export async function removeCoachEducation(
+  supabase: SupabaseClient,
+  userId: string,
+  index: number,
+) {
+  const { data: profile, error: loadError } = await supabase
+    .from("user_profile")
+    .select("education")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (loadError) throw loadError
+  if (!profile) return { removed: false }
+
+  const currentEducation = Array.isArray(profile.education) ? profile.education : []
+  if (index < 0 || index >= currentEducation.length) return { removed: false }
+
+  const removed = currentEducation[index]
+  const nextEducation = currentEducation.filter((_: unknown, entryIndex: number) => entryIndex !== index)
+
+  const { error } = await supabase
+    .from("user_profile")
+    .update({
+      education: nextEducation,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+
+  if (error) throw error
+  return { removed: true, education: removed, profile: nextEducation }
 }

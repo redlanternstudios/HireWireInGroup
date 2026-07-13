@@ -17,6 +17,12 @@ import {
   removeCoachProfileLink,
   setPrimaryCoachProfileLink,
   updateCareerContextRecord,
+  upsertCoachExperience,
+  updateCoachExperience,
+  removeCoachExperience,
+  upsertCoachEducation,
+  updateCoachEducation,
+  removeCoachEducation,
 } from "@/lib/coach/profile-mutations"
 
 export const maxDuration = 60
@@ -539,6 +545,39 @@ function createCoachTools(userId: string) {
       },
     }),
 
+    updateExperience: tool({
+      description: "Update a work experience entry in the user's profile by its array index.",
+      inputSchema: z.object({
+        index: z.number().int().min(0),
+        title: z.string().optional(),
+        company: z.string().optional(),
+        start_date: z.string().optional(),
+        end_date: z.string().optional(),
+        description: z.string().optional(),
+      }),
+      execute: async ({ index, title, company, start_date, end_date, description }) => {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { error: "Not authenticated" }
+        const result = await updateCoachExperience(supabase, user.id, index, { title, company, start_date, end_date, description })
+        return { success: true, experience: result.experience }
+      },
+    }),
+
+    removeExperience: tool({
+      description: "Remove a work experience entry from the user's profile by array index. Requires confirmation.",
+      inputSchema: z.object({
+        index: z.number().int().min(0),
+      }),
+      execute: async ({ index }) => {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { error: "Not authenticated" }
+        const result = await removeCoachExperience(supabase, user.id, index)
+        return { success: true, removed: result.removed, experience: result.experience ?? null }
+      },
+    }),
+
     addSkills: tool({
       description: "Add one or more skills to the user's profile. Use this when users want to add new skills.",
       inputSchema: z.object({
@@ -673,6 +712,37 @@ function createCoachTools(userId: string) {
           message: `Added ${degree} from ${school} to your education.`,
           education: existingIndex >= 0 ? nextEducation[existingIndex] : newEducation
         }
+      },
+    }),
+
+    updateEducation: tool({
+      description: "Update an education entry in the user's profile by its array index.",
+      inputSchema: z.object({
+        index: z.number().int().min(0),
+        degree: z.string().optional(),
+        school: z.string().optional(),
+        year: z.string().optional(),
+      }),
+      execute: async ({ index, degree, school, year }) => {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { error: "Not authenticated" }
+        const result = await updateCoachEducation(supabase, user.id, index, { degree, school, year })
+        return { success: true, education: result.education }
+      },
+    }),
+
+    removeEducation: tool({
+      description: "Remove an education entry from the user's profile by array index. Requires confirmation.",
+      inputSchema: z.object({
+        index: z.number().int().min(0),
+      }),
+      execute: async ({ index }) => {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { error: "Not authenticated" }
+        const result = await removeCoachEducation(supabase, user.id, index)
+        return { success: true, removed: result.removed, education: result.education ?? null }
       },
     }),
 

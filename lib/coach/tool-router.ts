@@ -186,6 +186,48 @@ export async function routeToolCall(
         )
         break
 
+      case "addExperience":
+        result = await toolExecution.executeAddExperience(
+          input.args as unknown as Parameters<typeof toolExecution.executeAddExperience>[0],
+          context
+        )
+        break
+
+      case "updateExperience":
+        result = await toolExecution.executeUpdateExperience(
+          input.args as unknown as Parameters<typeof toolExecution.executeUpdateExperience>[0],
+          context
+        )
+        break
+
+      case "removeExperience":
+        result = await toolExecution.executeRemoveExperience(
+          input.args as unknown as Parameters<typeof toolExecution.executeRemoveExperience>[0],
+          context
+        )
+        break
+
+      case "addEducation":
+        result = await toolExecution.executeAddEducation(
+          input.args as unknown as Parameters<typeof toolExecution.executeAddEducation>[0],
+          context
+        )
+        break
+
+      case "updateEducation":
+        result = await toolExecution.executeUpdateEducation(
+          input.args as unknown as Parameters<typeof toolExecution.executeUpdateEducation>[0],
+          context
+        )
+        break
+
+      case "removeEducation":
+        result = await toolExecution.executeRemoveEducation(
+          input.args as unknown as Parameters<typeof toolExecution.executeRemoveEducation>[0],
+          context
+        )
+        break
+
       case "addProfileLink":
         result = await toolExecution.executeAddProfileLink(
           input.args as unknown as Parameters<typeof toolExecution.executeAddProfileLink>[0],
