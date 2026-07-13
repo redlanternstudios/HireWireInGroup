@@ -24,6 +24,7 @@ import {
   updateCoachEducation,
   removeCoachEducation,
 } from "@/lib/coach/profile-mutations"
+import { saveDocumentFormatSettings } from "@/lib/actions/documents"
 
 export const maxDuration = 60
 
@@ -743,6 +744,21 @@ function createCoachTools(userId: string) {
         if (!user) return { error: "Not authenticated" }
         const result = await removeCoachEducation(supabase, user.id, index)
         return { success: true, removed: result.removed, education: result.education ?? null }
+      },
+    }),
+
+    setResumePreferences: tool({
+      description: "Set the user's resume format and font. This controls section order through the selected template.",
+      inputSchema: z.object({
+        job_id: z.string().uuid(),
+        resume_format: z.enum(["ats_safe", "modern_professional", "compact_professional", "executive_narrative", "clean_minimal"]),
+        resume_font: z.enum(["inter", "calibri", "arial", "helvetica", "georgia"]),
+        recommendation_reason: z.string().min(5).max(300),
+      }),
+      execute: async ({ job_id, resume_format, resume_font, recommendation_reason }) => {
+        const result = await saveDocumentFormatSettings(job_id, resume_format, resume_font, recommendation_reason)
+        if (result.error) return { error: result.error }
+        return { success: true, resume_format, resume_font }
       },
     }),
 

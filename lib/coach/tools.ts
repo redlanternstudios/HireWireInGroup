@@ -170,6 +170,17 @@ export const updateEducationTool = {
   }),
 }
 
+export const setResumePreferencesTool = {
+  description:
+    "Update the user's resume format and font preferences, which also controls section order through the selected template.",
+  parameters: z.object({
+    job_id: z.string().uuid(),
+    resume_format: z.enum(["ats_safe", "modern_professional", "compact_professional", "executive_narrative", "clean_minimal"]),
+    resume_font: z.enum(["inter", "calibri", "arial", "helvetica", "georgia"]),
+    recommendation_reason: z.string().min(5).max(300),
+  }),
+}
+
 export const addEducationTool = {
   description:
     "Add an education entry to the user's profile.",
@@ -397,6 +408,7 @@ export const COACH_TOOLS = {
   addEducation: addEducationTool,
   updateEducation: updateEducationTool,
   removeEducation: removeEducationTool,
+  setResumePreferences: setResumePreferencesTool,
   addProfileLink: addProfileLinkTool,
   updateProfileLink: updateProfileLinkTool,
   removeProfileLink: removeProfileLinkTool,

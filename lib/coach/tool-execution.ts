@@ -29,6 +29,7 @@ import {
   withUpdatedRequirementMatches,
 } from "./coach-step-helpers"
 import { upsertCoachEvidence } from "./evidence-merge"
+import { saveDocumentFormatSettings } from "@/lib/actions/documents"
 import {
   syncProfileLinksFromProfile,
   upsertCoachProfileLink,
@@ -555,6 +556,31 @@ export async function executeRemoveEducation(
     }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed to remove education" }
+  }
+}
+
+export async function executeSetResumePreferences(
+  params: { job_id: string; resume_format: "ats_safe" | "modern_professional" | "compact_professional" | "executive_narrative" | "clean_minimal"; resume_font: "inter" | "calibri" | "arial" | "helvetica" | "georgia"; recommendation_reason: string },
+  context: ToolExecutionContext
+): Promise<ToolCallResult> {
+  try {
+    const result = await saveDocumentFormatSettings(
+      params.job_id,
+      params.resume_format,
+      params.resume_font,
+      params.recommendation_reason,
+    )
+    if (result.error) return { success: false, error: result.error }
+    return {
+      success: true,
+      data: {
+        resume_format: params.resume_format,
+        resume_font: params.resume_font,
+      },
+      metadata: { tool_call_id: context.toolCallId },
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed to save resume preferences" }
   }
 }
 

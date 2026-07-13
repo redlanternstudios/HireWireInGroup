@@ -228,6 +228,13 @@ export async function routeToolCall(
         )
         break
 
+      case "setResumePreferences":
+        result = await toolExecution.executeSetResumePreferences(
+          input.args as unknown as Parameters<typeof toolExecution.executeSetResumePreferences>[0],
+          context
+        )
+        break
+
       case "addProfileLink":
         result = await toolExecution.executeAddProfileLink(
           input.args as unknown as Parameters<typeof toolExecution.executeAddProfileLink>[0],
