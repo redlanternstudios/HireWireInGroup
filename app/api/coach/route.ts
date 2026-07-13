@@ -773,6 +773,7 @@ export async function POST(req: NextRequest) {
           `Source summary: ${coachContext.inference.source_summary.join(" | ") || "none"}`,
           `Provenance: ${coachContext.inference.provenance_notes.join(" | ") || "none"}`,
           `Next question: ${coachContext.inference.next_question ?? "none"}`,
+          `Action hints: ${coachContext.inference.action_hints.map((item) => `${item.type}:${item.label} -> ${item.reason}`).join(" | ") || "none"}`,
         ].join("\n")
       : "## Canonical Coach Context\nJob: Not provided\nProfile: Not provided\nEvidence count: 0\nDuplicate groups: 0\nNext question: none"
 

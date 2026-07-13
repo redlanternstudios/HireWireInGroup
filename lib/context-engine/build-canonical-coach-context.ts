@@ -83,6 +83,12 @@ export type CanonicalCoachContext = {
     next_question: string | null
     duplicate_scan: string[]
     provenance_notes: string[]
+    action_hints: Array<{
+      type: "ask" | "save" | "link" | "gap" | "review"
+      label: string
+      reason: string
+      target?: string | null
+    }>
   }
 }
 
@@ -285,6 +291,50 @@ export async function buildCanonicalCoachContext(
     applied_at: activeJob.applied_at ?? null,
   } as any)
 
+  const actionHints: CanonicalCoachContext["inference"]["action_hints"] = []
+  if (readiness.canGenerate) {
+    actionHints.push({
+      type: "review",
+      label: "Review document output",
+      reason: "The packet is strong enough to move into generation and quality review.",
+      target: "generated_documents",
+    })
+  } else if (readiness.blockedReasons.length > 0) {
+    actionHints.push({
+      type: "gap",
+      label: "Close the top blocker",
+      reason: readiness.blockedReasons[0] ?? "A readiness blocker is present.",
+      target: readiness.blockedReasons[0] ?? null,
+    })
+  }
+
+  if (rankedEvidence.length > 0) {
+    actionHints.push({
+      type: "save",
+      label: `Use ${rankedEvidence[0].title}`,
+      reason: "This is the strongest proof signal and should anchor the next coach turn.",
+      target: rankedEvidence[0].id,
+    })
+  }
+
+  if (rankedLinks.length > 0) {
+    actionHints.push({
+      type: "link",
+      label: `Reference ${rankedLinks[0].link_type}`,
+      reason: "A canonical link is available for retrieval and provenance.",
+      target: rankedLinks[0].url,
+    })
+  }
+
+  if (!readiness.canGenerate && rankedEvidence.length === 0) {
+    actionHints.push({
+      type: "ask",
+      label: "Ask for a real example",
+      reason: "The packet lacks enough proof to safely draft from.",
+      target: "evidence_gap",
+    })
+  }
+
   return {
     job: {
       id: activeJob.id,
@@ -334,6 +384,7 @@ export async function buildCanonicalCoachContext(
           .map((row) => `${row.title} from ${row.source_type ?? "unknown"} ranked ${row.score}/100`)
           .join(" | "),
       ].filter(Boolean) as string[],
+      action_hints: actionHints,
     },
   }
 }
