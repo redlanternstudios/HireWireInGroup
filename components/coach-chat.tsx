@@ -169,6 +169,38 @@ type CoachToolOutput = {
   args?: Record<string, unknown>;
 };
 
+const RESET_SCOPE_PROMPTS = [
+  {
+    key: "context",
+    label: "Wipe context only",
+    prompt: "wipeProfileContext scope=context",
+    description: "Clears headline, summary, and career context.",
+  },
+  {
+    key: "context_and_links",
+    label: "Wipe context + links",
+    prompt: "wipeProfileContext scope=context_and_links",
+    description: "Clears context plus saved profile links.",
+  },
+  {
+    key: "full_profile",
+    label: "Full profile wipe",
+    prompt: "wipeProfileContext scope=full_profile",
+    description: "Clears context, links, skills, experience, and education.",
+  },
+] as const;
+
+function hasResetIntent(text: string) {
+  const value = text.toLowerCase();
+  return [
+    "wipe context",
+    "wipe profile",
+    "reset profile",
+    "start fresh",
+    "clear context",
+  ].some((phrase) => value.includes(phrase));
+}
+
 function getToolOutput(part: unknown): CoachToolOutput | null {
   if (!part || typeof part !== "object") return null;
   const record = part as Record<string, unknown>;
@@ -218,8 +250,15 @@ export function CoachChat({
   const { messages, status, sendMessage } = useChat({ chat });
 
   const isLoading = status === "streaming" || status === "submitted";
-
   const [priorMessages, setPriorMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const resetIntentActive =
+    hasResetIntent(input) ||
+    messages.some((message) =>
+      (message.parts ?? []).some(
+        (part) => part.type === "text" && hasResetIntent((part as { text?: string }).text ?? ""),
+      ),
+    ) ||
+    priorMessages.some((message) => hasResetIntent(message.content));
 
   // Load prior messages from resumed session
   useEffect(() => {
@@ -385,6 +424,39 @@ export function CoachChat({
               {/* Grouped prompt clusters — only in general (non-requirement-scoped) mode */}
               {!initialMessage && (
                 <div className="space-y-4">
+                  {resetIntentActive && (
+                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <RotateCcw className="mt-0.5 h-4 w-4 text-primary" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground">
+                            Reset detected
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Pick the narrowest wipe scope. The coach will clear only what you choose.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {RESET_SCOPE_PROMPTS.map((option) => (
+                              <button
+                                key={option.key}
+                                onClick={() => handleQuickAction(option.prompt)}
+                                disabled={isLoading}
+                                className={cn(
+                                  "rounded-xl border border-border bg-card px-3 py-2 text-left text-xs font-medium transition-colors",
+                                  "hover:border-primary/40 hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed",
+                                )}
+                              >
+                                <div>{option.label}</div>
+                                <div className="mt-0.5 text-[10px] font-normal text-muted-foreground">
+                                  {option.description}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {promptClusters.map((cluster) => (
                     <div key={cluster.group}>
                       <div className="flex items-center gap-1.5 mb-2">
